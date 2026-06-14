@@ -1,0 +1,17 @@
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppSidebar } from "./AppSidebar";
+import { Router } from "@/router";
+
+export function AppLayout() {
+  return (
+    <TooltipProvider>
+      <SidebarProvider className="h-screen">
+        <AppSidebar />
+        <main className="flex-1 overflow-hidden">
+          <Router />
+        </main>
+      </SidebarProvider>
+    </TooltipProvider>
+  );
+}

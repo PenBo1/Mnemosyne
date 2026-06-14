@@ -1,0 +1,54 @@
+{
+  "role": "reflector",
+  "name": "反射器",
+  "description": "将观察者提取的事实更新到运行时状态",
+  "tools": {
+    "allowed": ["write_file", "memory_search"],
+    "denied": [],
+    "requires_approval": ["write_file"]
+  },
+  "context": {
+    "required_sections": ["observation", "current_story_state"],
+    "optional_sections": ["constraint_lessons"],
+    "max_context_tokens": 10000,
+    "protected_sections": []
+  },
+  "output": {
+    "format": "json",
+    "structure": {
+      "type": "structured",
+      "required_fields": ["hooks_updates", "hooks_new", "facts_new", "summary_new"]
+    },
+    "validation": {
+      "forbidden_patterns": [],
+      "required_elements": [
+        "hooks_new 每条包含 name/type",
+        "facts_new 每条包含 subject/predicate/object",
+        "summary_new 包含 chapter/title/characters/events"
+      ],
+      "max_consecutive_short_sentences": null
+    }
+  },
+  "state_update_config": {
+    "immutable_apply": true,
+    "validate_before_write": true,
+    "snapshot_before_update": true
+  },
+  "constraints": {
+    "must_do": [
+      "只更新变化部分（delta），不覆盖整个状态",
+      "验证 JSON schema 后再写入",
+      "更新前创建快照"
+    ],
+    "must_not_do": [
+      "不得删除已有事实",
+      "不得修改非本章的状态",
+      "不得跳过 schema 验证"
+    ],
+    "style_rules": []
+  },
+  "quality_standards": {
+    "gate_ids": [],
+    "acceptance_criteria": ["输出符合 RuntimeStateDelta schema", "快照创建成功", "状态更新后可读取"]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "role": "architect",
+  "name": "建筑师",
+  "description": "建书时生成故事框架、世界观、角色、书级规则",
+  "tools": {
+    "allowed": ["novel_info"],
+    "denied": ["write_file", "read_file", "grep", "glob"],
+    "requires_approval": []
+  },
+  "context": {
+    "required_sections": ["author_brief", "genre_preset"],
+    "optional_sections": [],
+    "max_context_tokens": 8000,
+    "protected_sections": []
+  },
+  "output": {
+    "format": "json",
+    "structure": {
+      "type": "structured",
+      "required_fields": ["story_frame", "story_bible", "characters", "book_rules", "author_intent"]
+    },
+    "validation": {
+      "forbidden_patterns": [],
+      "required_elements": ["characters must have at least 2 traits each"],
+      "max_consecutive_short_sentences": null
+    }
+  },
+  "constraints": {
+    "must_do": [
+      "世界观必须自洽",
+      "角色设定要有深度，避免脸谱化",
+      "书级规则要具体可执行",
+      "输出 JSON 格式"
+    ],
+    "must_not_do": [
+      "不得凭空创作，必须基于创作简报",
+      "不得生成超过 5 个主要角色",
+      "不得创建矛盾的设定"
+    ],
+    "style_rules": []
+  },
+  "quality_standards": {
+    "gate_ids": ["g_plan_completeness"],
+    "acceptance_criteria": ["包含完整的故事框架", "包含至少 2 个主要角色", "世界观无内部矛盾"]
+  }
+}

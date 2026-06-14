@@ -59,30 +59,35 @@ Both the renderer process (frontend) and main process (backend) follow layered a
 ```
 UI Layer (pages/components) → Hook Layer (hooks/) → Service Layer (services/) → IPC Layer (lib/ipc/)
                                                                         ↕
-                                                                 State (lib/store.tsx)
+                                                                 State (lib/store.tsx, stores/)
 ```
-- `pages/` — page-level components, one per route/view
+- `pages/` — page-level components, one per route/view. Must not contain IPC calls or business logic.
 - `router/` — Context-based page switcher (no URL router)
 - `components/` — reusable UI (ui/ for shadcn, layout/ for structure, shared/ for atoms)
-- `hooks/` — bridge between services and React state
-- `services/` — business logic, validation, orchestration
+- `hooks/` — bridge between services and React state (e.g. `useNovels`, `usePrompts`, `useTrends`)
+- `services/` — IPC call wrappers and orchestration logic, no React dependencies
 - `lib/ipc/` — `invoke()` wrappers with common `ipc<T>()` helper
-- `lib/store.tsx` — `useReducer` + Context for global state
+- `lib/store.tsx` — `useReducer` + Context for global app state (page navigation, settings tab)
+- `stores/` — Zustand stores for complex domain state (e.g. workspace)
 
 **Main process (Rust — `src-tauri/src/`)**:
 ```
 Command Layer (commands/) → Service Layer (services/) → System Layer (db/, OS access)
 ```
-- `lib.rs` registers commands; each `#[command]` is thin (validate input, delegate to service)
-- `commands/` — thin `#[tauri::command]` handlers: parse, validate, delegate to service, return
-- `services/` — business logic as pure functions, no Tauri dependencies
-- `db/` — database access layer (to be expanded with SQLite/ORM)
-- `errors.rs` — unified `AppError` type with code + message, convertible to `String` for IPC
+- `lib.rs` registers commands, initializes app state (AppState with db)
+- `commands/` — thin `#[tauri::command]` handlers: extract params, lock db, delegate to service, return
+- `services/` — business logic as pure functions, no Tauri dependencies. Must validate inputs here.
+- `db/` — database access layer (`connection.rs` for queries, `models.rs` for types, `sql/` for schema)
+- `errors/` — unified `AppError` type (`app_error.rs`), `IpcResponse<T>` envelope (`ipc.rs`), status codes (`status.rs`)
+- `middleware/` — cross-cutting concerns (e.g. `logging.rs` for structured tracing)
 
 **Rules**:
-- No business logic in `#[command]` handlers — they parse, validate, delegate, and return.
+- No business logic in `#[command]` handlers — they extract params, lock db, delegate to service, and return.
+- No Tauri dependencies in `services/` — services receive `&Database` and return `Result<T, AppError>`.
 - No UI in `src/lib/` — it must be framework-agnostic.
+- No IPC calls in `src/pages/` — all IPC goes through `services/` → `hooks/` → `pages/`.
 - IPC boundary is the trust seam: always validate in Rust, never trust frontend.
+- All `#[command]` functions must delegate to `services/` for validation and business logic.
 
 ## File & modularization requirements
 
@@ -117,6 +122,87 @@ Command Layer (commands/) → Service Layer (services/) → System Layer (db/, O
 - React 19, JSX transform is `react-jsx` (no React import needed for JSX, but `main.tsx` imports it for `StrictMode`)
 - Front-end floating layers (modal/popover/dropdown/tooltip) must portal to `document.body`, not inside `overflow-hidden` or stacking context containers
 - **shadcn/ui**: Use `cn()` from `@/lib/utils` for conditional classes. Use semantic colors (`bg-primary`, `text-muted-foreground`), never raw values (`bg-blue-500`). Use `gap-*` not `space-x-*`/`space-y-*`. Use `size-*` when width=height. Add components via `bunx --bun shadcn@latest add <component>`. Icon library: `lucide-react`.
+
+## App data directory structure
+
+All application data is managed by `DataDir` (`src-tauri/src/infra/data_dir.rs`). On first launch, all directories and default config files are created automatically.
+
+Agent configurations and harness configs are **embedded in code** (`domain/harness/agent_configs.rs`, `domain/harness/global_config.rs`). No file-based loading — configs live in the binary only.
+
+```
+%APPDATA%/com.admin.mnemosyne/       (Windows)
+~/Library/Application Support/com.admin.mnemosyne/  (macOS)
+~/.local/share/com.admin.mnemosyne/  (Linux)
+├── config.json                   # App settings (UI theme, locale, log level, AI model configs)
+├── data/
+│   ├── state.sqlite              # Core state (novels, chapters, sessions, messages, agents)
+│   ├── feedback.sqlite           # Error events, lessons, gate evaluations, pipeline runs
+│   └── logs.sqlite               # Structured logs
+├── logs/                         # Rolling daily log files (mnemosyne.log.YYYY-MM-DD)
+└── skills/                       # Local skill definitions
+```
+
+**Rules**:
+- All paths must go through `DataDir` getters — never construct paths manually in commands or services.
+- `DataDir` is stored in `AppState` and accessible from all `#[command]` handlers via `state.data_dir`.
+- Config files use `serde_json` with pretty-print for human readability.
+- The database uses SQLite WAL mode (`PRAGMA journal_mode = WAL`).
+- Agent configs are compiled into the binary — never load from files at runtime.
+
+## Harness engineering system
+
+The harness system manages the 8-agent novel writing pipeline. All agent configuration is JSON-driven and **embedded in code**.
+
+### Agent roles and pipeline flow
+
+```
+Plan → Compose → Write → Audit → Revise (loop) → Reflect
+  │        │        │       │         │              │
+  │        │        │       │         │              └ reflector + observer
+  │        │        │       │         └ reviser (if audit has critical issues)
+  │        │        │       └ auditor (10 quality dimensions)
+  │        │        └ writer (prose generation)
+  │        └ composer (context assembly)
+  └ planner (chapter memo)
+```
+
+Additional standalone agents:
+- **architect**: Creates book structure during `novel_create`
+- **observer**: Extracts facts from chapters (called by reflector)
+
+### Agent configuration format
+
+Each agent has a JSON config in `config/agents/` with:
+- `prompt_template`: The system prompt (replaces hardcoded prompts)
+- `tools`: Allowed/denied tools for this agent
+- `context`: Required/optional context sections and token budget
+- `output`: Expected output format and validation rules
+- `constraints`: must_do, must_not_do, style_rules
+- `quality_standards`: Gate IDs and acceptance criteria
+- Role-specific fields: `audit_config`, `revision_config`, `extraction_config`, etc.
+
+### Feedback loop
+
+When the auditor finds issues:
+1. Each Critical/Warning issue is recorded as an `error_event` in SQLite
+2. When an error type reaches its threshold (defined in `GlobalHarnessConfig` → `feedback_rules`), a `constraint_lesson` is generated
+3. Active lessons are injected into agent prompts via `ContextBuilder`
+
+### Quality gates
+
+Quality gates are evaluated after audit. If gates fail, the revision loop is triggered. Gate types:
+- `ScoreThreshold`: Audit score must meet minimum
+- `IssueCount`: Critical issues must not exceed maximum
+- `WordCountRange`: Word count must be within range
+- `ForbiddenPattern`: Content must not contain forbidden phrases
+- `CompletenessCheck`: Required fields must be present
+- `DimensionScore`: Specific audit dimension must pass
+
+### Garbage collection
+
+GC runs automatically every N chapters (configurable in `harness.json` → `gc_policy`):
+- Cleans stale snapshots older than `stale_snapshot_days`
+- Compacts state by deduplicating facts and trimming summaries
 
 ## Safety rules
 
@@ -156,3 +242,35 @@ Command Layer (commands/) → Service Layer (services/) → System Layer (db/, O
 - Public capabilities must be extracted as reusable modules, not copy-pasted.
 - Payload and IPC field semantics must share the same type or normalization function across frontend and Rust. No mismatched read/write semantics.
 - Flows that "create a record then submit a task" must complete pre-validation first. If task submission can fail, provide explicit compensation/rollback. No zombie data.
+
+## IPC conventions (CRITICAL)
+
+**Naming**: Tauri auto-converts camelCase (JS) ↔ snake_case (Rust). Frontend MUST use camelCase for all argument keys. Rust commands use snake_case parameters.
+
+```typescript
+// ✅ Correct - frontend uses camelCase
+await ipc("agent_send_message", { sessionId, content });
+
+// ❌ Wrong - snake_case in frontend
+await ipc("agent_send_message", { session_id: sessionId, content });
+```
+
+**Response envelope**: All `#[command]` functions return `Result<IpcResponse<T>, AppError>`. Use `IpcResponse::ok(data)` for success, `AppError` constructors for errors.
+
+**Status codes**: Use the appropriate status code from `src-tauri/src/errors/status.rs`. All `AppError` constructors are available: `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `internal`, etc.
+
+**Frontend IPC helpers**: Use `ipc<T>()` for data responses, `ipcVoid()` for void responses. Never use `ipc<void>()` which throws on null data.
+
+## i18n conventions (CRITICAL)
+
+**No hardcoded strings**: Every user-visible string MUST use i18n. Add keys to both `src/lib/locales/en.ts` and `src/lib/locales/zh.ts`.
+
+**Checklist for new features**:
+- [ ] All UI text uses `t.keypath` or `t.section.key`
+- [ ] Both `en.ts` and `zh.ts` have the new keys
+- [ ] Error messages shown to users are localized
+- [ ] Placeholder text is localized
+- [ ] Button labels are localized
+- [ ] Dialog titles/descriptions are localized
+
+**Pattern**: Add keys under the relevant section (e.g., `modelSettings`, `agentChat`, `settings`). Keep keys descriptive and nested.

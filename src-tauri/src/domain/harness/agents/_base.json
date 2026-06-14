@@ -1,0 +1,34 @@
+{
+  "role": "_base",
+  "name": "基础模板",
+  "description": "所有 Agent 共享的默认配置",
+  "tools": {
+    "allowed": [],
+    "denied": [],
+    "requires_approval": ["write_file", "delete_file"]
+  },
+  "context": {
+    "required_sections": [],
+    "optional_sections": [],
+    "max_context_tokens": 16000,
+    "protected_sections": []
+  },
+  "output": {
+    "format": "json",
+    "structure": null,
+    "validation": {
+      "forbidden_patterns": [],
+      "required_elements": [],
+      "max_consecutive_short_sentences": null
+    }
+  },
+  "constraints": {
+    "must_do": [],
+    "must_not_do": [],
+    "style_rules": []
+  },
+  "quality_standards": {
+    "gate_ids": [],
+    "acceptance_criteria": []
+  }
+}

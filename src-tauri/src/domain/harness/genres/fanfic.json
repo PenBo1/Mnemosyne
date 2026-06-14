@@ -1,0 +1,52 @@
+{
+  "genre_id": "fanfic",
+  "genre_name": "同人",
+  "language": "zh",
+  "fatigue_words": [],
+  "pacing_rules": [],
+  "chapter_types": ["正典延续", "架空", "性格重塑", "CP向"],
+  "genre_specific_rules": [
+    "角色语癖必须与原作一致",
+    "世界规则不可违反原作设定",
+    "关键事件时间线不可矛盾"
+  ],
+  "numerical_system": false,
+  "power_scaling": false,
+  "style_profile": {
+    "narrative_person": "third",
+    "tone": [],
+    "prose_density": "moderate",
+    "dialogue_ratio": "medium",
+    "sentence_length_target": 28,
+    "paragraph_length_target": 4,
+    "forbidden_phrases": [],
+    "required_devices": [],
+    "anti_ai_rules": []
+  },
+  "continuity_rules": {
+    "protagonist_lock": null,
+    "timeline_strict": true,
+    "character_appearance_max_absence": 8,
+    "hook_lifecycle_rules": [],
+    "fact_validation_rules": ["角色行为必须符合原作设定"],
+    "relationship_change_requires": ["事件驱动", "铺垫"]
+  },
+  "audit_dimensions": {
+    "enabled_dimensions": ["ooc_check", "timeline_check", "lore_conflict", "hook_check", "pacing_check", "style_check", "lexical_fatigue"],
+    "dimension_weights": {"ooc_check": 2.0, "timeline_check": 1.5, "lore_conflict": 1.5, "hook_check": 1.0, "pacing_check": 1.0, "style_check": 1.0, "lexical_fatigue": 1.1},
+    "severity_overrides": {},
+    "pass_threshold": 70.0,
+    "critical_dimensions": ["ooc_check", "timeline_check", "lore_conflict"],
+    "custom_rules": []
+  },
+  "quality_gates": [],
+  "writing_constraints": {
+    "chapter_words": {"target": 3000, "soft_min": 2700, "soft_max": 3300, "hard_min": 2400, "hard_max": 3600},
+    "structure_rules": ["每章结尾必须有悬念或情感缺口"],
+    "pacing_rules": ["每 300 字至少 1 个爽点"],
+    "prohibited_patterns": [],
+    "required_elements": [],
+    "golden_chapter_rules": {}
+  },
+  "lesson_log": []
+}

@@ -1,0 +1,75 @@
+import { ipc } from "@/lib/ipc";
+import type { Novel, BookConfig, WriteResult, AuditResult } from "@/types";
+
+export async function fetchNovels(): Promise<Novel[]> {
+  return ipc<Novel[]>("list_novels");
+}
+
+export async function createNovelList(
+  workspaceId: string,
+  title: string,
+  genre: string
+): Promise<Novel> {
+  return ipc<Novel>("create_novel", { workspaceId, title, genre });
+}
+
+export async function deleteNovel(id: string): Promise<boolean> {
+  return ipc<boolean>("delete_novel", { id });
+}
+
+export async function createNovelPipeline(
+  workspaceId: string,
+  title: string,
+  genre: string,
+  brief?: string
+): Promise<BookConfig> {
+  return ipc<BookConfig>("novel_create", { workspaceId, title, genre, brief });
+}
+
+export async function writeNextChapter(
+  workspaceId: string,
+  bookId: string,
+  targetWords?: number
+): Promise<WriteResult> {
+  return ipc<WriteResult>("novel_write_next", { workspaceId, bookId, targetWords });
+}
+
+export async function planChapter(
+  workspaceId: string,
+  bookId: string,
+  context?: string
+): Promise<Record<string, unknown>> {
+  return ipc<Record<string, unknown>>("novel_plan", { workspaceId, bookId, context });
+}
+
+export async function auditChapter(
+  workspaceId: string,
+  bookId: string,
+  chapterNumber: number
+): Promise<AuditResult> {
+  return ipc<AuditResult>("novel_audit", { workspaceId, bookId, chapterNumber });
+}
+
+export async function reviseChapter(
+  workspaceId: string,
+  bookId: string,
+  chapterNumber: number
+): Promise<string> {
+  return ipc<string>("novel_revise", { workspaceId, bookId, chapterNumber });
+}
+
+export async function observeChapter(
+  workspaceId: string,
+  bookId: string,
+  chapterNumber: number
+): Promise<Record<string, unknown>> {
+  return ipc<Record<string, unknown>>("novel_observe", { workspaceId, bookId, chapterNumber });
+}
+
+export async function reflectChapter(
+  workspaceId: string,
+  bookId: string,
+  chapterNumber: number
+): Promise<void> {
+  return ipc<void>("novel_reflect", { workspaceId, bookId, chapterNumber });
+}

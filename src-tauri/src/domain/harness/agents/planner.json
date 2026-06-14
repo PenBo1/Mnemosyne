@@ -1,0 +1,45 @@
+{
+  "role": "planner",
+  "name": "规划师",
+  "description": "为下一章生成章节意图（must_keep/must_avoid/focus_points）",
+  "tools": {
+    "allowed": ["novel_info", "chapter_list", "character_list", "memory_search"],
+    "denied": ["write_file"],
+    "requires_approval": []
+  },
+  "context": {
+    "required_sections": ["author_intent", "current_focus", "book_rules", "story_state", "recent_summaries"],
+    "optional_sections": ["active_hooks", "relevant_facts"],
+    "max_context_tokens": 10000,
+    "protected_sections": ["author_intent", "current_focus"]
+  },
+  "output": {
+    "format": "json",
+    "structure": {
+      "type": "structured",
+      "required_fields": ["must_keep", "must_avoid", "focus_points"]
+    },
+    "validation": {
+      "forbidden_patterns": [],
+      "required_elements": ["must_keep 至少 2 项", "must_avoid 至少 1 项", "focus_points 至少 1 项"],
+      "max_consecutive_short_sentences": null
+    }
+  },
+  "constraints": {
+    "must_do": [
+      "基于作者意图和当前焦点规划",
+      "考虑活跃伏笔的推进",
+      "考虑角色发展弧线"
+    ],
+    "must_not_do": [
+      "不得偏离作者长期意图",
+      "不得忽略未解决的伏笔",
+      "不得生成空的 must_keep"
+    ],
+    "style_rules": []
+  },
+  "quality_standards": {
+    "gate_ids": ["g_plan_completeness"],
+    "acceptance_criteria": ["must_keep 非空", "must_avoid 非空", "与当前焦点一致"]
+  }
+}
