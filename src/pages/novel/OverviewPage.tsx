@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -23,58 +23,22 @@ import {
   BarChart3Icon,
   SettingsIcon,
 } from "lucide-react";
-import { ipc } from "@/lib/ipc";
+import { useOverview } from "@/hooks/useOverview";
 import { WritingDashboard } from "@/components/visualizations";
-import type { Novel, ChapterSummary, HookRecord } from "@/types";
-
-interface StoryState {
-  current_chapter: number;
-  total_words: number;
-  hooks: HookRecord[];
-  summaries: ChapterSummary[];
-  facts: unknown[];
-}
 
 export function OverviewPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
-  const [novel, setNovel] = useState<Novel | null>(null);
-  const [storyState, setStoryState] = useState<StoryState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { novel, storyState, loading, updateNovel } = useOverview(activeWorkspaceId);
   const [editOpen, setEditOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editGenre, setEditGenre] = useState("");
   const [view, setView] = useState<"overview" | "dashboard">("overview");
 
-  useEffect(() => {
-    if (!activeWorkspaceId) return;
-    setLoading(true);
-    ipc<Novel[]>("list_novels")
-      .then(async (novels) => {
-        const found = novels.find((n) => n.workspace_id === activeWorkspaceId);
-        setNovel(found || null);
-        if (found) {
-          try {
-            const state = await ipc<StoryState>("story_state_get", { novelId: found.id });
-            setStoryState(state);
-          } catch {
-            setStoryState(null);
-          }
-        }
-      })
-      .catch(() => setNovel(null))
-      .finally(() => setLoading(false));
-  }, [activeWorkspaceId]);
-
   const handleSave = async () => {
     if (!novel) return;
-    try {
-      await ipc<Novel>("update_novel", { id: novel.id, title: editTitle, genre: editGenre });
-      setNovel({ ...novel, title: editTitle, genre: editGenre });
-      setEditOpen(false);
-    } catch (err) {
-      console.error("Failed to update novel:", err);
-    }
+    await updateNovel(editTitle, editGenre);
+    setEditOpen(false);
   };
 
   if (loading) {

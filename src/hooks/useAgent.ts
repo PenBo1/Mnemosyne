@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useAgentStore } from "@/stores/agent";
 import * as agentService from "@/services/agent";
-import type { Message, AgentEvent } from "@/types";
+import type { AgentEvent } from "@/types";
 
 export function useAgent(sessionId: string | null) {
   const store = useAgentStore();
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
 
-  // Stable references to store actions
   const updateStreamingContent = useAgentStore((s) => s.updateStreamingContent);
   const clearStreamingContent = useAgentStore((s) => s.clearStreamingContent);
   const setStreaming = useAgentStore((s) => s.setStreaming);
@@ -29,17 +28,12 @@ export function useAgent(sessionId: string | null) {
           if (cancelled) return;
           const payload = event.payload;
 
-          console.log("[AgentEvent]", payload.type, "session:", payload.session_id, "current:", sessionIdRef.current);
-
-          // Only process events for current session
           if (payload.session_id !== sessionIdRef.current) {
-            console.log("[AgentEvent] Skipping - session mismatch");
             return;
           }
 
           switch (payload.type) {
             case "TurnStarted":
-              console.log("[AgentEvent] TurnStarted - setting streaming=true");
               setStreaming(true);
               break;
 
@@ -50,37 +44,26 @@ export function useAgent(sessionId: string | null) {
               break;
 
             case "TurnCompleted":
-              console.log("[AgentEvent] TurnCompleted");
               setStreaming(false);
               clearStreamingContent();
-              // Reload messages from DB to get final state
               if (sessionIdRef.current) {
                 loadMessages(sessionIdRef.current);
               }
               break;
 
             case "Error":
-              console.log("[AgentEvent] Error:", payload.error);
               setStreaming(false);
               setError(payload.error || "Unknown error");
               break;
 
             case "ToolCallBegin":
-              console.log("[ToolCall]", payload.tool, payload.args);
-              break;
-
             case "ToolCallEnd":
-              console.log("[ToolCallResult]", payload.tool_call_id, payload.output?.slice(0, 100));
-              break;
-
             case "CompactionTriggered":
-              console.log("[Compaction]", payload.session_id);
               break;
           }
         });
-        console.log("[AgentEvent] Listener registered for session:", sessionId);
-      } catch (err) {
-        console.error("Failed to setup event listener:", err);
+      } catch {
+        setError("Failed to setup event listener");
       }
     };
 
@@ -97,7 +80,7 @@ export function useAgent(sessionId: string | null) {
   const sendMessage = useCallback(
     async (content: string) => {
       if (!sessionId) {
-        setError("请先创建或选择一个对话");
+        setError("Please create or select a session first");
         return;
       }
 
@@ -105,11 +88,10 @@ export function useAgent(sessionId: string | null) {
       clearStreamingContent();
       setStreaming(true);
 
-      // Optimistically add user message
-      const userMessage: Message = {
+      const userMessage = {
         id: `temp-${Date.now()}`,
         session_id: sessionId,
-        role: "user",
+        role: "user" as const,
         content,
         tool_calls: null,
         tool_results: null,

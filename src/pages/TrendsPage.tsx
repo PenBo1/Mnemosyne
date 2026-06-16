@@ -162,7 +162,7 @@ export function TrendsPage() {
                     {new Date(scan.created_at).toLocaleString()}
                   </div>
                   <div className="mt-1 line-clamp-1 text-muted-foreground">
-                    {scan.market_summary || "No summary"}
+                    {scan.market_summary || t.common.noSummary}
                   </div>
                 </button>
                 <DropdownMenu>

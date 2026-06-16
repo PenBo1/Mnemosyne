@@ -32,12 +32,11 @@ import { PuzzleIcon, RefreshCwIcon, WrenchIcon, PlusIcon, PencilIcon, Trash2Icon
 import { useI18n } from "@/lib/i18n";
 import { useSkills } from "@/hooks/useSkills";
 import { SKILL_CATEGORIES } from "@/types";
-import * as skillService from "@/services/skill";
 import type { SkillMeta, Skill } from "@/types";
 
 export function SkillsPage() {
   const { t } = useI18n();
-  const { skills, loading, error, filterCategory, setFilterCategory, refresh } = useSkills();
+  const { skills, loading, error, filterCategory, setFilterCategory, refresh, getSkill, create, update, remove } = useSkills();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
@@ -59,15 +58,15 @@ export function SkillsPage() {
 
   async function openEditDialog(skill: SkillMeta) {
     try {
-      const fullSkill = await skillService.getSkill(skill.name);
+      const fullSkill = await getSkill(skill.name);
       setEditingSkill(fullSkill);
       setSkillName(fullSkill.name);
       setSkillDescription(fullSkill.description);
       setSkillCategory(fullSkill.category);
       setSkillContent(fullSkill.content);
       setDialogOpen(true);
-    } catch (err) {
-      console.error("Failed to load skill:", err);
+    } catch {
+      // Error handled by hook
     }
   }
 
@@ -75,25 +74,20 @@ export function SkillsPage() {
     if (!skillName.trim()) return;
     setSaving(true);
     try {
+      const params = {
+        name: skillName,
+        description: skillDescription,
+        category: skillCategory,
+        content: skillContent,
+      };
       if (editingSkill) {
-        await skillService.updateSkill({
-          name: skillName,
-          description: skillDescription,
-          category: skillCategory,
-          content: skillContent,
-        });
+        await update(params);
       } else {
-        await skillService.createSkill({
-          name: skillName,
-          description: skillDescription,
-          category: skillCategory,
-          content: skillContent,
-        });
+        await create(params);
       }
       setDialogOpen(false);
-      await refresh();
-    } catch (err) {
-      console.error("Failed to save skill:", err);
+    } catch {
+      // Error handled by hook
     } finally {
       setSaving(false);
     }
@@ -101,11 +95,10 @@ export function SkillsPage() {
 
   async function handleDelete(name: string) {
     try {
-      await skillService.deleteSkill(name);
+      await remove(name);
       setDeleteConfirm(null);
-      await refresh();
-    } catch (err) {
-      console.error("Failed to delete skill:", err);
+    } catch {
+      // Error handled by hook
     }
   }
 
@@ -136,10 +129,10 @@ export function SkillsPage() {
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-          <Button size="sm" onClick={openCreateDialog}>
-            <PlusIcon data-icon="inline-start" />
-            {t.skills.add || "Add Skill"}
-          </Button>
+            <Button size="sm" onClick={openCreateDialog}>
+              <PlusIcon data-icon="inline-start" />
+              {t.skills.add}
+            </Button>
         </div>
       </div>
 
@@ -165,7 +158,7 @@ export function SkillsPage() {
           <EmptyContent>
             <Button onClick={openCreateDialog} size="sm">
               <PlusIcon className="size-4" />
-              {t.skills.add || "Add Skill"}
+            {t.skills.add}
             </Button>
           </EmptyContent>
         </Empty>
@@ -215,12 +208,12 @@ export function SkillsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingSkill ? (t.skills.edit || "Edit Skill") : (t.skills.add || "Add Skill")}</DialogTitle>
+            <DialogTitle>{editingSkill ? t.skills.edit : t.skills.add}</DialogTitle>
             <DialogDescription>{t.skills.description}</DialogDescription>
           </DialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel>{t.skills.name || "Name"}</FieldLabel>
+              <FieldLabel>{t.skills.name}</FieldLabel>
               <Input
                 value={skillName}
                 onChange={(e) => setSkillName(e.target.value)}
@@ -229,7 +222,7 @@ export function SkillsPage() {
               />
             </Field>
             <Field>
-              <FieldLabel>{t.skills.description || "Description"}</FieldLabel>
+              <FieldLabel>{t.skills.description}</FieldLabel>
               <Input
                 value={skillDescription}
                 onChange={(e) => setSkillDescription(e.target.value)}
@@ -237,7 +230,7 @@ export function SkillsPage() {
               />
             </Field>
             <Field>
-              <FieldLabel>{t.skills.category || "Category"}</FieldLabel>
+              <FieldLabel>{t.skills.category}</FieldLabel>
               <Select value={skillCategory} onValueChange={setSkillCategory}>
                 <SelectTrigger>
                   <SelectValue />
@@ -250,7 +243,7 @@ export function SkillsPage() {
               </Select>
             </Field>
             <Field>
-              <FieldLabel>{t.skills.content || "Content (Markdown)"}</FieldLabel>
+              <FieldLabel>{t.skills.content}</FieldLabel>
               <textarea
                 value={skillContent}
                 onChange={(e) => setSkillContent(e.target.value)}
@@ -261,11 +254,11 @@ export function SkillsPage() {
           </FieldGroup>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              {t.settings.modelSettings.cancel}
+              {t.skills.cancel}
             </Button>
             <Button onClick={handleSave} disabled={!skillName.trim() || saving}>
               {saving ? <Spinner className="size-4" /> : null}
-              {t.settings.modelSettings.save}
+              {editingSkill ? t.skills.update : t.skills.save}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -275,17 +268,17 @@ export function SkillsPage() {
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t.skills.deleteConfirm || "Delete Skill?"}</DialogTitle>
+            <DialogTitle>{t.skills.deleteConfirm}</DialogTitle>
             <DialogDescription>
-              {t.skills.deleteConfirmDesc || `Are you sure you want to delete "${deleteConfirm}"? This action cannot be undone.`}
+              {t.skills.deleteConfirmDesc}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
-              {t.settings.modelSettings.cancel}
+              {t.skills.cancel}
             </Button>
             <Button variant="destructive" onClick={() => deleteConfirm && handleDelete(deleteConfirm)}>
-              {t.settings.modelSettings.delete}
+              {t.skills.delete}
             </Button>
           </DialogFooter>
         </DialogContent>

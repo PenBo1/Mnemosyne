@@ -18,13 +18,9 @@ import {
 import { getLogLevel, setLogLevel } from "@/services/settings";
 import type { LogLevel } from "@/lib/settings";
 
-const LOG_LEVELS: { value: LogLevel; label: string }[] = [
-  { value: "trace", label: "Trace" },
-  { value: "debug", label: "Debug" },
-  { value: "info", label: "Info" },
-  { value: "warn", label: "Warn" },
-  { value: "error", label: "Error" },
-];
+function getLogLevelLabel(t: ReturnType<typeof useI18n>["t"], level: LogLevel): string {
+  return t.common.logLevels[level] || level;
+}
 
 export function GeneralSettings() {
   const { theme, setTheme } = useTheme();
@@ -128,8 +124,8 @@ export function GeneralSettings() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {LOG_LEVELS.map((level) => (
-                <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>
+              {(["trace", "debug", "info", "warn", "error"] as LogLevel[]).map((level) => (
+                <SelectItem key={level} value={level}>{getLogLevelLabel(t, level)}</SelectItem>
               ))}
             </SelectContent>
           </Select>

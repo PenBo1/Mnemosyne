@@ -26,7 +26,7 @@ export function DashboardPage() {
         setStats(statsData);
         setActivity(activityData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load data");
+        setError(err instanceof Error ? err.message : t.common.failedToLoadData);
       } finally {
         setLoading(false);
       }

@@ -18,17 +18,17 @@ export function SystemSettings() {
       </div>
       <FieldGroup>
         <Field orientation="horizontal">
-          <FieldLabel className="flex-1 text-muted-foreground">App</FieldLabel>
+          <FieldLabel className="flex-1 text-muted-foreground">{t.common.app}</FieldLabel>
           <Badge variant="secondary">Mnemosyne v0.1.0</Badge>
         </Field>
         <Separator />
         <Field orientation="horizontal">
-          <FieldLabel className="flex-1 text-muted-foreground">Framework</FieldLabel>
+          <FieldLabel className="flex-1 text-muted-foreground">{t.common.framework}</FieldLabel>
           <span className="text-sm">Tauri v2 + React 19</span>
         </Field>
         <Separator />
         <Field orientation="horizontal">
-          <FieldLabel className="flex-1 text-muted-foreground">Runtime</FieldLabel>
+          <FieldLabel className="flex-1 text-muted-foreground">{t.common.runtime}</FieldLabel>
           <span className="text-sm">Vite + TypeScript</span>
         </Field>
       </FieldGroup>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -32,15 +32,14 @@ import {
   ClockIcon,
   TreePineIcon,
 } from "lucide-react";
-import { ipc } from "@/lib/ipc";
+import { usePlotPoints } from "@/hooks/usePlotPoints";
 import { PlotTree } from "@/components/visualizations";
 import type { PlotPoint, PlotPointType } from "@/types";
 
 export function PlotPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
-  const [points, setPoints] = useState<PlotPoint[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { points, loading, create, update, remove } = usePlotPoints(activeWorkspaceId);
   const [view, setView] = useState<"outline" | "timeline" | "tree">("outline");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -54,24 +53,6 @@ export function PlotPage() {
   const [formGoals, setFormGoals] = useState("");
   const [formConflicts, setFormConflicts] = useState("");
   const [formOutcome, setFormOutcome] = useState("");
-
-  const loadPoints = useCallback(async () => {
-    if (!activeWorkspaceId) return;
-    setLoading(true);
-    try {
-      const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-      const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-      if (!novel) { setPoints([]); return; }
-      const data = await ipc<PlotPoint[]>("plot_point_list", { novelId: novel.id });
-      setPoints(data);
-    } catch {
-      setPoints([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkspaceId]);
-
-  useEffect(() => { loadPoints(); }, [loadPoints]);
 
   const resetForm = () => {
     setFormTitle(""); setFormDescription(""); setFormType("scene");
@@ -90,22 +71,18 @@ export function PlotPage() {
   };
 
   const handleSave = async () => {
-    if (!activeWorkspaceId || !formTitle.trim()) return;
-    const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-    if (!novel) return;
-
+    if (!formTitle.trim()) return;
     const chapterNum = formChapterNumber ? parseInt(formChapterNumber) : null;
 
     if (isEditing && selected) {
-      await ipc("plot_point_update", {
+      await update({
         id: selected.id, title: formTitle, description: formDescription,
         type: formType, status: formStatus, chapter_number: chapterNum,
         goals: formGoals, conflicts: formConflicts, outcome: formOutcome,
       });
     } else {
-      await ipc("plot_point_create", {
-        novelId: novel.id, type: formType, title: formTitle,
+      await create({
+        type: formType, title: formTitle,
         description: formDescription, status: formStatus,
         chapter_number: chapterNum, goals: formGoals,
         conflicts: formConflicts, outcome: formOutcome,
@@ -113,13 +90,11 @@ export function PlotPage() {
       });
     }
     setDialogOpen(false);
-    await loadPoints();
   };
 
   const handleDelete = async (id: string) => {
-    await ipc("plot_point_delete", { id });
+    await remove(id);
     if (selected?.id === id) setSelected(null);
-    await loadPoints();
   };
 
   const outlineItems = points.filter((p) => p.type === "act" || p.type === "chapter" || p.type === "scene");
@@ -208,7 +183,7 @@ export function PlotPage() {
               onClick={() => openEdit(p)}
             >
               <div className="text-xs text-muted-foreground w-16 text-right shrink-0">
-                {p.chapter_number != null ? `${t.plot.chapterNumber} ${p.chapter_number}` : "—"}
+                {p.chapter_number != null ? `${t.plot.chapterNumber} ${p.chapter_number}` : "\u2014"}
               </div>
               <div className="w-px h-8 bg-border shrink-0" />
               <div className="flex-1 min-w-0">

@@ -74,7 +74,7 @@ export function ModelSettings() {
       setModels(settings.ai.models);
       setActiveModelId(settings.ai.active_model_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load models");
+      setError(err instanceof Error ? err.message : t.common.failedToLoadModels);
     } finally {
       setLoading(false);
     }
@@ -99,7 +99,7 @@ export function ModelSettings() {
       setNewBaseUrl("");
       await loadModels();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add model");
+      setError(err instanceof Error ? err.message : t.common.failedToAddModel);
     } finally {
       setSaving(false);
     }
@@ -111,7 +111,7 @@ export function ModelSettings() {
       await providerService.refreshProviders();
       await loadModels();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete model");
+      setError(err instanceof Error ? err.message : t.common.failedToDeleteModel);
     }
   }
 
@@ -122,7 +122,7 @@ export function ModelSettings() {
       await agentService.restartAgent();
       setActiveModelId(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to set active model");
+      setError(err instanceof Error ? err.message : t.common.failedToSetActiveModel);
     }
   }
 
@@ -174,7 +174,7 @@ export function ModelSettings() {
       setEditingModel(null);
       await loadModels();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update model");
+      setError(err instanceof Error ? err.message : t.common.failedToUpdateModel);
     } finally {
       setSaving(false);
     }
@@ -222,7 +222,7 @@ export function ModelSettings() {
           <CardContent>
             {(() => {
               const active = models.find((m) => m.id === activeModelId);
-              if (!active) return <p className="text-sm text-muted-foreground">No model selected</p>;
+              if (!active) return <p className="text-sm text-muted-foreground">{t.common.noModelSelected}</p>;
               return (
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
@@ -259,7 +259,7 @@ export function ModelSettings() {
                     <CardTitle className="text-base">{model.name}</CardTitle>
                     <Badge variant="secondary" className="text-xs capitalize">{model.provider}</Badge>
                     {activeModelId === model.id && (
-                      <Badge variant="default" className="text-xs">Active</Badge>
+                      <Badge variant="default" className="text-xs">{t.common.active}</Badge>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -296,7 +296,7 @@ export function ModelSettings() {
                   </div>
                 </div>
                 <CardDescription>
-                  {model.model} · {model.base_url || "default URL"}
+                  {model.model} · {model.base_url || t.common.defaultUrl}
                 </CardDescription>
               </CardHeader>
               <CardContent>

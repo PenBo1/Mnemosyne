@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import type { SkillMeta } from "@/types";
+import type { SkillMeta, Skill } from "@/types";
 import * as skillService from "@/services/skill";
 
 export function useSkills() {
@@ -39,6 +39,35 @@ export function useSkills() {
     }
   }, [load]);
 
+  const getSkill = useCallback(async (name: string): Promise<Skill> => {
+    return skillService.getSkill(name);
+  }, []);
+
+  const create = useCallback(async (params: {
+    name: string;
+    description: string;
+    category: string;
+    content: string;
+  }) => {
+    await skillService.createSkill(params);
+    await load();
+  }, [load]);
+
+  const update = useCallback(async (params: {
+    name: string;
+    description: string;
+    category: string;
+    content: string;
+  }) => {
+    await skillService.updateSkill(params);
+    await load();
+  }, [load]);
+
+  const remove = useCallback(async (name: string) => {
+    await skillService.deleteSkill(name);
+    await load();
+  }, [load]);
+
   const filteredSkills = skills.filter(
     (skill) => filterCategory === "all" || skill.category === filterCategory
   );
@@ -51,6 +80,10 @@ export function useSkills() {
     filterCategory,
     setFilterCategory,
     refresh,
+    getSkill,
+    create,
+    update,
+    remove,
     reload: load,
   };
 }

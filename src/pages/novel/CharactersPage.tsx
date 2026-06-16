@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -25,16 +25,14 @@ import {
   NetworkIcon,
   LayoutGridIcon,
 } from "lucide-react";
-import { ipc } from "@/lib/ipc";
+import { useCharacters } from "@/hooks/useCharacters";
 import { CharacterGraph } from "@/components/visualizations";
-import type { Character, CharacterRelationship } from "@/types";
+import type { Character } from "@/types";
 
 export function CharactersPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [relationships, setRelationships] = useState<CharacterRelationship[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { characters, relationships, loading, create, update, remove } = useCharacters(activeWorkspaceId);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Character | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -53,29 +51,6 @@ export function CharactersPage() {
   const [formSkills, setFormSkills] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formTraits, setFormTraits] = useState("");
-
-  const loadCharacters = useCallback(async () => {
-    if (!activeWorkspaceId) return;
-    setLoading(true);
-    try {
-      const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-      const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-      if (!novel) { setCharacters([]); setRelationships([]); return; }
-      const [chars, rels] = await Promise.all([
-        ipc<Character[]>("character_list", { novelId: novel.id }),
-        ipc<CharacterRelationship[]>("character_relationship_list", { novelId: novel.id }).catch(() => []),
-      ]);
-      setCharacters(chars);
-      setRelationships(rels);
-    } catch {
-      setCharacters([]);
-      setRelationships([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkspaceId]);
-
-  useEffect(() => { loadCharacters(); }, [loadCharacters]);
 
   const filtered = characters.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
@@ -107,36 +82,30 @@ export function CharactersPage() {
   };
 
   const handleSave = async () => {
-    if (!activeWorkspaceId || !formName.trim()) return;
-    const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-    if (!novel) return;
-
+    if (!formName.trim()) return;
     const traits = formTraits.split(",").map((s) => s.trim()).filter(Boolean);
 
     if (isEditing && selected) {
-      await ipc("character_update", {
+      await update({
         id: selected.id, name: formName, role: formRole, age: formAge,
         gender: formGender, appearance: formAppearance, personality: formPersonality,
         backstory: formBackstory, motivation: formMotivation, fears: formFears,
         skills: formSkills, description: formDescription, traits,
       });
     } else {
-      await ipc("character_create", {
-        novelId: novel.id, name: formName, role: formRole, age: formAge,
+      await create({
+        name: formName, role: formRole, age: formAge,
         gender: formGender, appearance: formAppearance, personality: formPersonality,
         backstory: formBackstory, motivation: formMotivation, fears: formFears,
         skills: formSkills, description: formDescription, traits,
       });
     }
     setDialogOpen(false);
-    await loadCharacters();
   };
 
   const handleDelete = async (id: string) => {
-    await ipc("character_delete", { id });
+    await remove(id);
     if (selected?.id === id) setSelected(null);
-    await loadCharacters();
   };
 
   return (

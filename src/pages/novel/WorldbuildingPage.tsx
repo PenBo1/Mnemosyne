@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import {
   NetworkIcon,
   LayoutGridIcon,
 } from "lucide-react";
-import { ipc } from "@/lib/ipc";
+import { useWorldSettings } from "@/hooks/useWorldSettings";
 import { WorldNetwork } from "@/components/visualizations";
 import type { WorldSetting, WorldCategory } from "@/types";
 
@@ -37,8 +37,7 @@ const CATEGORIES: WorldCategory[] = [
 export function WorldbuildingPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
-  const [items, setItems] = useState<WorldSetting[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items, loading, create, update, remove } = useWorldSettings(activeWorkspaceId);
   const [category, setCategory] = useState<WorldCategory>("location");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<WorldSetting | null>(null);
@@ -50,24 +49,6 @@ export function WorldbuildingPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formContent, setFormContent] = useState("");
   const [formTags, setFormTags] = useState("");
-
-  const loadItems = useCallback(async () => {
-    if (!activeWorkspaceId) return;
-    setLoading(true);
-    try {
-      const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-      const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-      if (!novel) { setItems([]); return; }
-      const data = await ipc<WorldSetting[]>("world_setting_list", { novelId: novel.id });
-      setItems(data);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkspaceId]);
-
-  useEffect(() => { loadItems(); }, [loadItems]);
 
   const filtered = items.filter(
     (i) => i.category === category && i.name.toLowerCase().includes(search.toLowerCase())
@@ -92,32 +73,26 @@ export function WorldbuildingPage() {
   };
 
   const handleSave = async () => {
-    if (!activeWorkspaceId || !formName.trim()) return;
-    const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-    if (!novel) return;
-
+    if (!formName.trim()) return;
     const tags = formTags.split(",").map((s) => s.trim()).filter(Boolean);
 
     if (isEditing && selected) {
-      await ipc("world_setting_update", {
+      await update({
         id: selected.id, name: formName, description: formDescription,
         content: formContent, tags,
       });
     } else {
-      await ipc("world_setting_create", {
-        novelId: novel.id, category, name: formName,
+      await create({
+        category, name: formName,
         description: formDescription, content: formContent, tags,
       });
     }
     setDialogOpen(false);
-    await loadItems();
   };
 
   const handleDelete = async (id: string) => {
-    await ipc("world_setting_delete", { id });
+    await remove(id);
     if (selected?.id === id) setSelected(null);
-    await loadItems();
   };
 
   return (

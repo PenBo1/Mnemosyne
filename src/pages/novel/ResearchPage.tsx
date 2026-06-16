@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -31,14 +31,13 @@ import {
   SearchIcon,
   ExternalLinkIcon,
 } from "lucide-react";
-import { ipc } from "@/lib/ipc";
+import { useResearchItems } from "@/hooks/useResearchItems";
 import type { ResearchItem, ResearchCategory } from "@/types";
 
 export function ResearchPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
-  const [items, setItems] = useState<ResearchItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items, loading, create, update, remove } = useResearchItems(activeWorkspaceId);
   const [category, setCategory] = useState<ResearchCategory | "all">("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ResearchItem | null>(null);
@@ -50,24 +49,6 @@ export function ResearchPage() {
   const [formCategory, setFormCategory] = useState<ResearchCategory>("note");
   const [formTags, setFormTags] = useState("");
   const [formSourceUrl, setFormSourceUrl] = useState("");
-
-  const loadItems = useCallback(async () => {
-    if (!activeWorkspaceId) return;
-    setLoading(true);
-    try {
-      const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-      const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-      if (!novel) { setItems([]); return; }
-      const data = await ipc<ResearchItem[]>("research_item_list", { novelId: novel.id });
-      setItems(data);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkspaceId]);
-
-  useEffect(() => { loadItems(); }, [loadItems]);
 
   const filtered = items.filter((i) => {
     const matchesCategory = category === "all" || i.category === category;
@@ -90,32 +71,26 @@ export function ResearchPage() {
   };
 
   const handleSave = async () => {
-    if (!activeWorkspaceId || !formTitle.trim()) return;
-    const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-    if (!novel) return;
-
+    if (!formTitle.trim()) return;
     const tags = formTags.split(",").map((s) => s.trim()).filter(Boolean);
 
     if (isEditing && selected) {
-      await ipc("research_item_update", {
+      await update({
         id: selected.id, title: formTitle, content: formContent,
         category: formCategory, tags, source_url: formSourceUrl || null,
       });
     } else {
-      await ipc("research_item_create", {
-        novelId: novel.id, title: formTitle, content: formContent,
+      await create({
+        title: formTitle, content: formContent,
         category: formCategory, tags, source_url: formSourceUrl || null,
       });
     }
     setDialogOpen(false);
-    await loadItems();
   };
 
   const handleDelete = async (id: string) => {
-    await ipc("research_item_delete", { id });
+    await remove(id);
     if (selected?.id === id) setSelected(null);
-    await loadItems();
   };
 
   return (

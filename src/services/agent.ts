@@ -1,5 +1,5 @@
-import { ipc, ipcVoid } from "@/lib/ipc";
-import type { Agent } from "@/types";
+import { ipc } from "@/lib/ipc";
+import type { Agent, Message } from "@/types";
 
 export async function fetchAgents(): Promise<Agent[]> {
   return ipc<Agent[]>("list_agents");
@@ -30,5 +30,9 @@ export async function compactSession(sessionId: string): Promise<void> {
 }
 
 export async function restartAgent(): Promise<void> {
-  return ipcVoid("agent_restart");
+  await ipc<void>("agent_restart");
+}
+
+export async function fetchMessages(sessionId: string): Promise<Message[]> {
+  return ipc<Message[]>("agent_messages", { sessionId });
 }
