@@ -1,38 +1,14 @@
-import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { BarChart3Icon, BookOpenIcon, FileTextIcon, TrendingUpIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { getDailyActivity, getStats } from "@/services/stats";
+import { useDashboard } from "@/hooks/useDashboard";
 import { HeatmapGrid } from "@/components/HeatmapGrid";
-import type { DailyActivity, StatsData } from "@/services/stats";
 
 export function DashboardPage() {
   const { t } = useI18n();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [activity, setActivity] = useState<DailyActivity[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        const [statsData, activityData] = await Promise.all([
-          getStats(),
-          getDailyActivity(),
-        ]);
-        setStats(statsData);
-        setActivity(activityData);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t.common.failedToLoadData);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
+  const { stats, activity, loading, error } = useDashboard();
 
   if (loading) {
     return (

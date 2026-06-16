@@ -217,7 +217,7 @@ export function SkillsPage() {
               <Input
                 value={skillName}
                 onChange={(e) => setSkillName(e.target.value)}
-                placeholder="my-skill"
+                placeholder={t.skills.namePlaceholder}
                 disabled={!!editingSkill}
               />
             </Field>
@@ -226,7 +226,7 @@ export function SkillsPage() {
               <Input
                 value={skillDescription}
                 onChange={(e) => setSkillDescription(e.target.value)}
-                placeholder="A brief description of the skill"
+                placeholder={t.skills.descriptionPlaceholder}
               />
             </Field>
             <Field>

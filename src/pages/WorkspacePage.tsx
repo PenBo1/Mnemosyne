@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,54 +27,22 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { useWorkspaceStore } from "@/stores/workspace";
-import { pickDirectory } from "@/services/workspaces";
+import { useWorkspacePage } from "@/hooks/useWorkspacePage";
 
 export function WorkspacePage() {
   const { t } = useI18n();
-  const { workspaces, loadWorkspaces, addWorkspace, removeWorkspace } = useWorkspaceStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    loadWorkspaces();
-  }, [loadWorkspaces]);
-
-  const handlePickDirectory = async () => {
-    const selected = await pickDirectory();
-    if (selected) {
-      setPath(selected);
-      if (!name) {
-        const folderName = selected.split(/[\\/]/).pop() || "";
-        setName(folderName);
-      }
-    }
-  };
-
-  const handleCreate = async () => {
-    if (!name || !path) return;
-    setLoading(true);
-    try {
-      await addWorkspace(name, path);
-      setDialogOpen(false);
-      setName("");
-      setPath("");
-    } catch (err) {
-      console.error("Failed to create workspace:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await removeWorkspace(id);
-    } catch (err) {
-      console.error("Failed to delete workspace:", err);
-    }
-  };
+  const {
+    workspaces,
+    dialogOpen,
+    setDialogOpen,
+    name,
+    setName,
+    path,
+    loading,
+    handlePickDirectory,
+    handleCreate,
+    handleDelete,
+  } = useWorkspacePage();
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,7 +84,7 @@ export function WorkspacePage() {
                 <div className="flex gap-2">
                   <Input
                     value={path}
-                    onChange={(e) => setPath(e.target.value)}
+                    onChange={(e) => setName(e.target.value)}
                     placeholder={t.sidebar.selectDirectory}
                     readOnly
                   />

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -35,43 +34,34 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import { BookOpenIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, MoreVerticalIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-
-interface KnowledgeEntry {
-  id: string;
-  title: string;
-  content: string;
-  category: string;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
-}
+import { useKnowledge } from "@/hooks/useKnowledge";
+import type { KnowledgeEntry } from "@/types";
 
 const KNOWLEDGE_CATEGORIES = ["writing", "research", "character", "world", "plot", "style", "reference", "other"] as const;
 
 export function KnowledgePage() {
   const { t } = useI18n();
-  const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
-  const [filterCategory, setFilterCategory] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const {
+    entries,
+    loading,
+    filterCategory,
+    setFilterCategory,
+    searchQuery,
+    setSearchQuery,
+    create,
+    update,
+    remove,
+  } = useKnowledge();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<KnowledgeEntry | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("writing");
   const [tagsInput, setTagsInput] = useState("");
-
-  const filteredEntries = useMemo(() => {
-    return entries.filter((entry) => {
-      const matchesCategory = filterCategory === "all" || entry.category === filterCategory;
-      const matchesSearch =
-        searchQuery === "" ||
-        entry.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        entry.content.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
-  }, [entries, filterCategory, searchQuery]);
 
   function openCreate() {
     setEditingEntry(null);
@@ -92,36 +82,19 @@ export function KnowledgePage() {
   }
 
   function handleSave() {
-    const tags = tagsInput
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-
-    const now = new Date().toISOString();
+    const tags = tagsInput.split(",").map((tag) => tag.trim()).filter(Boolean);
+    const params = { title, content, category, tags };
 
     if (editingEntry) {
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id === editingEntry.id ? { ...e, title, content, category, tags, updated_at: now } : e
-        )
-      );
+      update(editingEntry.id, params);
     } else {
-      const newEntry: KnowledgeEntry = {
-        id: crypto.randomUUID(),
-        title,
-        content,
-        category,
-        tags,
-        created_at: now,
-        updated_at: now,
-      };
-      setEntries((prev) => [newEntry, ...prev]);
+      create(params);
     }
     setDialogOpen(false);
   }
 
   function handleDelete(id: string) {
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    remove(id);
   }
 
   return (
@@ -134,75 +107,10 @@ export function KnowledgePage() {
           </h1>
           <p className="text-sm text-muted-foreground">{t.knowledge.description}</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreate}>
-              <PlusIcon data-icon="inline-start" />
-              {t.knowledge.create}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{editingEntry ? t.knowledge.edit : t.knowledge.create}</DialogTitle>
-              <DialogDescription>{t.knowledge.description}</DialogDescription>
-            </DialogHeader>
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="knowledgeTitle">{t.knowledge.title_label}</Label>
-                <Input
-                  id="knowledgeTitle"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={t.knowledge.titlePlaceholder}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="knowledgeContent">{t.knowledge.content}</Label>
-                <Textarea
-                  id="knowledgeContent"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder={t.knowledge.contentPlaceholder}
-                  rows={8}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="knowledgeCategory">{t.knowledge.category}</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger id="knowledgeCategory">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {KNOWLEDGE_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {t.knowledge.categories[cat as keyof typeof t.knowledge.categories]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="knowledgeTags">{t.knowledge.tags}</Label>
-                  <Input
-                    id="knowledgeTags"
-                    value={tagsInput}
-                    onChange={(e) => setTagsInput(e.target.value)}
-                    placeholder={t.knowledge.tagsPlaceholder}
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                {t.knowledge.cancel}
-              </Button>
-              <Button onClick={handleSave} disabled={!title || !content}>
-                {editingEntry ? t.knowledge.update : t.knowledge.save}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={openCreate}>
+          <PlusIcon data-icon="inline-start" />
+          {t.knowledge.create}
+        </Button>
       </div>
 
       <div className="flex items-center gap-4">
@@ -230,7 +138,11 @@ export function KnowledgePage() {
         </Select>
       </div>
 
-      {filteredEntries.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Spinner className="size-6" />
+        </div>
+      ) : entries.length === 0 ? (
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -248,7 +160,7 @@ export function KnowledgePage() {
         </Empty>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredEntries.map((entry) => (
+          {entries.map((entry) => (
             <Card key={entry.id}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
@@ -297,6 +209,67 @@ export function KnowledgePage() {
           ))}
         </div>
       )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingEntry ? t.knowledge.edit : t.knowledge.create}</DialogTitle>
+            <DialogDescription>{t.knowledge.description}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label>{t.knowledge.title_label}</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={t.knowledge.titlePlaceholder}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>{t.knowledge.content}</Label>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder={t.knowledge.contentPlaceholder}
+                rows={8}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>{t.knowledge.category}</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {KNOWLEDGE_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {t.knowledge.categories[cat as keyof typeof t.knowledge.categories]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>{t.knowledge.tags}</Label>
+                <Input
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  placeholder={t.knowledge.tagsPlaceholder}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              {t.knowledge.cancel}
+            </Button>
+            <Button onClick={handleSave} disabled={!title || !content}>
+              {editingEntry ? t.knowledge.update : t.knowledge.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

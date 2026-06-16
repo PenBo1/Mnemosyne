@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { useTheme } from "@/components/providers/Theme";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -11,11 +10,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { GlobeIcon, AlertTriangleIcon } from "lucide-react";
-import {
-  isNotificationsEnabled,
-  setNotificationsEnabled,
-} from "@/services/notifications";
-import { getLogLevel, setLogLevel } from "@/services/settings";
+import { useGeneralSettings } from "@/hooks/useGeneralSettings";
 import type { LogLevel } from "@/lib/settings";
 
 function getLogLevelLabel(t: ReturnType<typeof useI18n>["t"], level: LogLevel): string {
@@ -25,25 +20,13 @@ function getLogLevelLabel(t: ReturnType<typeof useI18n>["t"], level: LogLevel): 
 export function GeneralSettings() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
-  const [notifications, setNotifications] = useState(isNotificationsEnabled);
-  const [logLevel, setLogLevelState] = useState<LogLevel>("info");
-  const [logLevelChanged, setLogLevelChanged] = useState(false);
-
-  useEffect(() => {
-    getLogLevel().then((level) => setLogLevelState(level as LogLevel));
-  }, []);
-
-  function handleNotificationToggle(checked: boolean) {
-    setNotifications(checked);
-    setNotificationsEnabled(checked);
-  }
-
-  async function handleLogLevelChange(level: string) {
-    const newLevel = level as LogLevel;
-    setLogLevelState(newLevel);
-    await setLogLevel(newLevel);
-    setLogLevelChanged(true);
-  }
+  const {
+    notifications,
+    logLevel,
+    logLevelChanged,
+    toggleNotifications,
+    changeLogLevel,
+  } = useGeneralSettings();
 
   return (
     <div className="flex flex-col gap-6">
@@ -107,7 +90,7 @@ export function GeneralSettings() {
             id="notifications"
             size="sm"
             checked={notifications}
-            onCheckedChange={handleNotificationToggle}
+            onCheckedChange={toggleNotifications}
           />
         </Field>
         <Field orientation="horizontal">
@@ -119,7 +102,7 @@ export function GeneralSettings() {
               </span>
             </div>
           </FieldLabel>
-          <Select value={logLevel} onValueChange={handleLogLevelChange}>
+          <Select value={logLevel} onValueChange={changeLogLevel}>
             <SelectTrigger className="w-40" id="log-level">
               <SelectValue />
             </SelectTrigger>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -15,18 +15,6 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import {
   SettingsIcon,
   LayersIcon,
   ArrowLeftIcon,
@@ -41,8 +29,8 @@ import {
   GitBranchIcon,
   ClockIcon,
   BookmarkIcon,
-  PlusIcon,
   Trash2Icon,
+  PlusIcon,
   MessageSquareIcon,
   TrendingUpIcon,
   BookOpenIcon,
@@ -51,13 +39,12 @@ import {
   BotIcon,
   SparklesIcon,
   WrenchIcon,
-  FolderOpenIcon,
   CpuIcon,
 } from "lucide-react";
 import { useAppState, useAppDispatch } from "@/lib/app-context";
-import { useWorkspaceStore } from "@/stores/workspace";
 import { useI18n } from "@/lib/i18n";
-import { pickDirectory } from "@/services/workspaces";
+import { useSidebarWorkspaces } from "@/hooks/useSidebarWorkspaces";
+import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
 import type { AppPage, SettingsTab, WorkspacePage } from "@/types";
 
 const WORKSPACE_SUB_ITEMS: { id: WorkspacePage; labelKey: string; icon: typeof FileTextIcon }[] = [
@@ -86,20 +73,25 @@ const SETTINGS_NAV_ITEMS: { id: SettingsTab; labelKey: string; icon: typeof Glob
 export function AppSidebar() {
   const { currentPage, settingsTab } = useAppState();
   const dispatch = useAppDispatch();
-  const { workspaces, activeWorkspaceId, loadWorkspaces, addWorkspace, removeWorkspace, setActiveWorkspace } =
-    useWorkspaceStore();
   const { t } = useI18n();
+  const {
+    workspaces,
+    activeWorkspaceId,
+    setActiveWorkspace,
+    removeWorkspace,
+    dialogOpen,
+    setDialogOpen,
+    newWorkspaceName,
+    setNewWorkspaceName,
+    newWorkspacePath,
+    setNewWorkspacePath,
+    creating,
+    handlePickDirectory,
+    handleAddWorkspace,
+  } = useSidebarWorkspaces();
   const [expandedWs, setExpandedWs] = useState<string | null>(null);
   const [expandedTools, setExpandedTools] = useState<boolean>(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [newWorkspacePath, setNewWorkspacePath] = useState("");
-  const [creating, setCreating] = useState(false);
   const isSettings = currentPage === "settings";
-
-  useEffect(() => {
-    loadWorkspaces();
-  }, [loadWorkspaces]);
 
   function navigateTo(page: AppPage) {
     dispatch({ type: "SET_PAGE", payload: page });
@@ -107,32 +99,6 @@ export function AppSidebar() {
 
   function setSettingsTab(tab: SettingsTab) {
     dispatch({ type: "SET_SETTINGS_TAB", payload: tab });
-  }
-
-  async function handlePickDirectory() {
-    const selected = await pickDirectory();
-    if (selected) {
-      setNewWorkspacePath(selected);
-      if (!newWorkspaceName) {
-        const folderName = selected.split(/[\\/]/).pop() || "";
-        setNewWorkspaceName(folderName);
-      }
-    }
-  }
-
-  async function handleAddWorkspace() {
-    if (!newWorkspaceName.trim() || !newWorkspacePath) return;
-    setCreating(true);
-    try {
-      await addWorkspace(newWorkspaceName.trim(), newWorkspacePath);
-      setDialogOpen(false);
-      setNewWorkspaceName("");
-      setNewWorkspacePath("");
-    } catch (err) {
-      console.error("Failed to create workspace:", err);
-    } finally {
-      setCreating(false);
-    }
   }
 
   return (
@@ -258,60 +224,17 @@ export function AppSidebar() {
             <SidebarGroup>
               <SidebarGroupLabel className="flex items-center justify-between">
                 <span>{t.sidebar.workspaces}</span>
-                <Dialog open={dialogOpen} onOpenChange={(open) => {
-                  setDialogOpen(open);
-                  if (!open) {
-                    setNewWorkspaceName("");
-                    setNewWorkspacePath("");
-                  }
-                }}>
-                  <DialogTrigger asChild>
-                    <button className="rounded-md p-0.5 hover:bg-sidebar-accent">
-                      <PlusIcon className="size-3.5" />
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{t.sidebar.createWorkspace}</DialogTitle>
-                      <DialogDescription>{t.sidebar.createWorkspaceDesc}</DialogDescription>
-                    </DialogHeader>
-                    <FieldGroup>
-                      <Field>
-                        <FieldLabel>Name</FieldLabel>
-                        <Input
-                          value={newWorkspaceName}
-                          onChange={(e) => setNewWorkspaceName(e.target.value)}
-                          placeholder={t.sidebar.workspaceNamePlaceholder}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && newWorkspacePath) handleAddWorkspace();
-                          }}
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel>Directory</FieldLabel>
-                        <div className="flex gap-2">
-                          <Input
-                            value={newWorkspacePath}
-                            onChange={(e) => setNewWorkspacePath(e.target.value)}
-                            placeholder="Select a directory..."
-                            readOnly
-                          />
-                          <Button variant="outline" onClick={handlePickDirectory} type="button">
-                            <FolderOpenIcon />
-                          </Button>
-                        </div>
-                      </Field>
-                    </FieldGroup>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                        {t.common.cancel}
-                      </Button>
-                      <Button onClick={handleAddWorkspace} disabled={!newWorkspaceName.trim() || !newWorkspacePath || creating}>
-                        {t.common.create}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <CreateWorkspaceDialog
+                  open={dialogOpen}
+                  onOpenChange={setDialogOpen}
+                  name={newWorkspaceName}
+                  onNameChange={setNewWorkspaceName}
+                  path={newWorkspacePath}
+                  onPathChange={setNewWorkspacePath}
+                  creating={creating}
+                  onPickDirectory={handlePickDirectory}
+                  onCreate={handleAddWorkspace}
+                />
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu className="gap-1">
