@@ -19,114 +19,95 @@ function getActivityMap(activities: DailyActivity[]): Map<string, number> {
   return map;
 }
 
-function getIntensityClass(count: number, max: number): string {
-  if (count === 0) return "fill-muted";
+const COLORS = [
+  "#161b22",
+  "#0e4429",
+  "#006d32",
+  "#26a641",
+  "#39d353",
+];
+
+function getColor(count: number, max: number): string {
+  if (count === 0) return COLORS[0];
   const ratio = count / max;
-  if (ratio < 0.25) return "fill-emerald-200 dark:fill-emerald-900";
-  if (ratio < 0.5) return "fill-emerald-400 dark:fill-emerald-700";
-  if (ratio < 0.75) return "fill-emerald-500 dark:fill-emerald-500";
-  return "fill-emerald-700 dark:fill-emerald-300";
+  if (ratio < 0.25) return COLORS[1];
+  if (ratio < 0.5) return COLORS[2];
+  if (ratio < 0.75) return COLORS[3];
+  return COLORS[4];
 }
 
-interface HeatmapData {
-  weeks: (string | null)[][];
-  monthLabels: { label: string; weekIndex: number }[];
-  maxCount: number;
-}
+const CELL = 11;
+const GAP = 3;
+const LABEL_W = 28;
 
-function buildHeatmapData(dates: string[], activityMap: Map<string, number>): HeatmapData {
+function buildGrid(dates: string[], activityMap: Map<string, number>) {
   const weeks: (string | null)[][] = [];
-  let currentWeek: (string | null)[] = [];
-
-  for (const date of dates) {
-    const dayOfWeek = new Date(date + "T00:00:00").getDay();
-    if (dayOfWeek === 0 && currentWeek.length > 0) {
-      while (currentWeek.length < 7) currentWeek.push(null);
-      weeks.push(currentWeek);
-      currentWeek = [];
+  let week: (string | null)[] = [];
+  for (const d of dates) {
+    const dow = new Date(d + "T00:00:00").getDay();
+    if (dow === 0 && week.length > 0) {
+      while (week.length < 7) week.push(null);
+      weeks.push(week);
+      week = [];
     }
-    currentWeek.push(date);
+    week.push(d);
   }
-  if (currentWeek.length > 0) {
-    while (currentWeek.length < 7) currentWeek.push(null);
-    weeks.push(currentWeek);
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
   }
 
-  const monthLabels: { label: string; weekIndex: number }[] = [];
-  let lastMonth = -1;
-  for (let w = 0; w < weeks.length; w++) {
-    for (const date of weeks[w]) {
-      if (date) {
-        const month = new Date(date + "T00:00:00").getMonth();
-        if (month !== lastMonth) {
-          monthLabels.push({
-            label: new Date(date + "T00:00:00").toLocaleDateString("en-US", { month: "short" }),
-            weekIndex: w,
-          });
-          lastMonth = month;
+  const months: { label: string; col: number }[] = [];
+  let lastM = -1;
+  for (let c = 0; c < weeks.length; c++) {
+    for (const d of weeks[c]) {
+      if (d) {
+        const m = new Date(d + "T00:00:00").getMonth();
+        if (m !== lastM) {
+          months.push({ label: new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short" }), col: c });
+          lastM = m;
         }
         break;
       }
     }
   }
 
-  const maxCount = Math.max(1, ...dates.map((d) => activityMap.get(d) || 0));
-  return { weeks, monthLabels, maxCount };
+  const max = Math.max(1, ...dates.map((d) => activityMap.get(d) || 0));
+  return { weeks, months, max };
 }
 
-const WEEKDAYS = ["", "Mon", "", "Wed", "", "Fri", ""];
-const CELL_SIZE = 11;
-const CELL_GAP = 3;
+const DOW = ["", "Mon", "", "Wed", "", "Fri", ""];
 
-export function HeatmapGrid({
-  data,
-  title,
-  emptyMessage,
-}: {
-  data: DailyActivity[];
-  title: string;
-  emptyMessage: string;
-}) {
+export function HeatmapGrid({ data, title, emptyMessage }: { data: DailyActivity[]; title: string; emptyMessage: string }) {
   const { t } = useI18n();
-  const activityMap = useMemo(() => getActivityMap(data), [data]);
+  const map = useMemo(() => getActivityMap(data), [data]);
 
   const dates = useMemo(() => {
-    const result: string[] = [];
+    const r: string[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const start = new Date(today);
-    start.setFullYear(start.getFullYear() - 1);
-    start.setDate(start.getDate() + 1);
-    const current = new Date(start);
-    while (current <= today) {
-      result.push(current.toISOString().split("T")[0]);
-      current.setDate(current.getDate() + 1);
+    const s = new Date(today);
+    s.setFullYear(s.getFullYear() - 1);
+    s.setDate(s.getDate() + 1);
+    const c = new Date(s);
+    while (c <= today) {
+      r.push(c.toISOString().split("T")[0]);
+      c.setDate(c.getDate() + 1);
     }
-    return result;
+    return r;
   }, []);
 
-  const { weeks, monthLabels, maxCount } = useMemo(
-    () => buildHeatmapData(dates, activityMap),
-    [dates, activityMap]
-  );
-
-  const totalContributions = data.reduce((sum, d) => sum + d.count, 0);
+  const { weeks, months, max } = useMemo(() => buildGrid(dates, map), [dates, map]);
+  const total = data.reduce((s, d) => s + d.count, 0);
 
   if (data.length === 0) {
     return (
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{title}</CardTitle></CardHeader>
         <CardContent>
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia>
-                <EmptyTitle>{emptyMessage}</EmptyTitle>
-              </EmptyMedia>
-              <EmptyDescription>{t.dashboard.heatmap.startHint}</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <Empty><EmptyHeader><EmptyMedia><EmptyTitle>{emptyMessage}</EmptyTitle></EmptyMedia>
+            <EmptyDescription>{t.dashboard.heatmap.startHint}</EmptyDescription>
+          </EmptyHeader></Empty>
         </CardContent>
       </Card>
     );
@@ -137,94 +118,53 @@ export function HeatmapGrid({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium">{title}</CardTitle>
-          <Badge variant="secondary" className="text-xs">
-            {totalContributions.toLocaleString()} {t.dashboard.heatmap.contributions}
-          </Badge>
+          <Badge variant="secondary" className="text-xs">{total.toLocaleString()} {t.dashboard.heatmap.contributions}</Badge>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <div className="inline-flex flex-col gap-0.5">
-            {/* Month labels row */}
-            <div className="flex" style={{ marginLeft: 28 }}>
-              {monthLabels.map((m, i) => (
-                <div
-                  key={i}
-                  className="text-[10px] text-muted-foreground"
-                  style={{ width: (weeks.length - m.weekIndex) * (CELL_SIZE + CELL_GAP), minWidth: 0 }}
-                >
+      <CardContent className="overflow-x-auto">
+        <div style={{ display: "inline-flex", flexDirection: "column", gap: GAP }}>
+          {/* month labels */}
+          <div style={{ display: "flex", marginLeft: LABEL_W }}>
+            {months.map((m, i) => {
+              const nextCol = i + 1 < months.length ? months[i + 1]!.col : weeks.length;
+              return (
+                <div key={i} style={{ width: (nextCol - m.col) * (CELL + GAP), fontSize: 10, color: "#8b949e" }}>
                   {m.label}
                 </div>
+              );
+            })}
+          </div>
+
+          {/* grid */}
+          <div style={{ display: "flex", gap: GAP }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: GAP, marginRight: 4 }}>
+              {DOW.map((l, i) => (
+                <div key={i} style={{ width: LABEL_W, height: CELL, fontSize: 10, color: "#8b949e", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4 }}>{l}</div>
               ))}
             </div>
-
-            {/* Grid row */}
-            <div className="flex items-start gap-0.5">
-              {/* Weekday labels */}
-              <div className="flex flex-col" style={{ gap: CELL_GAP }}>
-                {WEEKDAYS.map((label, i) => (
+            {weeks.map((w, wi) => (
+              <div key={wi} style={{ display: "flex", flexDirection: "column", gap: GAP }}>
+                {w.map((d, di) => (
                   <div
-                    key={i}
-                    className="text-[10px] text-muted-foreground flex items-center justify-end pr-1"
-                    style={{ width: 24, height: CELL_SIZE }}
-                  >
-                    {label}
-                  </div>
+                    key={di}
+                    title={d ? `${d}: ${map.get(d) || 0}` : ""}
+                    style={{
+                      width: CELL, height: CELL, borderRadius: 2,
+                      backgroundColor: d ? getColor(map.get(d) || 0, max) : "transparent",
+                    }}
+                  />
                 ))}
               </div>
+            ))}
+          </div>
 
-              {/* Grid cells */}
-              {weeks.map((week, wi) => (
-                <div key={wi} className="flex flex-col" style={{ gap: CELL_GAP }}>
-                  {week.map((date, di) => {
-                    if (!date) {
-                      return (
-                        <div
-                          key={di}
-                          className="fill-transparent"
-                          style={{ width: CELL_SIZE, height: CELL_SIZE }}
-                        />
-                      );
-                    }
-                    const count = activityMap.get(date) || 0;
-                    const cls = getIntensityClass(count, maxCount);
-                    return (
-                      <svg
-                        key={di}
-                        width={CELL_SIZE}
-                        height={CELL_SIZE}
-                        className={cls}
-                        style={{ borderRadius: 2 }}
-                      >
-                        <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
-                        <title>{`${date}: ${count}`}</title>
-                      </svg>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            {/* Legend */}
-            <div className="flex items-center gap-1 mt-1" style={{ marginLeft: 28 }}>
-              <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.less}</span>
-              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-muted" style={{ borderRadius: 2 }}>
-                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
-              </svg>
-              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-200 dark:fill-emerald-900" style={{ borderRadius: 2 }}>
-                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
-              </svg>
-              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-400 dark:fill-emerald-700" style={{ borderRadius: 2 }}>
-                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
-              </svg>
-              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-500 dark:fill-emerald-500" style={{ borderRadius: 2 }}>
-                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
-              </svg>
-              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-700 dark:fill-emerald-300" style={{ borderRadius: 2 }}>
-                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
-              </svg>
-              <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.more}</span>
-            </div>
+          {/* legend */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: LABEL_W, marginTop: 4 }}>
+            <span style={{ fontSize: 10, color: "#8b949e" }}>{t.dashboard.heatmap.less}</span>
+            {COLORS.map((c, i) => (
+              <div key={i} style={{ width: CELL, height: CELL, borderRadius: 2, backgroundColor: c }} />
+            ))}
+            <span style={{ fontSize: 10, color: "#8b949e" }}>{t.dashboard.heatmap.more}</span>
           </div>
         </div>
       </CardContent>
