@@ -1,10 +1,12 @@
 import { AppProvider } from "@/lib/app-context";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   return (
     <AppProvider>
       <AppLayout />
+      <Toaster />
     </AppProvider>
   );
 }
