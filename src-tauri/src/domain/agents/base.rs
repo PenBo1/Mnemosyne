@@ -1,70 +1,61 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
-use super::types::{AgentInput, AgentOutput, AgentRole};
+use crate::infra::llm::{Provider, types::Message};
+use std::sync::Arc;
 
-/// Context passed to every agent execution.
+use super::types::{AgentRole, LlmResponse};
+
+/// Context passed to every agent execution
+#[derive(Clone)]
 pub struct AgentContext {
-    pub book_id: String,
-    pub chapter_number: u32,
+    pub provider: Arc<dyn Provider>,
+    pub model: String,
     pub project_root: std::path::PathBuf,
+    pub book_id: Option<String>,
 }
 
-/// The core trait that all agents must implement.
+/// Base trait for all pipeline agents.
 ///
-/// Each agent represents a specialized role in the novel-writing pipeline.
-/// Agents are stateless — all state lives in the pipeline context and
-/// the structured state files on disk.
+/// Agents are stateless — all state lives in the pipeline context
+/// and the structured state files on disk.
 #[async_trait]
 pub trait BaseAgent: Send + Sync {
-    /// The role identifier (e.g., "planner", "writer", "auditor").
+    /// The role identifier
     fn role(&self) -> AgentRole;
 
-    /// Human-readable name.
+    /// Human-readable name
     fn name(&self) -> &str;
 
-    /// What this agent does.
-    fn description(&self) -> &str;
-
-    /// Execute the agent with the given input.
-    async fn execute(
+    /// Call the LLM with system + user messages
+    async fn chat(
         &self,
         ctx: &AgentContext,
-        input: AgentInput,
-    ) -> Result<AgentOutput, AppError>;
-
-    // ── Lifecycle hooks (optional, have default no-op impls) ──
-
-    /// Called before the agent starts processing a turn.
-    async fn on_turn_start(&self, _ctx: &AgentContext) -> Result<(), AppError> {
-        Ok(())
-    }
-
-    /// Called after the agent finishes processing a turn.
-    async fn on_turn_end(
-        &self,
-        _ctx: &AgentContext,
-        _output: &AgentOutput,
-    ) -> Result<(), AppError> {
-        Ok(())
-    }
-
-    /// Called when an error occurs during execution.
-    async fn on_error(
-        &self,
-        _ctx: &AgentContext,
-        _error: &AppError,
-    ) -> Result<(), AppError> {
-        Ok(())
-    }
-
-    /// Build the system prompt for this agent.
-    /// Override to provide a custom prompt instead of using config.
-    fn build_system_prompt(&self, _ctx: &AgentContext) -> Option<String> {
-        None
-    }
-
-    /// Validate the agent's output before returning it.
-    fn validate_output(&self, _output: &AgentOutput) -> Result<(), AppError> {
-        Ok(())
+        system: &str,
+        user: &str,
+    ) -> Result<LlmResponse, AppError> {
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: user.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+        let start = std::time::Instant::now();
+        let content = ctx
+            .provider
+            .complete(&ctx.model, system, &messages)
+            .await?;
+        let elapsed = start.elapsed().as_millis();
+        tracing::debug!(
+            agent = self.name(),
+            response_len = content.len(),
+            elapsed_ms = elapsed,
+            "LLM call completed"
+        );
+        Ok(LlmResponse {
+            content,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        })
     }
 }

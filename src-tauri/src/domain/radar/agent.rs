@@ -133,18 +133,16 @@ fn parse_radar_json(content: &str) -> Result<RadarResult, AppError> {
     let recommendations: Vec<RadarRecommendation> = parsed["recommendations"]
         .as_array()
         .map(|arr| {
-            arr.iter().filter_map(|item| {
-                Some(RadarRecommendation {
-                    platform: item["platform"].as_str().unwrap_or("").to_string(),
-                    genre: item["genre"].as_str().unwrap_or("").to_string(),
-                    concept: item["concept"].as_str().unwrap_or("").to_string(),
-                    confidence: item["confidence"].as_f64().unwrap_or(0.5),
-                    reasoning: item["reasoning"].as_str().unwrap_or("").to_string(),
-                    benchmark_titles: item["benchmark_titles"]
-                        .as_array()
-                        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                        .unwrap_or_default(),
-                })
+            arr.iter().map(|item| RadarRecommendation {
+                platform: item["platform"].as_str().unwrap_or("").to_string(),
+                genre: item["genre"].as_str().unwrap_or("").to_string(),
+                concept: item["concept"].as_str().unwrap_or("").to_string(),
+                confidence: item["confidence"].as_f64().unwrap_or(0.5),
+                reasoning: item["reasoning"].as_str().unwrap_or("").to_string(),
+                benchmark_titles: item["benchmark_titles"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
             }).collect()
         })
         .unwrap_or_default();

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crate::errors::AppError;
-use crate::domain::agents::types::{StoryState, BookConfig, ChapterMeta, RuntimeStateDelta};
-use super::reducer::apply_delta;
+use crate::domain::story::{StoryState, BookConfig, ChapterMeta};
+use super::runtime_state::RuntimeStateDelta;
 
 /// Manages story state on disk with file locking, snapshots, and rollback.
 pub struct StateManager {
@@ -104,7 +104,94 @@ impl StateManager {
         delta: &RuntimeStateDelta,
     ) -> Result<StoryState, AppError> {
         let mut state = self.load_state(book_id)?;
-        apply_delta(&mut state, delta, chapter);
+        // Apply hook operations from delta
+        for op in &delta.hook_ops {
+            match op.op {
+                super::runtime_state::HookOpType::Upsert => {
+                    if let Some(existing) = state.hooks.iter_mut().find(|h| h.name == op.name) {
+                        existing.last_advanced_chapter = chapter;
+                        existing.updated_at = chrono::Utc::now().to_rfc3339();
+                        if let Some(status) = &op.status {
+                            use crate::domain::story::HookStatus;
+                            existing.status = match status.as_str() {
+                                "open" | "Open" => HookStatus::Open,
+                                "progressing" | "Progressing" => HookStatus::Progressing,
+                                "deferred" | "Deferred" => HookStatus::Deferred,
+                                "resolved" | "Resolved" => HookStatus::Resolved,
+                                _ => existing.status.clone(),
+                            };
+                        }
+                        if let Some(desc) = &op.description {
+                            if !desc.is_empty() {
+                                existing.expected_payoff = desc.clone();
+                            }
+                        }
+                    } else {
+                        let hook_type = op.hook_type.clone().unwrap_or_else(|| "foreshadowing".to_string());
+                        state.hooks.push(crate::domain::story::HookRecord {
+                            hook_id: uuid::Uuid::new_v4().to_string(),
+                            name: op.name.clone(),
+                            hook_type,
+                            start_chapter: chapter,
+                            status: Default::default(),
+                            expected_payoff: op.description.clone().unwrap_or_default(),
+                            last_advanced_chapter: chapter,
+                            core_hook: false,
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                            updated_at: chrono::Utc::now().to_rfc3339(),
+                        });
+                    }
+                }
+                super::runtime_state::HookOpType::Mention => {
+                    if let Some(hook) = state.hooks.iter_mut().find(|h| h.name == op.name) {
+                        hook.last_advanced_chapter = chapter;
+                        hook.updated_at = chrono::Utc::now().to_rfc3339();
+                    }
+                }
+                super::runtime_state::HookOpType::Resolve => {
+                    if let Some(hook) = state.hooks.iter_mut().find(|h| h.name == op.name) {
+                        hook.status = crate::domain::story::HookStatus::Resolved;
+                        hook.last_advanced_chapter = chapter;
+                        hook.updated_at = chrono::Utc::now().to_rfc3339();
+                    }
+                }
+                super::runtime_state::HookOpType::Defer => {
+                    if let Some(hook) = state.hooks.iter_mut().find(|h| h.name == op.name) {
+                        hook.status = crate::domain::story::HookStatus::Deferred;
+                        hook.last_advanced_chapter = chapter;
+                        hook.updated_at = chrono::Utc::now().to_rfc3339();
+                    }
+                }
+            }
+        }
+        // Add new facts
+        for fact in &delta.facts_new {
+            state.facts.push(crate::domain::story::StoryFact {
+                fact_id: uuid::Uuid::new_v4().to_string(),
+                subject: fact.subject.clone(),
+                predicate: fact.predicate.clone(),
+                object: fact.object.clone(),
+                valid_from_chapter: chapter,
+                valid_until_chapter: None,
+                source_chapter: chapter,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            });
+        }
+        // Update chapter summary
+        if let Some(summary) = &delta.chapter_summary {
+            state.summaries.push(crate::domain::story::ChapterSummary {
+                chapter: summary.chapter,
+                title: summary.title.clone(),
+                characters: summary.characters.clone(),
+                events: summary.events.clone(),
+                state_changes: summary.state_changes.clone(),
+                hook_activity: summary.hook_activity.clone(),
+                mood: summary.mood.clone(),
+                chapter_type: summary.chapter_type.clone(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            });
+        }
+        state.current_chapter = chapter;
         self.save_state(book_id, &state)?;
         Ok(state)
     }
@@ -136,14 +223,12 @@ impl StateManager {
         // Remove chapters after the rollback point
         let chapters_dir = self.chapters_dir(book_id);
         if chapters_dir.exists() {
-            for entry in std::fs::read_dir(&chapters_dir).into_iter().flatten() {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
-                        if let Ok(num) = name.parse::<u32>() {
-                            if num > chapter {
-                                let _ = std::fs::remove_file(&path);
-                            }
+            for entry in std::fs::read_dir(&chapters_dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
+                    if let Ok(num) = name.parse::<u32>() {
+                        if num > chapter {
+                            let _ = std::fs::remove_file(&path);
                         }
                     }
                 }
@@ -153,15 +238,13 @@ impl StateManager {
         // Remove snapshots after the rollback point
         let snapshots_dir = self.snapshots_dir(book_id);
         if snapshots_dir.exists() {
-            for entry in std::fs::read_dir(&snapshots_dir).into_iter().flatten() {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
-                        if let Some(num_str) = name.strip_prefix("chapter_") {
-                            if let Ok(num) = num_str.parse::<u32>() {
-                                if num > chapter {
-                                    let _ = std::fs::remove_file(&path);
-                                }
+            for entry in std::fs::read_dir(&snapshots_dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
+                    if let Some(num_str) = name.strip_prefix("chapter_") {
+                        if let Ok(num) = num_str.parse::<u32>() {
+                            if num > chapter {
+                                let _ = std::fs::remove_file(&path);
                             }
                         }
                     }

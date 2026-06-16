@@ -1,4 +1,4 @@
 pub mod manager;
-pub mod reducer;
+pub mod runtime_state;
 
 pub use manager::StateManager;

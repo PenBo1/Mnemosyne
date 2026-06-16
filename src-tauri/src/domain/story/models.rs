@@ -119,25 +119,13 @@ pub struct StoryFact {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StoryState {
     pub current_chapter: u32,
     pub total_words: u32,
     pub hooks: Vec<HookRecord>,
     pub summaries: Vec<ChapterSummary>,
     pub facts: Vec<StoryFact>,
-}
-
-impl Default for StoryState {
-    fn default() -> Self {
-        Self {
-            current_chapter: 0,
-            total_words: 0,
-            hooks: Vec::new(),
-            summaries: Vec::new(),
-            facts: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

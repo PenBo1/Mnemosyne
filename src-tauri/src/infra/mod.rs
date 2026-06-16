@@ -4,3 +4,5 @@ pub mod llm;
 pub mod db;
 pub mod sandbox;
 pub mod skill;
+pub mod epub;
+pub mod secrets;

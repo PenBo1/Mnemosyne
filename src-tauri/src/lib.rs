@@ -7,10 +7,8 @@ pub mod middleware;
 
 use crate::infra::data_dir::DataDir;
 use crate::infra::db::Database;
-use crate::domain::harness::{GlobalHarnessConfig, AgentConfigManager};
 use crate::infra::llm::ProviderRegistry;
 use crate::infra::skill::SkillManager;
-use crate::domain::tools::ToolRegistry;
 use crate::infra::sandbox::enforce::SandboxEnforcer;
 use crate::infra::sandbox::policy::SandboxPolicy;
 use crate::app::state::AppState;
@@ -40,7 +38,6 @@ pub fn run() {
             tracing::info!(path = %db_path.display(), "Opening database");
             let database = Database::new(db_path.to_str().unwrap())
                 .expect("failed to open database");
-            database.seed_default_agents().expect("failed to seed default agents");
             tracing::info!("Database initialized");
 
             let provider_registry = ProviderRegistry::new(&data_dir);
@@ -57,14 +54,6 @@ pub fn run() {
             let skill_count = skill_manager.list().len();
             tracing::info!(count = skill_count, "Skills discovered");
 
-            let tool_registry = Arc::new(ToolRegistry::new(app_dir.clone()));
-
-            let global_harness = GlobalHarnessConfig::new();
-            tracing::info!(version = %global_harness.project().version, "Global harness loaded (embedded)");
-
-            let agent_configs = AgentConfigManager::new();
-            tracing::info!(count = agent_configs.all().len(), "Agent configs loaded (embedded)");
-
             let db_arc = Arc::new(tokio::sync::Mutex::new(database));
             let sandbox_policy = SandboxPolicy::restricted();
             let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
@@ -75,11 +64,7 @@ pub fn run() {
                 db: db_arc,
                 provider_registry: tokio::sync::Mutex::new(provider_registry),
                 skill_manager: tokio::sync::Mutex::new(skill_manager),
-                tool_registry,
                 sandbox: tokio::sync::Mutex::new(sandbox_enforcer),
-                global_harness: tokio::sync::Mutex::new(global_harness),
-                agent_configs: tokio::sync::Mutex::new(agent_configs),
-                agent_handle: tokio::sync::Mutex::new(None),
                 app_handle,
             });
 
@@ -129,8 +114,15 @@ pub fn run() {
             app::commands::novels_pipeline::novel_plan,
             app::commands::novels_pipeline::novel_audit,
             app::commands::novels_pipeline::novel_revise,
-            app::commands::novels_pipeline::novel_observe,
-            app::commands::novels_pipeline::novel_reflect,
+            app::commands::notifications::send_notification,
+            app::commands::radar::radar_scan,
+            app::commands::radar::radar_history,
+            app::commands::radar::radar_delete,
+            app::commands::sandbox::sandbox_status,
+            app::commands::sandbox::sandbox_validate_file,
+            app::commands::sandbox::sandbox_validate_command,
+            app::commands::sandbox::sandbox_validate_network,
+            app::commands::sandbox::sandbox_get_policy,
             app::commands::agent::agent_send_message,
             app::commands::agent::agent_approve_tool,
             app::commands::agent::agent_cancel,
@@ -139,15 +131,8 @@ pub fn run() {
             app::commands::agent_config::list_agents,
             app::commands::agent_config::update_agent,
             app::commands::agent_config::toggle_agent_status,
-            app::commands::sandbox::sandbox_status,
-            app::commands::sandbox::sandbox_validate_file,
-            app::commands::sandbox::sandbox_validate_command,
-            app::commands::sandbox::sandbox_validate_network,
-            app::commands::sandbox::sandbox_get_policy,
-            app::commands::radar::radar_scan,
-            app::commands::radar::radar_history,
-            app::commands::radar::radar_delete,
-            app::commands::notifications::send_notification,
+            app::commands::novels_pipeline::novel_observe,
+            app::commands::novels_pipeline::novel_reflect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

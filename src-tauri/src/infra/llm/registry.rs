@@ -103,7 +103,7 @@ impl ProviderRegistry {
             }
         }
 
-        // Also check env vars (override saved config)
+        // Register from env vars (override saved config)
         if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
             if !api_key.is_empty() && !providers.contains_key("openai") {
                 let base_url = std::env::var("OPENAI_BASE_URL").ok();
@@ -116,6 +116,19 @@ impl ProviderRegistry {
                 let base_url = std::env::var("AGNES_BASE_URL").ok();
                 providers.insert("agnes".to_string(), Arc::new(AgnesProvider::new(api_key, base_url)));
                 tracing::info!("Agnes provider registered from env var");
+            }
+        }
+        if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+            if !api_key.is_empty() && !providers.contains_key("anthropic") {
+                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                providers.insert("anthropic".to_string(), Arc::new(super::anthropic::AnthropicProvider::new(api_key, base_url)));
+                tracing::info!("Anthropic provider registered from env var");
+            }
+        }
+        if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
+            if !api_key.is_empty() && !providers.contains_key("deepseek") {
+                providers.insert("deepseek".to_string(), Arc::new(OpenAiProvider::new(api_key, Some("https://api.deepseek.com".to_string()))));
+                tracing::info!("DeepSeek provider registered from env var");
             }
         }
 
@@ -207,6 +220,7 @@ impl ProviderRegistry {
         use super::openai::OpenAiProvider;
         use super::ollama::OllamaProvider;
         use super::agnes::AgnesProvider;
+        use super::anthropic::AnthropicProvider;
         use std::sync::Arc;
 
         let provider: Arc<dyn Provider> = match provider_name {
@@ -220,6 +234,14 @@ impl ProviderRegistry {
             "agnes" => Arc::new(AgnesProvider::new(
                 api_key.to_string(),
                 if base_url.is_empty() { None } else { Some(base_url.to_string()) },
+            )),
+            "anthropic" => Arc::new(AnthropicProvider::new(
+                api_key.to_string(),
+                if base_url.is_empty() { None } else { Some(base_url.to_string()) },
+            )),
+            "deepseek" => Arc::new(OpenAiProvider::new(
+                api_key.to_string(),
+                Some(if base_url.is_empty() { "https://api.deepseek.com".to_string() } else { base_url.to_string() }),
             )),
             _ => return Err(AppError::bad_request(format!("Unknown provider: {}", provider_name))),
         };

@@ -1,5 +1,26 @@
-pub mod base;
 pub mod types;
+pub mod base;
+pub mod governance;
+pub mod architect;
+pub mod foundation_reviewer;
+pub mod planner;
+pub mod composer;
+pub mod writer;
+pub mod continuity;
+pub mod reviser;
+pub mod length_normalizer;
+pub mod observer;
+pub mod prompts;
 
-pub use base::{AgentContext, BaseAgent};
 pub use types::*;
+pub use base::{AgentContext, BaseAgent};
+pub use governance::*;
+pub use architect::ArchitectAgent;
+pub use foundation_reviewer::FoundationReviewerAgent;
+pub use planner::PlannerAgent;
+pub use composer::ComposerAgent;
+pub use writer::WriterAgent;
+pub use continuity::ContinuityAuditor;
+pub use reviser::ReviserAgent;
+pub use length_normalizer::LengthNormalizerAgent;
+pub use observer::ObserverAgent;

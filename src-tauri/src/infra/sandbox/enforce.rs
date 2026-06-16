@@ -72,7 +72,7 @@ impl SandboxEnforcer {
     }
 
     /// 验证文件操作是否允许
-    pub fn validate_file_operation(&self, path: &PathBuf, is_write: bool) -> Result<(), Violation> {
+    pub fn validate_file_operation(&self, path: &std::path::Path, is_write: bool) -> Result<(), Violation> {
         // 检查路径遍历攻击
         if !self.fs_sandbox.is_path_traversal_safe(path) {
             return Err(Violation {
