@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useAgentStore } from "@/stores/agent";
 import * as agentService from "@/services/agent";
-import type { AgentEvent } from "@/types";
+import { onAgentEvent } from "@/services/agent-events";
 
 export function useAgent(sessionId: string | null) {
   const store = useAgentStore();
@@ -20,17 +19,12 @@ export function useAgent(sessionId: string | null) {
     if (!sessionId) return;
 
     let cancelled = false;
-    let unlistenFn: UnlistenFn | null = null;
+    let unlistenFn: (() => void) | null = null;
 
     const setup = async () => {
       try {
-        unlistenFn = await listen<AgentEvent>("agent-event", (event) => {
+        unlistenFn = await onAgentEvent(sessionId, (payload) => {
           if (cancelled) return;
-          const payload = event.payload;
-
-          if (payload.session_id !== sessionIdRef.current) {
-            return;
-          }
 
           switch (payload.type) {
             case "TurnStarted":
