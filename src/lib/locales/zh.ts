@@ -251,12 +251,18 @@ export default {
   dashboard: {
     title: "仪表盘",
     description: "活动概览与统计",
+    stats: {
+      novels: "小说",
+      prompts: "提示词",
+      trends: "趋势",
+      words: "总字数",
+    },
     heatmap: {
-      chat: "对话",
-      novel: "小说创作",
-      emptyChat: "暂无对话记录",
-      emptyNovel: "暂无创作记录",
+      title: "活动热力图",
+      overview: "活动热力图",
+      empty: "暂无活动记录",
       startHint: "开始使用后，这里将显示活动热力图",
+      contributions: "次贡献",
       less: "少",
       more: "多",
     },

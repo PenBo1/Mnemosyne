@@ -252,12 +252,18 @@ export default {
   dashboard: {
     title: "Dashboard",
     description: "Activity overview and statistics",
+    stats: {
+      novels: "Novels",
+      prompts: "Prompts",
+      trends: "Trends",
+      words: "Total Words",
+    },
     heatmap: {
-      chat: "Chat",
-      novel: "Novel Writing",
-      emptyChat: "No chat records yet",
-      emptyNovel: "No writing records yet",
+      title: "Activity Heatmap",
+      overview: "Activity Heatmap",
+      empty: "No activity records yet",
       startHint: "Activity heatmap will appear here once you start using",
+      contributions: "contributions",
       less: "Less",
       more: "More",
     },

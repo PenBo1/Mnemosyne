@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { BarChart3Icon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Empty,
   EmptyDescription,
@@ -8,6 +8,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { useI18n } from "@/lib/i18n";
 import type { DailyActivity } from "@/services/stats";
 
 function getActivityMap(activities: DailyActivity[]): Map<string, number> {
@@ -27,16 +28,13 @@ function getIntensityLevel(count: number, max: number): number {
   return 4;
 }
 
-function getIntensityClass(level: number): string {
-  switch (level) {
-    case 0: return "bg-muted";
-    case 1: return "bg-chart-5";
-    case 2: return "bg-chart-4";
-    case 3: return "bg-chart-3";
-    case 4: return "bg-chart-2";
-    default: return "bg-muted";
-  }
-}
+const INTENSITY_CLASSES = [
+  "bg-muted",
+  "bg-emerald-200 dark:bg-emerald-900",
+  "bg-emerald-400 dark:bg-emerald-700",
+  "bg-emerald-500 dark:bg-emerald-500",
+  "bg-emerald-700 dark:bg-emerald-300",
+];
 
 interface HeatmapData {
   weeks: (string | null)[][];
@@ -51,18 +49,14 @@ function buildHeatmapData(dates: string[], activityMap: Map<string, number>): He
   for (const date of dates) {
     const dayOfWeek = new Date(date + "T00:00:00").getDay();
     if (dayOfWeek === 0 && currentWeek.length > 0) {
-      while (currentWeek.length < 7) {
-        currentWeek.push(null);
-      }
+      while (currentWeek.length < 7) currentWeek.push(null);
       weeks.push(currentWeek);
       currentWeek = [];
     }
     currentWeek.push(date);
   }
   if (currentWeek.length > 0) {
-    while (currentWeek.length < 7) {
-      currentWeek.push(null);
-    }
+    while (currentWeek.length < 7) currentWeek.push(null);
     weeks.push(currentWeek);
   }
 
@@ -71,11 +65,10 @@ function buildHeatmapData(dates: string[], activityMap: Map<string, number>): He
   for (let w = 0; w < weeks.length; w++) {
     for (const date of weeks[w]) {
       if (date) {
-        const d = new Date(date + "T00:00:00");
-        const month = d.getMonth();
+        const month = new Date(date + "T00:00:00").getMonth();
         if (month !== lastMonth) {
           monthLabels.push({
-            label: d.toLocaleDateString("en-US", { month: "short" }),
+            label: new Date(date + "T00:00:00").toLocaleDateString("en-US", { month: "short" }),
             weekIndex: w,
           });
           lastMonth = month;
@@ -85,13 +78,12 @@ function buildHeatmapData(dates: string[], activityMap: Map<string, number>): He
     }
   }
 
-  const counts = dates.map((d) => activityMap.get(d) || 0);
-  const maxCount = Math.max(1, ...counts);
-
+  const maxCount = Math.max(1, ...dates.map((d) => activityMap.get(d) || 0));
   return { weeks, monthLabels, maxCount };
 }
 
-const WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
+const WEEKDAYS = ["", "Mon", "", "Wed", "", "Fri", ""];
+const CELL_SIZE = 13;
 
 export function HeatmapGrid({
   data,
@@ -109,14 +101,11 @@ export function HeatmapGrid({
     const result: string[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const endDate = new Date(today);
-
-    const startDate = new Date(endDate);
-    startDate.setFullYear(startDate.getFullYear() - 1);
-    startDate.setDate(startDate.getDate() + 1);
-
-    const current = new Date(startDate);
-    while (current <= endDate) {
+    const start = new Date(today);
+    start.setFullYear(start.getFullYear() - 1);
+    start.setDate(start.getDate() + 1);
+    const current = new Date(start);
+    while (current <= today) {
       result.push(current.toISOString().split("T")[0]);
       current.setDate(current.getDate() + 1);
     }
@@ -128,106 +117,108 @@ export function HeatmapGrid({
     [dates, activityMap]
   );
 
+  const totalContributions = data.reduce((sum, d) => sum + d.count, 0);
+
   if (data.length === 0) {
     return (
-      <div className="rounded-lg border bg-card p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <BarChart3Icon className="size-4 text-muted-foreground" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            {title}
-          </h3>
-        </div>
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia>
-              <EmptyTitle>{emptyMessage}</EmptyTitle>
-            </EmptyMedia>
-            <EmptyDescription>{t.dashboard.heatmap.startHint}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia>
+                <EmptyTitle>{emptyMessage}</EmptyTitle>
+              </EmptyMedia>
+              <EmptyDescription>{t.dashboard.heatmap.startHint}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </CardContent>
+      </Card>
     );
   }
 
-  const CELL_SIZE = 13;
-
   return (
-    <div className="rounded-lg border bg-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart3Icon className="size-4 text-muted-foreground" />
-        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          {title}
-        </h3>
-      </div>
-
-      <div className="overflow-x-auto">
-        <div className="inline-block">
-          <div className="flex ml-7 mb-1">
-            {monthLabels.map((m, i) => (
-              <div
-                key={i}
-                className="text-[10px] text-muted-foreground"
-                style={{
-                  position: "absolute",
-                  marginLeft: `${m.weekIndex * CELL_SIZE}px`,
-                }}
-              >
-                {m.label}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex">
-            <div className="flex flex-col mr-1">
-              {[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          <Badge variant="secondary" className="text-xs">
+            {totalContributions.toLocaleString()} {t.dashboard.heatmap.contributions}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <div className="inline-block">
+            {/* Month labels */}
+            <div className="flex ml-7 mb-1">
+              {monthLabels.map((m, i) => (
                 <div
-                  key={dayIndex}
-                  className="text-[10px] text-muted-foreground flex items-center justify-end"
-                  style={{ width: "24px", height: `${CELL_SIZE}px` }}
+                  key={i}
+                  className="text-[10px] text-muted-foreground"
+                  style={{ position: "absolute", marginLeft: `${m.weekIndex * CELL_SIZE}px` }}
                 >
-                  {WEEKDAY_LABELS[dayIndex]}
+                  {m.label}
                 </div>
               ))}
             </div>
-            {weeks.map((week, weekIndex) => (
-              <div key={weekIndex} className="flex flex-col">
-                {week.map((date, dayIndex) => {
-                  if (!date) {
+
+            {/* Grid */}
+            <div className="flex">
+              <div className="flex flex-col mr-1">
+                {WEEKDAYS.map((label, i) => (
+                  <div
+                    key={i}
+                    className="text-[10px] text-muted-foreground flex items-center justify-end"
+                    style={{ width: "24px", height: `${CELL_SIZE}px` }}
+                  >
+                    {label}
+                  </div>
+                ))}
+              </div>
+              {weeks.map((week, wi) => (
+                <div key={wi} className="flex flex-col">
+                  {week.map((date, di) => {
+                    if (!date) {
+                      return (
+                        <div
+                          key={di}
+                          style={{ width: CELL_SIZE, height: CELL_SIZE }}
+                        />
+                      );
+                    }
+                    const count = activityMap.get(date) || 0;
+                    const level = getIntensityLevel(count, maxCount);
                     return (
                       <div
-                        key={dayIndex}
-                        style={{ width: `${CELL_SIZE}px`, height: `${CELL_SIZE}px` }}
+                        key={di}
+                        className={`rounded-[3px] ${INTENSITY_CLASSES[level]}`}
+                        style={{ width: CELL_SIZE, height: CELL_SIZE }}
+                        title={`${date}: ${count}`}
                       />
                     );
-                  }
-                  const count = activityMap.get(date) || 0;
-                  const level = getIntensityLevel(count, maxCount);
-                  return (
-                    <div
-                      key={dayIndex}
-                      className={`rounded-[3px] ${getIntensityClass(level)}`}
-                      style={{ width: `${CELL_SIZE}px`, height: `${CELL_SIZE}px` }}
-                      title={`${date}: ${count}`}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+                  })}
+                </div>
+              ))}
+            </div>
 
-          <div className="flex items-center gap-1 mt-3 ml-7">
-            <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.less}</span>
-            {[0, 1, 2, 3, 4].map((level) => (
-              <div
-                key={level}
-                className={`rounded-[3px] ${getIntensityClass(level)}`}
-                style={{ width: `${CELL_SIZE}px`, height: `${CELL_SIZE}px` }}
-              />
-            ))}
-            <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.more}</span>
+            {/* Legend */}
+            <div className="flex items-center gap-1 mt-2 ml-7">
+              <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.less}</span>
+              {INTENSITY_CLASSES.map((cls, i) => (
+                <div
+                  key={i}
+                  className={`rounded-[3px] ${cls}`}
+                  style={{ width: CELL_SIZE, height: CELL_SIZE }}
+                />
+              ))}
+              <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.more}</span>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
