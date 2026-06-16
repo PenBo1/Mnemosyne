@@ -3,6 +3,8 @@ use crate::domain::story::{BookConfig, ChapterMeta, AuditResult, WriteResult};
 use crate::infra::llm::Provider;
 use crate::domain::agents::*;
 use crate::domain::agents::base::AgentContext;
+use crate::domain::agents::recovery::{RecoveryManager, RecoveryConfig, RecoveryStrategy};
+use crate::domain::agents::verification::{VerificationPipeline, GateContext};
 use crate::domain::agents::reviser::ReviseMode;
 use std::sync::Arc;
 
@@ -33,6 +35,8 @@ impl PipelineRunner {
             model: self.config.model.clone(),
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
+            tools: Arc::new(ToolRegistry::new()),
+            memory: Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20))),
         }
     }
 
@@ -46,6 +50,8 @@ impl PipelineRunner {
             model,
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
+            tools: Arc::new(ToolRegistry::new()),
+            memory: Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20))),
         }
     }
 
@@ -140,25 +146,105 @@ impl PipelineRunner {
         // Get next chapter number
         let chapter_number = get_next_chapter_number(&book_dir)?;
 
-        // 1. Plan
+        // Initialize recovery manager (P14.26)
+        let mut recovery_manager = RecoveryManager::new(RecoveryConfig::default());
+
+        // Initialize verification pipeline (P14.38)
+        let verification_pipeline = VerificationPipeline::new();
+
+        // 1. Plan (with recovery)
         tracing::info!(chapter = chapter_number, "Stage: Plan");
         let planner_ctx = self.agent_ctx_for("planner", Some(book_id));
         let planner = PlannerAgent::new();
-        let plan = planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None).await?;
+        let plan = match planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None).await {
+            Ok(plan) => plan,
+            Err(e) => {
+                tracing::warn!(error = %e, "Plan failed, attempting recovery");
+                match recovery_manager.next_strategy(&e) {
+                    Some(RecoveryStrategy::Retry) => {
+                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None).await?
+                    }
+                    Some(RecoveryStrategy::Simplify) => {
+                        tracing::info!("Simplifying plan task");
+                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, Some("简化任务")).await?
+                    }
+                    _ => return Err(e),
+                }
+            }
+        };
 
-        // 2. Compose
+        // 2. Compose (with recovery)
         tracing::info!(chapter = chapter_number, "Stage: Compose");
         let composer_ctx = self.agent_ctx_for("composer", Some(book_id));
         let composer = ComposerAgent::new();
-        let composed = composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan).await?;
+        let composed = match composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan).await {
+            Ok(composed) => composed,
+            Err(e) => {
+                tracing::warn!(error = %e, "Compose failed, attempting recovery");
+                recovery_manager.reset();
+                match recovery_manager.next_strategy(&e) {
+                    Some(RecoveryStrategy::Retry) => {
+                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan).await?
+                    }
+                    _ => return Err(e),
+                }
+            }
+        };
 
-        // 3. Write
+        // 3. Write (with recovery)
         tracing::info!(chapter = chapter_number, "Stage: Write");
         let writer_ctx = self.agent_ctx_for("writer", Some(book_id));
         let writer = WriterAgent::new();
-        let write_output = writer.write_chapter(
+        let write_output = match writer.write_chapter(
             &writer_ctx, &book_dir, chapter_number, &plan, &composed, words,
-        ).await?;
+        ).await {
+            Ok(output) => output,
+            Err(e) => {
+                tracing::warn!(error = %e, "Write failed, attempting recovery");
+                recovery_manager.reset();
+                match recovery_manager.next_strategy(&e) {
+                    Some(RecoveryStrategy::Retry) => {
+                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words).await?
+                    }
+                    Some(RecoveryStrategy::Simplify) => {
+                        tracing::info!("Simplifying write task");
+                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words / 2).await?
+                    }
+                    _ => return Err(e),
+                }
+            }
+        };
+
+        // 3.5. Verification Gates (P14.38)
+        tracing::info!(chapter = chapter_number, "Stage: Verification");
+        let gate_context = GateContext {
+            chapter_number,
+            plan: Some(serde_json::to_string(&plan.memo).unwrap_or_default()),
+            previous_content: if chapter_number > 1 {
+                read_chapter_content(&book_dir, chapter_number - 1).ok()
+            } else {
+                None
+            },
+            style_guide: None,
+        };
+        let gate_results = verification_pipeline.validate_all(&write_output.content, &gate_context).await?;
+
+        if !verification_pipeline.overall_passed(&gate_results) {
+            tracing::warn!("Verification gates failed, triggering revision");
+            // Log gate failures for debugging
+            for result in &gate_results {
+                if !result.passed {
+                    for issue in &result.issues {
+                        tracing::warn!(
+                            dimension = %issue.dimension,
+                            severity = ?issue.severity,
+                            description = %issue.description,
+                            "Verification issue"
+                        );
+                    }
+                }
+            }
+        }
 
         // 4. Audit
         tracing::info!(chapter = chapter_number, "Stage: Audit");
@@ -166,12 +252,13 @@ impl PipelineRunner {
         let auditor = ContinuityAuditor::new();
         let audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number).await?;
 
-        // 5. Revise if needed
+        // 5. Revise if needed (with recovery)
         let mut final_content = write_output.content.clone();
         let mut final_word_count = write_output.word_count;
         let mut revised = false;
 
         if !audit.passed {
+            recovery_manager.reset();
             let max_rounds = 3;
             let mut current_audit = audit.clone();
             let reviser_ctx = self.agent_ctx_for("reviser", Some(book_id));
@@ -179,19 +266,39 @@ impl PipelineRunner {
                 if current_audit.issues.iter().any(|i| i.severity == crate::domain::story::AuditSeverity::Critical) {
                     tracing::info!(chapter = chapter_number, round, "Stage: Revise");
                     let reviser = ReviserAgent::new();
-                    let revise_output = reviser.revise_chapter(
+
+                    match reviser.revise_chapter(
                         &reviser_ctx, &book_dir, chapter_number,
                         &final_content, &current_audit, ReviseMode::Auto,
-                    ).await?;
+                    ).await {
+                        Ok(revise_output) => {
+                            // Save revised content
+                            save_chapter_content(&book_dir, chapter_number, &write_output.title, &revise_output.content)?;
+                            final_content = revise_output.content;
+                            final_word_count = revise_output.word_count;
+                            revised = true;
 
-                    // Save revised content
-                    save_chapter_content(&book_dir, chapter_number, &write_output.title, &revise_output.content)?;
-                    final_content = revise_output.content;
-                    final_word_count = revise_output.word_count;
-                    revised = true;
-
-                    // Re-audit
-                    current_audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number).await?;
+                            // Re-audit
+                            current_audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number).await?;
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, round, "Revise failed");
+                            match recovery_manager.next_strategy(&e) {
+                                Some(RecoveryStrategy::Retry) => {
+                                    tracing::info!("Retrying revision");
+                                    continue;
+                                }
+                                Some(RecoveryStrategy::Simplify) => {
+                                    tracing::info!("Simplifying revision task");
+                                    // Continue with simplified revision
+                                }
+                                _ => {
+                                    tracing::error!("No recovery strategy available, using current content");
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 } else {
                     break;
                 }

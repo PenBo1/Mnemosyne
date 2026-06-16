@@ -1,8 +1,14 @@
 import { create } from "zustand";
-import type { WorkspaceState } from "@/types";
+import { toast } from "sonner";
+import type { WorkspaceState, Workspace } from "@/types";
 import * as workspaceService from "@/services/workspaces";
 
-export const useWorkspaceStore = create<WorkspaceState>((set) => ({
+// Optimistic update helper
+function generateTempId(): string {
+  return `temp_ws_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
   workspaces: [],
   activeWorkspaceId: null,
   loading: false,
@@ -19,33 +25,65 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     }
   },
 
+  // Optimistic add workspace (P2 - immediate UI update)
   addWorkspace: async (name: string, path?: string) => {
-    set({ error: null });
+    const tempId = generateTempId();
+    const optimisticWorkspace: Workspace = {
+      id: tempId,
+      name,
+      path: path || "",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Optimistic update: immediately show in UI
+    set((state) => ({
+      workspaces: [optimisticWorkspace, ...state.workspaces],
+      error: null,
+    }));
+
     try {
       const workspace = await workspaceService.createWorkspace({ name, path });
+      // Replace optimistic data with real data
       set((state) => ({
-        workspaces: [workspace, ...state.workspaces],
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === tempId ? workspace : ws
+        ),
       }));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create workspace";
-      set({ error: message });
+      // Rollback optimistic update
+      set((state) => ({
+        workspaces: state.workspaces.filter((ws) => ws.id !== tempId),
+        error: err instanceof Error ? err.message : "Failed to create workspace",
+      }));
+      toast.error("Failed to create workspace");
       throw err;
     }
   },
 
+  // Optimistic remove workspace (P2 - immediate UI update)
   removeWorkspace: async (id: string) => {
-    set({ error: null });
+    // Optimistic update: immediately remove from UI
+    const previousWorkspaces = _get().workspaces;
+    const previousActiveId = _get().activeWorkspaceId;
+
+    set((state) => ({
+      workspaces: state.workspaces.filter((ws) => ws.id !== id),
+      activeWorkspaceId:
+        state.activeWorkspaceId === id ? null : state.activeWorkspaceId,
+      error: null,
+    }));
+
     try {
       await workspaceService.deleteWorkspace(id);
-      set((state) => ({
-        workspaces: state.workspaces.filter((ws) => ws.id !== id),
-        activeWorkspaceId:
-          state.activeWorkspaceId === id ? null : state.activeWorkspaceId,
-      }));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete workspace";
-      set({ error: message });
-      throw err;
+      // Rollback on failure
+      set({
+        workspaces: previousWorkspaces,
+        activeWorkspaceId: previousActiveId,
+        error: err instanceof Error ? err.message : "Failed to delete workspace",
+      });
+      toast.error("Failed to delete workspace");
     }
   },
 

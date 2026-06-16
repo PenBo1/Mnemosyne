@@ -1,0 +1,40 @@
+[agent]
+role = "writer"
+name = "writer"
+description = "Generates chapter prose following the plan and context"
+
+[prompt]
+template_file = "prompts/writer.md"
+variables = { target_words = "3000", language = "zh" }
+
+[tools]
+allowed = ["read_chapter", "read_character", "search_memory", "read_knowledge"]
+denied = ["write_chapter", "delete_chapter"]
+
+[context]
+required = ["chapter_plan", "character_profiles", "story_state"]
+optional = ["recent_chapters", "world_settings"]
+token_budget = 8000
+
+[output]
+format = "markdown_with_sections"
+validation = "check_chapter_structure"
+
+[constraints]
+must_do = [
+    "follow_chapter_plan",
+    "maintain_character_voice",
+    "preserve_continuity",
+    "end_with_hook"
+]
+must_not_do = [
+    "introduce_new_characters",
+    "change_established_settings",
+    "use_ai_flavored_phrases",
+    "break_pov_consistency"
+]
+style_rules = [
+    "avoid_cliche_transitions",
+    "use_varied_sentence_lengths",
+    "show_dont_tell"
+]

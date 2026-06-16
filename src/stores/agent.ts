@@ -3,6 +3,11 @@ import { toast } from "sonner";
 import type { Session, Message } from "@/types";
 import * as sessionService from "@/services/session";
 
+// Optimistic update helper (P2 from AI Engineering curriculum)
+function generateTempId(): string {
+  return `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
 interface AgentState {
   sessions: Session[];
   currentSessionId: string | null;
@@ -47,17 +52,52 @@ export const useAgentStore = create<AgentState>((set, _get) => ({
     }
   },
 
+  // Optimistic create session (P2 - immediate UI update)
   createSession: async (novelId?: string, title?: string) => {
-    const session = await sessionService.createSession(novelId, title);
+    const tempId = generateTempId();
+    const optimisticSession: Session = {
+      id: tempId,
+      title: title || "New Session",
+      novel_id: novelId || null,
+      summary: null,
+      message_count: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cost: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Optimistic update: immediately show in UI
     set((state) => ({
-      sessions: [session, ...state.sessions],
-      currentSessionId: session.id,
+      sessions: [optimisticSession, ...state.sessions],
+      currentSessionId: tempId,
       messages: [],
       streamingContent: "",
       streaming: false,
       error: null,
     }));
-    return session;
+
+    try {
+      const session = await sessionService.createSession(novelId, title);
+      // Replace optimistic data with real data
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === tempId ? session : s
+        ),
+        currentSessionId: session.id,
+      }));
+      return session;
+    } catch (err) {
+      // Rollback optimistic update
+      set((state) => ({
+        sessions: state.sessions.filter((s) => s.id !== tempId),
+        currentSessionId: null,
+        error: err instanceof Error ? err.message : "Failed to create session",
+      }));
+      toast.error("Failed to create session");
+      throw err;
+    }
   },
 
   switchSession: async (sessionId: string) => {
@@ -72,14 +112,30 @@ export const useAgentStore = create<AgentState>((set, _get) => ({
     }
   },
 
+  // Optimistic delete session (P2 - immediate UI update)
   deleteSession: async (sessionId: string) => {
-    await sessionService.deleteSession(sessionId);
+    // Optimistic update: immediately remove from UI
+    const previousSessions = _get().sessions;
+    const previousCurrentId = _get().currentSessionId;
+
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== sessionId),
       currentSessionId:
         state.currentSessionId === sessionId ? null : state.currentSessionId,
       messages: state.currentSessionId === sessionId ? [] : state.messages,
     }));
+
+    try {
+      await sessionService.deleteSession(sessionId);
+    } catch (err) {
+      // Rollback on failure
+      set({
+        sessions: previousSessions,
+        currentSessionId: previousCurrentId,
+        error: err instanceof Error ? err.message : "Failed to delete session",
+      });
+      toast.error("Failed to delete session");
+    }
   },
 
   loadMessages: async (sessionId: string) => {

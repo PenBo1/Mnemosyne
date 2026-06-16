@@ -1,5 +1,8 @@
 pub mod types;
 pub mod base;
+pub mod config;
+pub mod verification;
+pub mod recovery;
 pub mod governance;
 pub mod architect;
 pub mod foundation_reviewer;
@@ -13,7 +16,8 @@ pub mod observer;
 pub mod prompts;
 
 pub use types::*;
-pub use base::{AgentContext, BaseAgent};
+pub use base::{AgentContext, BaseAgent, ToolCall, ToolResult, ToolRegistry, ToolExecutor, MemoryEntry, MemoryType, MemorySystem};
+pub use config::AgentConfig;
 pub use governance::*;
 pub use architect::ArchitectAgent;
 pub use foundation_reviewer::FoundationReviewerAgent;
