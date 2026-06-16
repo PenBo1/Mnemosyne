@@ -36,7 +36,7 @@ import type { SkillMeta, Skill } from "@/types";
 
 export function SkillsPage() {
   const { t } = useI18n();
-  const { skills, loading, error, filterCategory, setFilterCategory, refresh, getSkill, create, update, remove } = useSkills();
+  const { skills, loading, filterCategory, setFilterCategory, refresh, getSkill, create, update, remove } = useSkills();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
@@ -135,12 +135,6 @@ export function SkillsPage() {
             </Button>
         </div>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-8">

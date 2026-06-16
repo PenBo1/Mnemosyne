@@ -8,7 +8,7 @@ import { HeatmapGrid } from "@/components/HeatmapGrid";
 
 export function DashboardPage() {
   const { t } = useI18n();
-  const { stats, activity, loading, error } = useDashboard();
+  const { stats, activity, loading } = useDashboard();
 
   if (loading) {
     return (
@@ -20,17 +20,6 @@ export function DashboardPage() {
           ))}
         </div>
         <Skeleton className="h-48" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-bold tracking-tight">{t.dashboard.title}</h1>
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
       </div>
     );
   }

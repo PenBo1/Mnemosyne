@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import type { RadarScan } from "@/types";
 import * as radarService from "@/services/radar";
 
@@ -35,6 +36,7 @@ export function useRadar() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Scan failed";
       setError(message);
+      toast.error(message);
     } finally {
       setScanning(false);
     }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import type { AiModelConfig } from "@/lib/settings";
 import * as settingsStore from "@/lib/settings";
 import * as providerService from "@/services/providers";
@@ -19,6 +20,7 @@ export function useModelSettings() {
       setActiveModelId(settings.ai.active_model_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load models");
+      toast.error(err instanceof Error ? err.message : "Failed to load models");
     } finally {
       setLoading(false);
     }

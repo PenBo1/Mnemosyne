@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import * as agentService from "@/services/agent";
 import { onAgentEvent } from "@/services/agent-events";
@@ -48,6 +49,7 @@ export function useAgent(sessionId: string | null) {
             case "Error":
               setStreaming(false);
               setError(payload.error || "Unknown error");
+              toast.error(payload.error || "Unknown error");
               break;
 
             case "ToolCallBegin":
@@ -58,6 +60,7 @@ export function useAgent(sessionId: string | null) {
         });
       } catch {
         setError("Failed to setup event listener");
+        toast.error("Failed to setup event listener");
       }
     };
 
@@ -75,6 +78,7 @@ export function useAgent(sessionId: string | null) {
     async (content: string) => {
       if (!sessionId) {
         setError("Please create or select a session first");
+        toast.error("Please create or select a session first");
         return;
       }
 
@@ -99,6 +103,7 @@ export function useAgent(sessionId: string | null) {
       } catch (err) {
         setStreaming(false);
         setError(err instanceof Error ? err.message : "Failed to send message");
+        toast.error(err instanceof Error ? err.message : "Failed to send message");
       }
     },
     [sessionId, appendMessage, clearStreamingContent, setStreaming, setError]
@@ -110,6 +115,7 @@ export function useAgent(sessionId: string | null) {
         await agentService.approveTool(toolCallId, approved);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to approve tool");
+        toast.error(err instanceof Error ? err.message : "Failed to approve tool");
       }
     },
     [setError]

@@ -44,7 +44,7 @@ const CATEGORIES = ["general", "writing", "character", "world", "dialogue", "sty
 
 export function PromptsSettings() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
-  const { prompts, loading, error, create, update, remove } = usePrompts(filterCategory === "all" ? undefined : filterCategory);
+  const { prompts, loading, create, update, remove } = usePrompts(filterCategory === "all" ? undefined : filterCategory);
   const { t } = useI18n();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<{ id: string; name: string; content: string; category: string } | null>(null);
@@ -163,12 +163,6 @@ export function PromptsSettings() {
           </Dialog>
         </div>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-8">

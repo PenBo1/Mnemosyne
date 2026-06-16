@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import type { Session, Message } from "@/types";
 import * as sessionService from "@/services/session";
 
@@ -42,6 +43,7 @@ export const useAgentStore = create<AgentState>((set, _get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load sessions";
       set({ error: message, loading: false });
+      toast.error(message);
     }
   },
 
@@ -66,6 +68,7 @@ export const useAgentStore = create<AgentState>((set, _get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load messages";
       set({ error: message, loading: false });
+      toast.error(message);
     }
   },
 

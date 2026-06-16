@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { getStats, getDailyActivity } from "@/services/stats";
 import type { StatsData, DailyActivity } from "@/services/stats";
 
@@ -20,6 +21,7 @@ export function useDashboard() {
       setActivity(activityData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
+      toast.error(err instanceof Error ? err.message : "Failed to load data");
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
 import type { Novel } from "@/types";
 import * as novelsService from "@/services/novel";
 
@@ -16,6 +17,7 @@ export function useNovels(workspaceId?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load novels";
       setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -41,6 +43,7 @@ export function useNovels(workspaceId?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create novel";
       setError(message);
+      toast.error(message);
       throw err;
     }
   }, [workspaceId, load]);
@@ -53,6 +56,7 @@ export function useNovels(workspaceId?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete novel";
       setError(message);
+      toast.error(message);
       throw err;
     }
   }, [load]);

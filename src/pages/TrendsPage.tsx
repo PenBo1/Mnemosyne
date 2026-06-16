@@ -21,7 +21,6 @@ import {
   MoreVerticalIcon,
   ClockIcon,
   TrendingUpIcon,
-  AlertTriangleIcon,
   BookOpenIcon,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
@@ -101,13 +100,6 @@ export function TrendsPage() {
           {scanning ? t.trends.scanning : t.trends.scan}
         </Button>
       </div>
-
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          <AlertTriangleIcon className="size-4 shrink-0" />
-          {error}
-        </div>
-      )}
 
       {currentResult && (
         <div className="space-y-6">

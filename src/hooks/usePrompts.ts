@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import type { Prompt } from "@/types";
 import * as promptsService from "@/services/prompts";
 
@@ -16,6 +17,7 @@ export function usePrompts(filterCategory?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load prompts";
       setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -33,6 +35,7 @@ export function usePrompts(filterCategory?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create prompt";
       setError(message);
+      toast.error(message);
       throw err;
     }
   }, [load]);
@@ -45,6 +48,7 @@ export function usePrompts(filterCategory?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update prompt";
       setError(message);
+      toast.error(message);
       throw err;
     }
   }, [load]);
@@ -57,6 +61,7 @@ export function usePrompts(filterCategory?: string) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete prompt";
       setError(message);
+      toast.error(message);
       throw err;
     }
   }, [load]);

@@ -58,7 +58,7 @@ const ROLE_ICONS: Record<string, LucideIcon> = {
 
 export function AgentsSettings() {
   const { t } = useI18n();
-  const { agents, models, loading, error, update, toggleStatus } = useAgents();
+  const { agents, models, loading, update, toggleStatus } = useAgents();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [model, setModel] = useState("gpt-4");
@@ -102,10 +102,6 @@ export function AgentsSettings() {
 
       {loading && (
         <p className="text-sm text-muted-foreground">{t.common.loading}</p>
-      )}
-
-      {error && (
-        <p className="text-sm text-destructive">{error}</p>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

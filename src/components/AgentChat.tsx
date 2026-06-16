@@ -15,7 +15,7 @@ export function AgentChat({ novelId }: AgentChatProps) {
   const { t } = useI18n();
   const { sessions, currentSession, create, switch: switchSession } = useSession(novelId);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const { messages, streaming, streamingContent, error, loading, sendMessage, cancel } = useAgent(sessionId);
+  const { messages, streaming, streamingContent, loading, sendMessage, cancel } = useAgent(sessionId);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -207,13 +207,6 @@ export function AgentChat({ novelId }: AgentChatProps) {
           )}
         </div>
       </ScrollArea>
-
-      {/* Error */}
-      {error && (
-        <div className="px-3 py-2 text-xs text-destructive bg-destructive/10 border-t">
-          {error}
-        </div>
-      )}
 
       {/* Input */}
       <div className="p-3 border-t">

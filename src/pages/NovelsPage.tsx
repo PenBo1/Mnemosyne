@@ -67,7 +67,7 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
   const { t } = useI18n();
   const { workspaces, activeWorkspaceId } = useWorkspaceStore();
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId);
-  const { novels, loading, error, create, remove } = useNovels(activeWorkspaceId || undefined);
+  const { novels, loading, create, remove } = useNovels(activeWorkspaceId || undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [genre, setGenre] = useState("fantasy");
@@ -169,12 +169,6 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
           </DialogContent>
         </Dialog>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-8">

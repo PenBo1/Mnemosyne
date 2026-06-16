@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import type { SkillMeta, Skill } from "@/types";
 import * as skillService from "@/services/skill";
 
@@ -17,6 +18,7 @@ export function useSkills() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load skills";
       setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -34,6 +36,7 @@ export function useSkills() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to refresh skills";
       setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }

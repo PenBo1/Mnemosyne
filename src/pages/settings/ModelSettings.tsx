@@ -24,7 +24,6 @@ export function ModelSettings() {
     models,
     activeModelId,
     loading,
-    error,
     removeModel,
     setActiveModel,
     testConnection,
@@ -90,12 +89,6 @@ export function ModelSettings() {
           {t.settings.modelSettings.addProvider}
         </Button>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
 
       {activeModelId && (() => {
         const active = models.find((m) => m.id === activeModelId);
