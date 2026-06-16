@@ -26,18 +26,39 @@ export function usePrompts(filterCategory?: string) {
   }, [load]);
 
   const create = useCallback(async (name: string, content: string, category: string) => {
-    await promptsService.createPrompt(name, content, category, []);
-    await load();
+    setError(null);
+    try {
+      await promptsService.createPrompt(name, content, category, []);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create prompt";
+      setError(message);
+      throw err;
+    }
   }, [load]);
 
   const update = useCallback(async (id: string, name: string, content: string, category: string) => {
-    await promptsService.updatePrompt(id, name, content, category);
-    await load();
+    setError(null);
+    try {
+      await promptsService.updatePrompt(id, name, content, category);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update prompt";
+      setError(message);
+      throw err;
+    }
   }, [load]);
 
   const remove = useCallback(async (id: string) => {
-    await promptsService.deletePrompt(id);
-    await load();
+    setError(null);
+    try {
+      await promptsService.deletePrompt(id);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete prompt";
+      setError(message);
+      throw err;
+    }
   }, [load]);
 
   return { prompts, loading, error, create, update, remove, reload: load };

@@ -67,7 +67,7 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
   const { t } = useI18n();
   const { workspaces, activeWorkspaceId } = useWorkspaceStore();
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId);
-  const { novels, loading, create, remove } = useNovels(activeWorkspaceId || undefined);
+  const { novels, loading, error, create, remove } = useNovels(activeWorkspaceId || undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [genre, setGenre] = useState("fantasy");
@@ -76,22 +76,14 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
   const totalChapters = novels.reduce((sum, n) => sum + n.chapter_count, 0);
 
   async function handleCreate() {
-    try {
-      await create(title, genre);
-      setDialogOpen(false);
-      setTitle("");
-      setGenre("fantasy");
-    } catch (err) {
-      console.error("Failed to create novel:", err);
-    }
+    await create(title, genre);
+    setDialogOpen(false);
+    setTitle("");
+    setGenre("fantasy");
   }
 
   async function handleDelete(id: string) {
-    try {
-      await remove(id);
-    } catch (err) {
-      console.error("Failed to delete novel:", err);
-    }
+    await remove(id);
   }
 
   if (!activeWorkspaceId) {
@@ -177,6 +169,12 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
           </DialogContent>
         </Dialog>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-8">

@@ -34,13 +34,27 @@ export function useNovels(workspaceId?: string) {
     if (!workspaceId) {
       throw new Error("No workspace selected");
     }
-    await novelsService.createNovelList(workspaceId, title, genre);
-    await load();
+    setError(null);
+    try {
+      await novelsService.createNovelList(workspaceId, title, genre);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create novel";
+      setError(message);
+      throw err;
+    }
   }, [workspaceId, load]);
 
   const remove = useCallback(async (id: string) => {
-    await novelsService.deleteNovel(id);
-    await load();
+    setError(null);
+    try {
+      await novelsService.deleteNovel(id);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete novel";
+      setError(message);
+      throw err;
+    }
   }, [load]);
 
   return { novels: filteredNovels, loading, error, create, remove, reload: load };
