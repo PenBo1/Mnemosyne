@@ -19,22 +19,14 @@ function getActivityMap(activities: DailyActivity[]): Map<string, number> {
   return map;
 }
 
-function getIntensityLevel(count: number, max: number): number {
-  if (count === 0) return 0;
+function getIntensityClass(count: number, max: number): string {
+  if (count === 0) return "fill-muted";
   const ratio = count / max;
-  if (ratio < 0.25) return 1;
-  if (ratio < 0.5) return 2;
-  if (ratio < 0.75) return 3;
-  return 4;
+  if (ratio < 0.25) return "fill-emerald-200 dark:fill-emerald-900";
+  if (ratio < 0.5) return "fill-emerald-400 dark:fill-emerald-700";
+  if (ratio < 0.75) return "fill-emerald-500 dark:fill-emerald-500";
+  return "fill-emerald-700 dark:fill-emerald-300";
 }
-
-const INTENSITY_CLASSES = [
-  "bg-muted",
-  "bg-emerald-200 dark:bg-emerald-900",
-  "bg-emerald-400 dark:bg-emerald-700",
-  "bg-emerald-500 dark:bg-emerald-500",
-  "bg-emerald-700 dark:bg-emerald-300",
-];
 
 interface HeatmapData {
   weeks: (string | null)[][];
@@ -83,7 +75,8 @@ function buildHeatmapData(dates: string[], activityMap: Map<string, number>): He
 }
 
 const WEEKDAYS = ["", "Mon", "", "Wed", "", "Fri", ""];
-const CELL_SIZE = 13;
+const CELL_SIZE = 11;
+const CELL_GAP = 3;
 
 export function HeatmapGrid({
   data,
@@ -151,53 +144,61 @@ export function HeatmapGrid({
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <div className="inline-block">
-            {/* Month labels */}
-            <div className="flex ml-7 mb-1">
+          <div className="inline-flex flex-col gap-0.5">
+            {/* Month labels row */}
+            <div className="flex" style={{ marginLeft: 28 }}>
               {monthLabels.map((m, i) => (
                 <div
                   key={i}
                   className="text-[10px] text-muted-foreground"
-                  style={{ position: "absolute", marginLeft: `${m.weekIndex * CELL_SIZE}px` }}
+                  style={{ width: (weeks.length - m.weekIndex) * (CELL_SIZE + CELL_GAP), minWidth: 0 }}
                 >
                   {m.label}
                 </div>
               ))}
             </div>
 
-            {/* Grid */}
-            <div className="flex">
-              <div className="flex flex-col mr-1">
+            {/* Grid row */}
+            <div className="flex items-start gap-0.5">
+              {/* Weekday labels */}
+              <div className="flex flex-col" style={{ gap: CELL_GAP }}>
                 {WEEKDAYS.map((label, i) => (
                   <div
                     key={i}
-                    className="text-[10px] text-muted-foreground flex items-center justify-end"
-                    style={{ width: "24px", height: `${CELL_SIZE}px` }}
+                    className="text-[10px] text-muted-foreground flex items-center justify-end pr-1"
+                    style={{ width: 24, height: CELL_SIZE }}
                   >
                     {label}
                   </div>
                 ))}
               </div>
+
+              {/* Grid cells */}
               {weeks.map((week, wi) => (
-                <div key={wi} className="flex flex-col">
+                <div key={wi} className="flex flex-col" style={{ gap: CELL_GAP }}>
                   {week.map((date, di) => {
                     if (!date) {
                       return (
                         <div
                           key={di}
+                          className="fill-transparent"
                           style={{ width: CELL_SIZE, height: CELL_SIZE }}
                         />
                       );
                     }
                     const count = activityMap.get(date) || 0;
-                    const level = getIntensityLevel(count, maxCount);
+                    const cls = getIntensityClass(count, maxCount);
                     return (
-                      <div
+                      <svg
                         key={di}
-                        className={`rounded-[3px] ${INTENSITY_CLASSES[level]}`}
-                        style={{ width: CELL_SIZE, height: CELL_SIZE }}
-                        title={`${date}: ${count}`}
-                      />
+                        width={CELL_SIZE}
+                        height={CELL_SIZE}
+                        className={cls}
+                        style={{ borderRadius: 2 }}
+                      >
+                        <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
+                        <title>{`${date}: ${count}`}</title>
+                      </svg>
                     );
                   })}
                 </div>
@@ -205,15 +206,23 @@ export function HeatmapGrid({
             </div>
 
             {/* Legend */}
-            <div className="flex items-center gap-1 mt-2 ml-7">
+            <div className="flex items-center gap-1 mt-1" style={{ marginLeft: 28 }}>
               <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.less}</span>
-              {INTENSITY_CLASSES.map((cls, i) => (
-                <div
-                  key={i}
-                  className={`rounded-[3px] ${cls}`}
-                  style={{ width: CELL_SIZE, height: CELL_SIZE }}
-                />
-              ))}
+              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-muted" style={{ borderRadius: 2 }}>
+                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
+              </svg>
+              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-200 dark:fill-emerald-900" style={{ borderRadius: 2 }}>
+                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
+              </svg>
+              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-400 dark:fill-emerald-700" style={{ borderRadius: 2 }}>
+                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
+              </svg>
+              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-500 dark:fill-emerald-500" style={{ borderRadius: 2 }}>
+                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
+              </svg>
+              <svg width={CELL_SIZE} height={CELL_SIZE} className="fill-emerald-700 dark:fill-emerald-300" style={{ borderRadius: 2 }}>
+                <rect width={CELL_SIZE} height={CELL_SIZE} rx={2} />
+              </svg>
               <span className="text-[10px] text-muted-foreground">{t.dashboard.heatmap.more}</span>
             </div>
           </div>
