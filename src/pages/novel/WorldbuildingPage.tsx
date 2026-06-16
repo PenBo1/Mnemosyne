@@ -22,8 +22,11 @@ import {
   PlusIcon,
   Trash2Icon,
   SearchIcon,
+  NetworkIcon,
+  LayoutGridIcon,
 } from "lucide-react";
 import { ipc } from "@/lib/ipc";
+import { WorldNetwork } from "@/components/visualizations";
 import type { WorldSetting, WorldCategory } from "@/types";
 
 const CATEGORIES: WorldCategory[] = [
@@ -41,6 +44,7 @@ export function WorldbuildingPage() {
   const [selected, setSelected] = useState<WorldSetting | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [view, setView] = useState<"grid" | "network">("grid");
 
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -142,18 +146,30 @@ export function WorldbuildingPage() {
         </TabsList>
       </Tabs>
 
-      <div className="relative">
-        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t.common.search}
-          className="pl-9"
-        />
+      <div className="flex items-center justify-between">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t.common.search}
+            className="pl-9"
+          />
+        </div>
+        <Tabs value={view} onValueChange={(v) => setView(v as "grid" | "network")}>
+          <TabsList>
+            <TabsTrigger value="grid"><LayoutGridIcon className="size-3" /> {t.worldbuilding.gridView}</TabsTrigger>
+            <TabsTrigger value="network"><NetworkIcon className="size-3" /> {t.worldbuilding.networkView}</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
+      ) : view === "network" ? (
+        <div className="h-[600px]">
+          <WorldNetwork items={items} onNodeClick={openEdit} />
+        </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <GlobeIcon className="size-12 mx-auto mb-4 opacity-50" />

@@ -23,12 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ClockIcon,
   PlusIcon,
   Trash2Icon,
+  NetworkIcon,
+  ListIcon,
 } from "lucide-react";
 import { ipc } from "@/lib/ipc";
+import { TimelineChart } from "@/components/visualizations";
 import type { TimelineEvent, TimelineEventType } from "@/types";
 
 export function TimelinePage() {
@@ -39,6 +43,7 @@ export function TimelinePage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selected, setSelected] = useState<TimelineEvent | null>(null);
+  const [view, setView] = useState<"list" | "chart">("list");
 
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -131,12 +136,23 @@ export function TimelinePage() {
         </Button>
       </div>
 
+      <Tabs value={view} onValueChange={(v) => setView(v as "list" | "chart")}>
+        <TabsList>
+          <TabsTrigger value="list"><ListIcon className="size-3" /> {t.timeline.listView}</TabsTrigger>
+          <TabsTrigger value="chart"><NetworkIcon className="size-3" /> {t.timeline.chartView}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
       ) : events.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <ClockIcon className="size-12 mx-auto mb-4 opacity-50" />
           <p>{t.timeline.empty}</p>
+        </div>
+      ) : view === "chart" ? (
+        <div className="h-[600px]">
+          <TimelineChart events={events} onNodeClick={openEdit} />
         </div>
       ) : (
         <div className="relative">

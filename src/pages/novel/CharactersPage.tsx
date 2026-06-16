@@ -16,24 +16,30 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   UsersIcon,
   PlusIcon,
   Trash2Icon,
   SearchIcon,
+  NetworkIcon,
+  LayoutGridIcon,
 } from "lucide-react";
 import { ipc } from "@/lib/ipc";
-import type { Character } from "@/types";
+import { CharacterGraph } from "@/components/visualizations";
+import type { Character, CharacterRelationship } from "@/types";
 
 export function CharactersPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [relationships, setRelationships] = useState<CharacterRelationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Character | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [view, setView] = useState<"grid" | "graph">("grid");
 
   const [formName, setFormName] = useState("");
   const [formRole, setFormRole] = useState("");
@@ -54,11 +60,16 @@ export function CharactersPage() {
     try {
       const novels = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novels.find((n) => n.workspace_id === activeWorkspaceId);
-      if (!novel) { setCharacters([]); return; }
-      const chars = await ipc<Character[]>("character_list", { novelId: novel.id });
+      if (!novel) { setCharacters([]); setRelationships([]); return; }
+      const [chars, rels] = await Promise.all([
+        ipc<Character[]>("character_list", { novelId: novel.id }),
+        ipc<CharacterRelationship[]>("character_relationship_list", { novelId: novel.id }).catch(() => []),
+      ]);
       setCharacters(chars);
+      setRelationships(rels);
     } catch {
       setCharacters([]);
+      setRelationships([]);
     } finally {
       setLoading(false);
     }
@@ -154,12 +165,27 @@ export function CharactersPage() {
         />
       </div>
 
+      <Tabs value={view} onValueChange={(v) => setView(v as "grid" | "graph")}>
+        <TabsList>
+          <TabsTrigger value="grid"><LayoutGridIcon className="size-3" /> {t.characters.gridView}</TabsTrigger>
+          <TabsTrigger value="graph"><NetworkIcon className="size-3" /> {t.characters.graphView}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <UsersIcon className="size-12 mx-auto mb-4 opacity-50" />
           <p>{t.characters.empty}</p>
+        </div>
+      ) : view === "graph" ? (
+        <div className="h-[600px]">
+          <CharacterGraph
+            characters={filtered}
+            relationships={relationships}
+            onNodeClick={openEdit}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

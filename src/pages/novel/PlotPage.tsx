@@ -30,8 +30,10 @@ import {
   Trash2Icon,
   GripVerticalIcon,
   ClockIcon,
+  TreePineIcon,
 } from "lucide-react";
 import { ipc } from "@/lib/ipc";
+import { PlotTree } from "@/components/visualizations";
 import type { PlotPoint, PlotPointType } from "@/types";
 
 export function PlotPage() {
@@ -39,7 +41,7 @@ export function PlotPage() {
   const { activeWorkspaceId } = useWorkspaceStore();
   const [points, setPoints] = useState<PlotPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"outline" | "timeline">("outline");
+  const [view, setView] = useState<"outline" | "timeline" | "tree">("outline");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selected, setSelected] = useState<PlotPoint | null>(null);
@@ -139,10 +141,11 @@ export function PlotPage() {
         </Button>
       </div>
 
-      <Tabs value={view} onValueChange={(v) => setView(v as "outline" | "timeline")}>
+      <Tabs value={view} onValueChange={(v) => setView(v as "outline" | "timeline" | "tree")}>
         <TabsList>
           <TabsTrigger value="outline"><GitBranchIcon className="size-3" /> {t.plot.outlineView}</TabsTrigger>
           <TabsTrigger value="timeline"><ClockIcon className="size-3" /> {t.plot.timelineView}</TabsTrigger>
+          <TabsTrigger value="tree"><TreePineIcon className="size-3" /> {t.plot.treeView}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -152,6 +155,10 @@ export function PlotPage() {
         <div className="text-center py-12 text-muted-foreground">
           <GitBranchIcon className="size-12 mx-auto mb-4 opacity-50" />
           <p>{t.plot.empty}</p>
+        </div>
+      ) : view === "tree" ? (
+        <div className="h-[600px]">
+          <PlotTree points={points} onNodeClick={openEdit} />
         </div>
       ) : view === "outline" ? (
         <div className="space-y-2">

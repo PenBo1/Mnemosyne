@@ -16,29 +16,51 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BookOpenIcon,
   EditIcon,
+  BarChart3Icon,
+  SettingsIcon,
 } from "lucide-react";
 import { ipc } from "@/lib/ipc";
-import type { Novel } from "@/types";
+import { WritingDashboard } from "@/components/visualizations";
+import type { Novel, ChapterSummary, HookRecord } from "@/types";
+
+interface StoryState {
+  current_chapter: number;
+  total_words: number;
+  hooks: HookRecord[];
+  summaries: ChapterSummary[];
+  facts: unknown[];
+}
 
 export function OverviewPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
   const [novel, setNovel] = useState<Novel | null>(null);
+  const [storyState, setStoryState] = useState<StoryState | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editGenre, setEditGenre] = useState("");
+  const [view, setView] = useState<"overview" | "dashboard">("overview");
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
     setLoading(true);
     ipc<Novel[]>("list_novels")
-      .then((novels) => {
+      .then(async (novels) => {
         const found = novels.find((n) => n.workspace_id === activeWorkspaceId);
         setNovel(found || null);
+        if (found) {
+          try {
+            const state = await ipc<StoryState>("story_state_get", { novelId: found.id });
+            setStoryState(state);
+          } catch {
+            setStoryState(null);
+          }
+        }
       })
       .catch(() => setNovel(null))
       .finally(() => setLoading(false));
@@ -82,46 +104,64 @@ export function OverviewPage() {
           </h1>
           <p className="text-sm text-muted-foreground">{t.overview.description}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setEditTitle(novel.title);
-            setEditGenre(novel.genre);
-            setEditOpen(true);
-          }}
-        >
-          <EditIcon className="size-4" />
-          {t.overview.editNovel}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Tabs value={view} onValueChange={(v) => setView(v as "overview" | "dashboard")}>
+            <TabsList>
+              <TabsTrigger value="overview"><SettingsIcon className="size-3" /> {t.overview.overviewView}</TabsTrigger>
+              <TabsTrigger value="dashboard"><BarChart3Icon className="size-3" /> {t.overview.dashboardView}</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditTitle(novel.title);
+              setEditGenre(novel.genre);
+              setEditOpen(true);
+            }}
+          >
+            <EditIcon className="size-4" />
+            {t.overview.editNovel}
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">{t.overview.title_label}</div>
-          <div className="text-lg font-medium mt-1">{novel.title}</div>
+      {view === "dashboard" && storyState ? (
+        <WritingDashboard
+          novel={novel}
+          summaries={storyState.summaries}
+          hooks={storyState.hooks}
+          totalWords={storyState.total_words}
+          chapterCount={novel.chapter_count}
+        />
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">{t.overview.title_label}</div>
+            <div className="text-lg font-medium mt-1">{novel.title}</div>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">{t.overview.genre}</div>
+            <div className="text-lg font-medium mt-1 capitalize">{novel.genre}</div>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">{t.overview.status}</div>
+            <div className="text-lg font-medium mt-1 capitalize">{novel.status}</div>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">{t.overview.wordCount}</div>
+            <div className="text-lg font-medium mt-1">{novel.word_count.toLocaleString()}</div>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">{t.overview.chapterCount}</div>
+            <div className="text-lg font-medium mt-1">{novel.chapter_count}</div>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">{t.overview.createdAt}</div>
+            <div className="text-lg font-medium mt-1">{new Date(novel.created_at).toLocaleDateString()}</div>
+          </div>
         </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">{t.overview.genre}</div>
-          <div className="text-lg font-medium mt-1 capitalize">{novel.genre}</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">{t.overview.status}</div>
-          <div className="text-lg font-medium mt-1 capitalize">{novel.status}</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">{t.overview.wordCount}</div>
-          <div className="text-lg font-medium mt-1">{novel.word_count.toLocaleString()}</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">{t.overview.chapterCount}</div>
-          <div className="text-lg font-medium mt-1">{novel.chapter_count}</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">{t.overview.createdAt}</div>
-          <div className="text-lg font-medium mt-1">{new Date(novel.created_at).toLocaleDateString()}</div>
-        </div>
-      </div>
+      )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
