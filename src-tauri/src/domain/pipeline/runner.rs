@@ -14,6 +14,8 @@ pub struct PipelineConfig {
     pub project_root: std::path::PathBuf,
     /// Per-agent model overrides: agent_name -> model_id
     pub model_overrides: std::collections::HashMap<String, String>,
+    /// Shared memory store for cross-chapter persistence
+    pub memory_store: Option<Arc<crate::infra::memory::MemoryStore>>,
 }
 
 pub struct PipelineRunner {
@@ -41,7 +43,7 @@ impl PipelineRunner {
     }
 
     /// Get agent context with optional model override
-    fn agent_ctx_for(&self, agent_name: &str, book_id: Option<&str>) -> AgentContext {
+    pub fn agent_ctx_for(&self, agent_name: &str, book_id: Option<&str>) -> AgentContext {
         let model = self.config.model_overrides.get(agent_name)
             .cloned()
             .unwrap_or_else(|| self.config.model.clone());
@@ -226,6 +228,7 @@ impl PipelineRunner {
                 None
             },
             style_guide: None,
+            ..Default::default()
         };
         let gate_results = verification_pipeline.validate_all(&write_output.content, &gate_context).await?;
 

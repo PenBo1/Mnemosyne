@@ -64,7 +64,12 @@ pub fn run() {
             let feedback_db_arc = Arc::new(tokio::sync::Mutex::new(feedback_db));
             let sandbox_policy = SandboxPolicy::restricted();
             let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
+            let memory_store = crate::infra::memory::MemoryStore::new();
+            let feedback_store = crate::infra::feedback::FeedbackStore::new();
             let app_handle = app.handle().clone();
+
+            // Scheduler is initialized lazily when a workspace is opened
+            let scheduler = tokio::sync::Mutex::new(None::<Arc<crate::domain::pipeline::Scheduler>>);
 
             app.manage(AppState {
                 data_dir,
@@ -73,6 +78,9 @@ pub fn run() {
                 provider_registry: tokio::sync::Mutex::new(provider_registry),
                 skill_manager: tokio::sync::Mutex::new(skill_manager),
                 sandbox: tokio::sync::Mutex::new(sandbox_enforcer),
+                memory_store,
+                feedback_store: tokio::sync::Mutex::new(feedback_store),
+                scheduler,
                 app_handle,
             });
 
@@ -145,6 +153,17 @@ pub fn run() {
             app::commands::novel_sources::novel_search,
             app::commands::novel_sources::novel_download,
             app::commands::novel_sources::novel_list_local,
+            app::commands::scheduler::scheduler_init,
+            app::commands::scheduler::scheduler_write_cycle,
+            app::commands::scheduler::scheduler_status,
+            app::commands::scheduler::scheduler_list_tasks,
+            app::commands::scheduler::scheduler_pause,
+            app::commands::scheduler::scheduler_resume,
+            app::commands::scheduler::scheduler_stop,
+            app::commands::scheduler::scheduler_search_rag,
+            app::commands::scheduler::scheduler_search_memory,
+            app::commands::scheduler::scheduler_get_lessons,
+            app::commands::scheduler::scheduler_restore_checkpoint,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,6 +4,9 @@ use crate::infra::db::Database;
 use crate::infra::llm::ProviderRegistry;
 use crate::infra::skill::SkillManager;
 use crate::infra::sandbox::enforce::SandboxEnforcer;
+use crate::infra::memory::MemoryStore;
+use crate::infra::feedback::FeedbackStore;
+use crate::domain::pipeline::Scheduler;
 
 pub struct AppState {
     pub data_dir: DataDir,
@@ -12,5 +15,8 @@ pub struct AppState {
     pub provider_registry: tokio::sync::Mutex<ProviderRegistry>,
     pub skill_manager: tokio::sync::Mutex<SkillManager>,
     pub sandbox: tokio::sync::Mutex<SandboxEnforcer>,
+    pub memory_store: Arc<MemoryStore>,
+    pub feedback_store: tokio::sync::Mutex<FeedbackStore>,
+    pub scheduler: tokio::sync::Mutex<Option<Arc<Scheduler>>>,
     pub app_handle: tauri::AppHandle,
 }

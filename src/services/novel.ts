@@ -70,8 +70,8 @@ export async function reflectChapter(
   workspaceId: string,
   bookId: string,
   chapterNumber: number
-): Promise<void> {
-  return ipc<void>("novel_reflect", { workspaceId, bookId, chapterNumber });
+): Promise<Record<string, unknown>> {
+  return ipc<Record<string, unknown>>("novel_reflect", { workspaceId, bookId, chapterNumber });
 }
 
 // ── Book Source (Novel Download) ──────────────────────
