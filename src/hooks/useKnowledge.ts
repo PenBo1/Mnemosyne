@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { KnowledgeEntry } from "@/types";
 import * as knowledgeService from "@/services/knowledge";
 
 export function useKnowledge() {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [filterCategory, setFilterCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -15,10 +18,11 @@ export function useKnowledge() {
       setEntries(data);
     } catch {
       setEntries([]);
+      toast.error(t.common.failedToLoad);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t.common.failedToLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -39,9 +43,14 @@ export function useKnowledge() {
     category: string;
     tags: string[];
   }) => {
-    await knowledgeService.createEntry(params);
-    await load();
-  }, [load]);
+    try {
+      await knowledgeService.createEntry(params);
+      await load();
+      toast.success(t.common.createdSuccessfully);
+    } catch {
+      toast.error(t.common.failedToCreate);
+    }
+  }, [load, t.common.createdSuccessfully, t.common.failedToCreate]);
 
   const update = useCallback(async (id: string, params: {
     title: string;
@@ -49,14 +58,24 @@ export function useKnowledge() {
     category: string;
     tags: string[];
   }) => {
-    await knowledgeService.updateEntry(id, params);
-    await load();
-  }, [load]);
+    try {
+      await knowledgeService.updateEntry(id, params);
+      await load();
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [load, t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   const remove = useCallback(async (id: string) => {
-    await knowledgeService.deleteEntry(id);
-    await load();
-  }, [load]);
+    try {
+      await knowledgeService.deleteEntry(id);
+      await load();
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
+    }
+  }, [load, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   return {
     entries: filteredEntries,

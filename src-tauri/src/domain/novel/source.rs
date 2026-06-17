@@ -31,17 +31,42 @@ pub fn load_sources_from_file(path: &Path) -> Result<Vec<BookSource>, AppError> 
     Ok(sources)
 }
 
-pub fn load_builtin_sources() -> Vec<BookSource> {
-    let main_json = include_str!("../../../../demo/so-novel/bundle/rules/main.json");
-    let proxy_json = include_str!("../../../../demo/so-novel/bundle/rules/proxy-required.json");
-    let rate_json = include_str!("../../../../demo/so-novel/bundle/rules/rate-limit.json");
-    let cf_json = include_str!("../../../../demo/so-novel/bundle/rules/cloudflare.json");
-
-    let mut sources = Vec::new();
-    for json_str in [main_json, proxy_json, rate_json, cf_json] {
-        if let Ok(mut file_sources) = serde_json::from_str::<Vec<BookSource>>(json_str) {
-            sources.append(&mut file_sources);
+pub fn load_builtin_sources_from_dir(dir: &Path) -> Vec<BookSource> {
+    match load_sources_from_dir(dir) {
+        Ok(sources) => sources,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to load book sources from directory");
+            Vec::new()
         }
     }
-    sources
+}
+
+/// Embedded book source files from resources/book_sources/
+const MAIN_SOURCES: &str = include_str!("../../../resources/book_sources/main.json");
+const PROXY_SOURCES: &str = include_str!("../../../resources/book_sources/proxy-required.json");
+const RATE_LIMIT_SOURCES: &str = include_str!("../../../resources/book_sources/rate-limit.json");
+const CLOUDFLARE_SOURCES: &str = include_str!("../../../resources/book_sources/cloudflare.json");
+
+/// Extract embedded book sources to the target directory
+pub fn extract_builtin_sources_to_dir(dir: &Path) -> Result<(), AppError> {
+    std::fs::create_dir_all(dir)
+        .map_err(|e| AppError::internal(format!("Failed to create book sources dir: {}", e)))?;
+    
+    let files = [
+        ("main.json", MAIN_SOURCES),
+        ("proxy-required.json", PROXY_SOURCES),
+        ("rate-limit.json", RATE_LIMIT_SOURCES),
+        ("cloudflare.json", CLOUDFLARE_SOURCES),
+    ];
+    
+    for (filename, content) in files {
+        let path = dir.join(filename);
+        if !path.exists() {
+            std::fs::write(&path, content)
+                .map_err(|e| AppError::internal(format!("Failed to write {}: {}", filename, e)))?;
+            tracing::info!(path = %path.display(), "Extracted book source file");
+        }
+    }
+    
+    Ok(())
 }

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import {
   isNotificationsEnabled,
   setNotificationsEnabled,
@@ -7,6 +9,7 @@ import { getLogLevel, setLogLevel } from "@/services/settings";
 import type { LogLevel } from "@/lib/settings";
 
 export function useGeneralSettings() {
+  const { t } = useI18n();
   const [notifications, setNotifications] = useState(isNotificationsEnabled);
   const [logLevel, setLogLevelState] = useState<LogLevel>("info");
   const [logLevelChanged, setLogLevelChanged] = useState(false);
@@ -21,11 +24,16 @@ export function useGeneralSettings() {
   }, []);
 
   const changeLogLevel = useCallback(async (level: string) => {
-    const newLevel = level as LogLevel;
-    setLogLevelState(newLevel);
-    await setLogLevel(newLevel);
-    setLogLevelChanged(true);
-  }, []);
+    try {
+      const newLevel = level as LogLevel;
+      setLogLevelState(newLevel);
+      await setLogLevel(newLevel);
+      setLogLevelChanged(true);
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   return {
     notifications,

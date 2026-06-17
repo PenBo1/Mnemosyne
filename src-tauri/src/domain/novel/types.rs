@@ -29,23 +29,23 @@ pub struct SearchRule {
     #[serde(default)]
     pub cookies: String,
     pub result: String,
-    #[serde(default)]
+    #[serde(default, alias = "bookName")]
     pub book_name: String,
-    #[serde(default = "default_empty")]
+    #[serde(default = "default_empty", alias = "author")]
     pub author: String,
-    #[serde(default)]
+    #[serde(default, alias = "category")]
     pub category: String,
-    #[serde(default)]
+    #[serde(default, alias = "wordCount")]
     pub word_count: String,
-    #[serde(default)]
+    #[serde(default, alias = "status")]
     pub status: String,
-    #[serde(default)]
+    #[serde(default, alias = "latestChapter")]
     pub latest_chapter: String,
-    #[serde(default)]
+    #[serde(default, alias = "lastUpdateTime")]
     pub last_update_time: String,
     #[serde(default)]
     pub pagination: bool,
-    #[serde(default)]
+    #[serde(default, alias = "nextPage")]
     pub next_page: String,
 }
 
@@ -53,19 +53,19 @@ pub struct SearchRule {
 pub struct BookRule {
     #[serde(default)]
     pub url: String,
-    #[serde(default)]
+    #[serde(default, alias = "bookName")]
     pub book_name: String,
-    #[serde(default)]
+    #[serde(default, alias = "author")]
     pub author: String,
     #[serde(default)]
     pub intro: String,
     #[serde(default)]
     pub category: String,
-    #[serde(default)]
+    #[serde(default, alias = "coverUrl")]
     pub cover_url: String,
-    #[serde(default)]
+    #[serde(default, alias = "latestChapter")]
     pub latest_chapter: String,
-    #[serde(default)]
+    #[serde(default, alias = "lastUpdateTime")]
     pub last_update_time: String,
     #[serde(default)]
     pub status: String,
@@ -73,16 +73,16 @@ pub struct BookRule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TocRule {
-    #[serde(default)]
+    #[serde(default, alias = "baseUri")]
     pub base_uri: String,
     #[serde(default)]
     pub url: String,
     pub item: String,
-    #[serde(default)]
+    #[serde(default, alias = "isDesc")]
     pub is_desc: bool,
     #[serde(default)]
     pub pagination: bool,
-    #[serde(default)]
+    #[serde(default, alias = "nextPage")]
     pub next_page: String,
 }
 
@@ -90,17 +90,17 @@ pub struct TocRule {
 pub struct ChapterRule {
     pub title: String,
     pub content: String,
-    #[serde(default)]
+    #[serde(default, alias = "paragraphTagClosed")]
     pub paragraph_tag_closed: bool,
-    #[serde(default)]
+    #[serde(default, alias = "paragraphTag")]
     pub paragraph_tag: String,
-    #[serde(default)]
+    #[serde(default, alias = "filterTxt")]
     pub filter_txt: String,
-    #[serde(default)]
+    #[serde(default, alias = "filterTag")]
     pub filter_tag: String,
     #[serde(default)]
     pub pagination: bool,
-    #[serde(default)]
+    #[serde(default, alias = "nextPage")]
     pub next_page: String,
 }
 

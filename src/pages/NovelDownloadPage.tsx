@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Select,
   SelectContent,
@@ -18,16 +20,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Spinner } from "@/components/ui/spinner";
-import { SearchIcon, DownloadIcon, CheckCircleIcon } from "lucide-react";
+import { DownloadIcon, SearchIcon, CheckCircleIcon, BookOpenIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import * as novelService from "@/services/novel";
 import type { BookSource, SearchBookResult } from "@/types";
 
-export function NovelDownloadPanel() {
+export function NovelDownloadPage() {
   const { t } = useI18n();
   const [sources, setSources] = useState<BookSource[]>([]);
-  const [selectedSource, setSelectedSource] = useState<string>("");
+  const [selectedSource, setSelectedSource] = useState<string>("all");
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState<SearchBookResult[]>([]);
   const [localNovels, setLocalNovels] = useState<string[]>([]);
@@ -44,7 +45,6 @@ export function NovelDownloadPanel() {
     try {
       const data = await novelService.listBookSources();
       setSources(data.filter((s) => !s.disabled && s.search && !s.search.disabled));
-      setSelectedSource("all");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t.common.failedToLoad);
     }
@@ -100,6 +100,16 @@ export function NovelDownloadPanel() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <DownloadIcon />
+            {t.novels.title}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t.novels.description}</p>
+        </div>
+      </div>
+
       <div className="flex items-center gap-3">
         <Select value={selectedSource} onValueChange={setSelectedSource}>
           <SelectTrigger className="w-[180px]">
@@ -127,7 +137,13 @@ export function NovelDownloadPanel() {
         </Button>
       </div>
 
-      {results.length > 0 && (
+      {searching && (
+        <div className="flex items-center justify-center py-8">
+          <Spinner className="size-6" />
+        </div>
+      )}
+
+      {!searching && results.length > 0 && (
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
@@ -181,16 +197,28 @@ export function NovelDownloadPanel() {
         </div>
       )}
 
+      {!searching && results.length === 0 && keyword && (
+        <div className="text-center py-8 text-muted-foreground">
+          <SearchIcon className="size-12 mx-auto mb-4 opacity-50" />
+          <p>{t.novels.download.noResults}</p>
+        </div>
+      )}
+
       {localNovels.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium mb-2">
+          <h4 className="text-sm font-medium mb-3">
             {t.novels.download.downloadedNovels.replace("{count}", String(localNovels.length))}
           </h4>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {localNovels.map((novel) => (
-              <Badge key={novel} variant="secondary">
-                {novel}
-              </Badge>
+              <Card key={novel}>
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <BookOpenIcon className="size-4 text-muted-foreground" />
+                    <span className="text-sm truncate">{novel}</span>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </div>

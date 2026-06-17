@@ -36,6 +36,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   PlusIcon,
   BookOpenIcon,
@@ -44,10 +45,12 @@ import {
   PenLineIcon,
   EyeIcon,
   FolderOpenIcon,
+  DownloadIcon,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useNovels } from "@/hooks/useNovels";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { NovelDownloadPanel } from "@/components/NovelDownloadPanel";
 import type { Novel } from "@/types";
 
 const GENRES = ["fantasy", "scifi", "romance", "mystery", "thriller", "historical", "modern", "other"];
@@ -71,9 +74,6 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [genre, setGenre] = useState("fantasy");
-
-  const totalWords = novels.reduce((sum, n) => sum + n.word_count, 0);
-  const totalChapters = novels.reduce((sum, n) => sum + n.chapter_count, 0);
 
   async function handleCreate() {
     await create(title, genre);
@@ -115,95 +115,118 @@ export function NovelsPage({ onOpenNovel }: NovelsPageProps) {
           <p className="text-sm text-muted-foreground flex items-center gap-2">
             <FolderOpenIcon className="size-3.5" />
             <span className="truncate max-w-[300px]">{activeWorkspace?.path}</span>
-            <span className="text-muted-foreground/50">|</span>
-            <span>
-              {t.novels.novelCount.replace("{count}", String(novels.length))}, {totalChapters} {t.novels.chapters}, {(totalWords / 1000).toFixed(1)}k {t.novels.words}
-            </span>
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <PlusIcon data-icon="inline-start" />
-              <span>{t.novels.newNovel}</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t.novels.createTitle}</DialogTitle>
-              <DialogDescription>{t.novels.createDesc}</DialogDescription>
-            </DialogHeader>
-            <FieldGroup>
-              <Field>
-                <FieldLabel>{t.novels.title_label}</FieldLabel>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={t.novels.titlePlaceholder}
-                />
-              </Field>
-              <Field>
-                <FieldLabel>{t.novels.genre}</FieldLabel>
-                <Select value={genre} onValueChange={setGenre}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GENRES.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {t.novels.genres[g as keyof typeof t.novels.genres]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </FieldGroup>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              <Button onClick={handleCreate} disabled={!title}>
-                {t.common.create}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="size-6" />
-        </div>
-      ) : novels.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <BookOpenIcon />
-            </EmptyMedia>
-            <EmptyTitle>{t.novels.empty}</EmptyTitle>
-            <EmptyDescription>
-              {t.novels.createHint}
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button onClick={() => setDialogOpen(true)}>
-              <PlusIcon data-icon="inline-start" />
-              {t.novels.newNovel}
-            </Button>
-          </EmptyContent>
-        </Empty>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {novels.map((novel) => (
-            <NovelCard
-              key={novel.id}
-              novel={novel}
-              onDelete={handleDelete}
-              onOpen={onOpenNovel}
-            />
-          ))}
-        </div>
-      )}
+      <Tabs defaultValue="myNovels">
+        <TabsList>
+          <TabsTrigger value="myNovels">
+            <BookOpenIcon data-icon="inline-start" />
+            {t.novels.tabs.myNovels}
+          </TabsTrigger>
+          <TabsTrigger value="download">
+            <DownloadIcon data-icon="inline-start" />
+            {t.novels.tabs.download}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="myNovels" className="mt-4">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <span>
+                {novels.length} {t.novels.chapters}
+              </span>
+            </p>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <PlusIcon data-icon="inline-start" />
+                  <span>{t.novels.newNovel}</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t.novels.createTitle}</DialogTitle>
+                  <DialogDescription>{t.novels.createDesc}</DialogDescription>
+                </DialogHeader>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>{t.novels.title_label}</FieldLabel>
+                    <Input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder={t.novels.titlePlaceholder}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>{t.novels.genre}</FieldLabel>
+                    <Select value={genre} onValueChange={setGenre}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {GENRES.map((g) => (
+                          <SelectItem key={g} value={g}>
+                            {t.novels.genres[g as keyof typeof t.novels.genres]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </FieldGroup>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                    {t.common.cancel}
+                  </Button>
+                  <Button onClick={handleCreate} disabled={!title}>
+                    {t.common.create}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner className="size-6" />
+            </div>
+          ) : novels.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <BookOpenIcon />
+                </EmptyMedia>
+                <EmptyTitle>{t.novels.empty}</EmptyTitle>
+                <EmptyDescription>
+                  {t.novels.createHint}
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onClick={() => setDialogOpen(true)}>
+                  <PlusIcon data-icon="inline-start" />
+                  {t.novels.newNovel}
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {novels.map((novel) => (
+                <NovelCard
+                  key={novel.id}
+                  novel={novel}
+                  onDelete={handleDelete}
+                  onOpen={onOpenNovel}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="download" className="mt-4">
+          <NovelDownloadPanel />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

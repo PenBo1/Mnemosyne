@@ -25,9 +25,13 @@ import {
   FolderOpenIcon,
   BookOpenIcon,
   Trash2Icon,
+  MessageSquareIcon,
+  ClockIcon,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useWorkspacePage } from "@/hooks/useWorkspacePage";
+import { useAgentStore } from "@/stores/agent";
+import { useEffect } from "react";
 
 export function WorkspacePage() {
   const { t } = useI18n();
@@ -43,6 +47,13 @@ export function WorkspacePage() {
     handleCreate,
     handleDelete,
   } = useWorkspacePage();
+  const { sessions, loadSessions } = useAgentStore();
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const recentSessions = sessions.slice(0, 10);
 
   return (
     <div className="flex flex-col gap-6">
@@ -156,6 +167,41 @@ export function WorkspacePage() {
           ))}
         </div>
       )}
+
+      {/* Conversation History */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageSquareIcon className="size-5" />
+          <h2 className="text-lg font-semibold">{t.agentChat.title}</h2>
+        </div>
+        {recentSessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t.agentChat.emptyTitle}</p>
+        ) : (
+          <div className="space-y-2">
+            {recentSessions.map((session) => (
+              <Card key={session.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{session.title || t.agentChat.unnamedSession}</p>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                        <span>{session.message_count} {t.agentChat.messageCount}</span>
+                        <span className="flex items-center gap-1">
+                          <ClockIcon className="size-3" />
+                          {new Date(session.updated_at).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">
+                      {session.status}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

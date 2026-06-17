@@ -4,7 +4,7 @@ use crate::errors::{IpcResponse, AppError};
 use crate::AppState;
 use crate::domain::novel::types::*;
 use crate::domain::novel::client::NovelClient;
-use crate::domain::novel::source::load_builtin_sources;
+use crate::domain::novel::source::{load_builtin_sources_from_dir, load_sources_from_file};
 use std::path::PathBuf;
 
 fn novels_dir(state: &AppState) -> PathBuf {
@@ -13,15 +13,133 @@ fn novels_dir(state: &AppState) -> PathBuf {
 
 #[tauri::command]
 pub async fn novel_source_list(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
 ) -> Result<IpcResponse<Vec<BookSource>>, AppError> {
-    let sources = load_builtin_sources();
+    let sources_dir = state.data_dir.book_sources_dir();
+    let sources = load_builtin_sources_from_dir(&sources_dir);
     Ok(IpcResponse::ok(sources))
 }
 
 #[tauri::command]
+pub async fn novel_source_toggle(
+    state: State<'_, AppState>,
+    name: String,
+    enabled: bool,
+) -> Result<IpcResponse<()>, AppError> {
+    let sources_dir = state.data_dir.book_sources_dir();
+    let mut all_sources = load_builtin_sources_from_dir(&sources_dir);
+    
+    // Find and toggle the source
+    let found = all_sources.iter_mut().find(|s| s.name == name);
+    match found {
+        Some(source) => {
+            source.disabled = !enabled;
+        }
+        None => return Err(AppError::not_found(format!("Source '{}' not found", name))),
+    }
+    
+    // Save all sources back to files (grouped by original file)
+    // For simplicity, we save all sources to a single custom.json file
+    let custom_path = sources_dir.join("custom.json");
+    let content = serde_json::to_string_pretty(&all_sources)
+        .map_err(|e| AppError::internal(format!("Failed to serialize sources: {}", e)))?;
+    std::fs::write(&custom_path, content)
+        .map_err(|e| AppError::internal(format!("Failed to write sources: {}", e)))?;
+    
+    Ok(IpcResponse::ok(()))
+}
+
+#[tauri::command]
+pub async fn novel_source_add(
+    state: State<'_, AppState>,
+    source: BookSource,
+) -> Result<IpcResponse<()>, AppError> {
+    let sources_dir = state.data_dir.book_sources_dir();
+    let custom_path = sources_dir.join("custom.json");
+    
+    // Load existing custom sources or create empty
+    let mut custom_sources = if custom_path.exists() {
+        load_sources_from_file(&custom_path).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    
+    // Check for duplicate name
+    if custom_sources.iter().any(|s| s.name == source.name) {
+        return Err(AppError::conflict(format!("Source '{}' already exists", source.name)));
+    }
+    
+    custom_sources.push(source);
+    
+    let content = serde_json::to_string_pretty(&custom_sources)
+        .map_err(|e| AppError::internal(format!("Failed to serialize sources: {}", e)))?;
+    std::fs::write(&custom_path, content)
+        .map_err(|e| AppError::internal(format!("Failed to write sources: {}", e)))?;
+    
+    Ok(IpcResponse::ok(()))
+}
+
+#[tauri::command]
+pub async fn novel_source_update(
+    state: State<'_, AppState>,
+    source: BookSource,
+) -> Result<IpcResponse<()>, AppError> {
+    let sources_dir = state.data_dir.book_sources_dir();
+    let custom_path = sources_dir.join("custom.json");
+    
+    let mut custom_sources = if custom_path.exists() {
+        load_sources_from_file(&custom_path).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    
+    // Find and update
+    let found = custom_sources.iter_mut().find(|s| s.name == source.name);
+    match found {
+        Some(s) => *s = source,
+        None => return Err(AppError::not_found(format!("Source '{}' not found", source.name))),
+    }
+    
+    let content = serde_json::to_string_pretty(&custom_sources)
+        .map_err(|e| AppError::internal(format!("Failed to serialize sources: {}", e)))?;
+    std::fs::write(&custom_path, content)
+        .map_err(|e| AppError::internal(format!("Failed to write sources: {}", e)))?;
+    
+    Ok(IpcResponse::ok(()))
+}
+
+#[tauri::command]
+pub async fn novel_source_delete(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<IpcResponse<()>, AppError> {
+    let sources_dir = state.data_dir.book_sources_dir();
+    let custom_path = sources_dir.join("custom.json");
+    
+    let mut custom_sources = if custom_path.exists() {
+        load_sources_from_file(&custom_path).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    
+    let before_len = custom_sources.len();
+    custom_sources.retain(|s| s.name != name);
+    
+    if custom_sources.len() == before_len {
+        return Err(AppError::not_found(format!("Source '{}' not found", name)));
+    }
+    
+    let content = serde_json::to_string_pretty(&custom_sources)
+        .map_err(|e| AppError::internal(format!("Failed to serialize sources: {}", e)))?;
+    std::fs::write(&custom_path, content)
+        .map_err(|e| AppError::internal(format!("Failed to write sources: {}", e)))?;
+    
+    Ok(IpcResponse::ok(()))
+}
+
+#[tauri::command]
 pub async fn novel_search(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     source_name: String,
     keyword: String,
 ) -> Result<IpcResponse<Vec<SearchBookResult>>, AppError> {
@@ -32,13 +150,32 @@ pub async fn novel_search(
         return Err(AppError::invalid_input("Search keyword too long (max 100 chars)"));
     }
 
-    let sources = load_builtin_sources();
-    let source = sources.iter().find(|s| s.name == source_name)
-        .ok_or_else(|| AppError::not_found(format!("Source '{}' not found", source_name)))?;
-
+    let sources_dir = state.data_dir.book_sources_dir();
+    let sources = load_builtin_sources_from_dir(&sources_dir);
     let client = NovelClient::new()?;
-    let results = client.search(source, &keyword).await?;
-    Ok(IpcResponse::ok(results))
+
+    if source_name == "all" {
+        let searchables: Vec<&BookSource> = sources.iter()
+            .filter(|s| !s.disabled)
+            .filter(|s| s.search.as_ref().map_or(false, |sr| !sr.disabled))
+            .collect();
+
+        let mut all_results = Vec::new();
+        for source in searchables {
+            match client.search(source, &keyword).await {
+                Ok(mut results) => all_results.append(&mut results),
+                Err(e) => {
+                    tracing::warn!(source = %source.name, error = %e, "Search failed on source");
+                }
+            }
+        }
+        Ok(IpcResponse::ok(all_results))
+    } else {
+        let source = sources.iter().find(|s| s.name == source_name)
+            .ok_or_else(|| AppError::not_found(format!("Source '{}' not found", source_name)))?;
+        let results = client.search(source, &keyword).await?;
+        Ok(IpcResponse::ok(results))
+    }
 }
 
 #[tauri::command]
@@ -52,7 +189,8 @@ pub async fn novel_download(
         return Err(AppError::invalid_input("Book name cannot be empty"));
     }
 
-    let sources = load_builtin_sources();
+    let sources_dir = state.data_dir.book_sources_dir();
+    let sources = load_builtin_sources_from_dir(&sources_dir);
     let source = sources.iter().find(|s| s.name == source_name)
         .ok_or_else(|| AppError::not_found(format!("Source '{}' not found", source_name)))?;
 

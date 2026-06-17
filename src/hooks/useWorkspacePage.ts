@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { pickDirectory } from "@/services/workspaces";
 
 export function useWorkspacePage() {
+  const { t } = useI18n();
   const { workspaces, loadWorkspaces, addWorkspace, removeWorkspace } = useWorkspaceStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
@@ -32,14 +35,22 @@ export function useWorkspacePage() {
       setDialogOpen(false);
       setName("");
       setPath("");
+      toast.success(t.common.createdSuccessfully);
+    } catch {
+      toast.error(t.common.failedToCreate);
     } finally {
       setLoading(false);
     }
-  }, [name, path, addWorkspace]);
+  }, [name, path, addWorkspace, t.common.createdSuccessfully, t.common.failedToCreate]);
 
   const handleDelete = useCallback(async (id: string) => {
-    await removeWorkspace(id);
-  }, [removeWorkspace]);
+    try {
+      await removeWorkspace(id);
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
+    }
+  }, [removeWorkspace, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   return {
     workspaces,

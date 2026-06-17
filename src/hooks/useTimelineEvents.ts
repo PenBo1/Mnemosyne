@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { TimelineEvent, TimelineEventType } from "@/types";
 import { ipc } from "@/lib/ipc";
 import * as timelineService from "@/services/timeline";
 
 export function useTimelineEvents(workspaceId: string | null) {
+  const { t } = useI18n();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -18,10 +21,11 @@ export function useTimelineEvents(workspaceId: string | null) {
       setEvents(data);
     } catch {
       setEvents([]);
+      toast.error(t.common.failedToLoad);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t.common.failedToLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -36,12 +40,17 @@ export function useTimelineEvents(workspaceId: string | null) {
     character_ids: string[];
   }) => {
     if (!workspaceId) return;
-    const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novelList.find((n) => n.workspace_id === workspaceId);
-    if (!novel) return;
-    await timelineService.createTimelineEvent({ ...params, novelId: novel.id });
-    await load();
-  }, [workspaceId, load]);
+    try {
+      const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
+      const novel = novelList.find((n) => n.workspace_id === workspaceId);
+      if (!novel) return;
+      await timelineService.createTimelineEvent({ ...params, novelId: novel.id });
+      await load();
+      toast.success(t.common.createdSuccessfully);
+    } catch {
+      toast.error(t.common.failedToCreate);
+    }
+  }, [workspaceId, load, t.common.createdSuccessfully, t.common.failedToCreate]);
 
   const update = useCallback(async (params: {
     id: string;
@@ -52,14 +61,24 @@ export function useTimelineEvents(workspaceId: string | null) {
     chapter_number: number | null;
     tags: string[];
   }) => {
-    await timelineService.updateTimelineEvent(params);
-    await load();
-  }, [load]);
+    try {
+      await timelineService.updateTimelineEvent(params);
+      await load();
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [load, t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   const remove = useCallback(async (id: string) => {
-    await timelineService.deleteTimelineEvent(id);
-    await load();
-  }, [load]);
+    try {
+      await timelineService.deleteTimelineEvent(id);
+      await load();
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
+    }
+  }, [load, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   return { events, loading, create, update, remove, reload: load };
 }

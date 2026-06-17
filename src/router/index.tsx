@@ -4,7 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkspaceLayout } from "@/components/layout/WorkspaceLayout";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { TrendsPage } from "@/pages/TrendsPage";
-import { NovelsPage } from "@/pages/NovelsPage";
+import { NovelDownloadPage } from "@/pages/NovelDownloadPage";
 import { SkillsPage } from "@/pages/SkillsPage";
 import { AgentChat } from "@/components/AgentChat";
 import { ChapterReader } from "@/pages/ChapterReader";
@@ -71,14 +71,7 @@ export function Router() {
       <div className={currentPage === "settings" ? "" : "p-6"}>
         {currentPage === "settings" && <SettingsPage />}
         {currentPage === "trends" && <TrendsPage />}
-        {currentPage === "novels" && (
-          <NovelsPage
-            onOpenNovel={(id, title) => {
-              setOpenNovelId(id);
-              setOpenNovelTitle(title);
-            }}
-          />
-        )}
+        {currentPage === "novels" && <NovelDownloadPage />}
         {currentPage === "skills" && <SkillsPage />}
         {currentPage === "dashboard" && <DashboardPage />}
         {currentPage === "knowledge" && <KnowledgePage />}

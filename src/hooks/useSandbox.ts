@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import * as sandboxService from "@/services/sandbox";
 import type { SandboxStatus } from "@/services/sandbox";
 
 export function useSandboxStatus() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<SandboxStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,12 +17,13 @@ export function useSandboxStatus() {
       const result = await sandboxService.getSandboxStatus();
       setStatus(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load sandbox status";
+      const message = err instanceof Error ? err.message : t.common.failedToLoad;
       setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t.common.failedToLoad]);
 
   useEffect(() => {
     load();

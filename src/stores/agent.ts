@@ -141,8 +141,13 @@ export const useAgentStore = create<AgentState>((set, _get) => ({
   },
 
   loadMessages: async (sessionId: string) => {
-    const messages = await sessionService.listMessages(sessionId);
-    set({ messages });
+    try {
+      const messages = await sessionService.listMessages(sessionId);
+      set({ messages });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load messages";
+      toast.error(message);
+    }
   },
 
   appendMessage: (message: Message) => {

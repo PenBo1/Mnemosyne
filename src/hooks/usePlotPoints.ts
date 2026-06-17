@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { PlotPoint, PlotPointType } from "@/types";
 import { ipc } from "@/lib/ipc";
 import * as plotService from "@/services/plot";
 
 export function usePlotPoints(workspaceId: string | null) {
+  const { t } = useI18n();
   const [points, setPoints] = useState<PlotPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -18,10 +21,11 @@ export function usePlotPoints(workspaceId: string | null) {
       setPoints(data);
     } catch {
       setPoints([]);
+      toast.error(t.common.failedToLoad);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t.common.failedToLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -37,12 +41,17 @@ export function usePlotPoints(workspaceId: string | null) {
     sort_order: number;
   }) => {
     if (!workspaceId) return;
-    const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novelList.find((n) => n.workspace_id === workspaceId);
-    if (!novel) return;
-    await plotService.createPlotPoint({ ...params, novelId: novel.id });
-    await load();
-  }, [workspaceId, load]);
+    try {
+      const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
+      const novel = novelList.find((n) => n.workspace_id === workspaceId);
+      if (!novel) return;
+      await plotService.createPlotPoint({ ...params, novelId: novel.id });
+      await load();
+      toast.success(t.common.createdSuccessfully);
+    } catch {
+      toast.error(t.common.failedToCreate);
+    }
+  }, [workspaceId, load, t.common.createdSuccessfully, t.common.failedToCreate]);
 
   const update = useCallback(async (params: {
     id: string;
@@ -55,14 +64,24 @@ export function usePlotPoints(workspaceId: string | null) {
     conflicts: string;
     outcome: string;
   }) => {
-    await plotService.updatePlotPoint(params);
-    await load();
-  }, [load]);
+    try {
+      await plotService.updatePlotPoint(params);
+      await load();
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [load, t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   const remove = useCallback(async (id: string) => {
-    await plotService.deletePlotPoint(id);
-    await load();
-  }, [load]);
+    try {
+      await plotService.deletePlotPoint(id);
+      await load();
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
+    }
+  }, [load, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   return { points, loading, create, update, remove, reload: load };
 }

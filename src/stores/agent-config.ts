@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import type { Agent } from "@/types";
 import { AVAILABLE_MODELS } from "@/constants";
 import * as agentService from "@/services/agent";
@@ -25,6 +26,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load agents";
       set({ error: message, loading: false });
+      toast.error(message);
     }
   },
 
@@ -37,6 +39,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update agent";
       set({ error: message });
+      toast.error(message);
     }
   },
 
@@ -49,6 +52,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to toggle agent status";
       set({ error: message });
+      toast.error(message);
     }
   },
 }));

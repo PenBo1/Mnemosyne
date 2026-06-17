@@ -30,7 +30,6 @@ import {
   ClockIcon,
   BookmarkIcon,
   Trash2Icon,
-  PlusIcon,
   MessageSquareIcon,
   TrendingUpIcon,
   BookOpenIcon,
@@ -66,6 +65,7 @@ const SETTINGS_NAV_ITEMS: { id: SettingsTab; labelKey: string; icon: typeof Glob
   { id: "model", labelKey: "aiProvider", icon: CpuIcon },
   { id: "prompts", labelKey: "prompts", icon: MessageSquareIcon },
   { id: "agents", labelKey: "agents", icon: BotIcon },
+  { id: "bookSources", labelKey: "bookSources", icon: BookOpenIcon },
   { id: "audit", labelKey: "audit", icon: ShieldIcon },
   { id: "system", labelKey: "system", icon: ShieldCheckIcon },
 ];
@@ -154,7 +154,6 @@ export function AppSidebar() {
                     >
                       <SparklesIcon />
                       <span>{t.sidebar.newChat}</span>
-                      <PlusIcon className="ml-auto size-3.5 opacity-50" />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>

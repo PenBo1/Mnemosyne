@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { Character, CharacterRelationship } from "@/types";
 import { ipc } from "@/lib/ipc";
 import * as characterService from "@/services/character";
 
 export function useCharacters(workspaceId: string | null) {
+  const { t } = useI18n();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [relationships, setRelationships] = useState<CharacterRelationship[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,10 +27,11 @@ export function useCharacters(workspaceId: string | null) {
     } catch {
       setCharacters([]);
       setRelationships([]);
+      toast.error(t.common.failedToLoad);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t.common.failedToLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -46,12 +50,17 @@ export function useCharacters(workspaceId: string | null) {
     traits: string[];
   }) => {
     if (!workspaceId) return;
-    const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
-    const novel = novelList.find((n) => n.workspace_id === workspaceId);
-    if (!novel) return;
-    await characterService.createCharacter({ ...params, novelId: novel.id });
-    await load();
-  }, [workspaceId, load]);
+    try {
+      const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
+      const novel = novelList.find((n) => n.workspace_id === workspaceId);
+      if (!novel) return;
+      await characterService.createCharacter({ ...params, novelId: novel.id });
+      await load();
+      toast.success(t.common.createdSuccessfully);
+    } catch {
+      toast.error(t.common.failedToCreate);
+    }
+  }, [workspaceId, load, t.common.createdSuccessfully, t.common.failedToCreate]);
 
   const update = useCallback(async (params: {
     id: string;
@@ -68,14 +77,24 @@ export function useCharacters(workspaceId: string | null) {
     description: string;
     traits: string[];
   }) => {
-    await characterService.updateCharacter(params);
-    await load();
-  }, [load]);
+    try {
+      await characterService.updateCharacter(params);
+      await load();
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [load, t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   const remove = useCallback(async (id: string) => {
-    await characterService.deleteCharacter(id);
-    await load();
-  }, [load]);
+    try {
+      await characterService.deleteCharacter(id);
+      await load();
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
+    }
+  }, [load, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   return { characters, relationships, loading, create, update, remove, reload: load };
 }

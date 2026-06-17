@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { RadarScan } from "@/types";
 import * as radarService from "@/services/radar";
 
 export function useRadar() {
+  const { t } = useI18n();
   const [currentResult, setCurrentResult] = useState<RadarScan | null>(null);
   const [history, setHistory] = useState<RadarScan[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -16,11 +18,13 @@ export function useRadar() {
       const scans = await radarService.fetchRadarHistory();
       setHistory(scans);
     } catch (err) {
-      console.error("Failed to load radar history:", err);
+      const message = err instanceof Error ? err.message : t.common.failedToLoad;
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t.common.failedToLoad]);
 
   useEffect(() => {
     loadHistory();
@@ -43,12 +47,17 @@ export function useRadar() {
   }, [loadHistory]);
 
   const remove = useCallback(async (id: string) => {
-    await radarService.deleteRadarScan(id);
-    setHistory((prev) => prev.filter((s) => s.id !== id));
-    if (currentResult?.id === id) {
-      setCurrentResult(null);
+    try {
+      await radarService.deleteRadarScan(id);
+      setHistory((prev) => prev.filter((s) => s.id !== id));
+      if (currentResult?.id === id) {
+        setCurrentResult(null);
+      }
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
     }
-  }, [currentResult]);
+  }, [currentResult, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   const viewHistoryItem = useCallback((scan: RadarScan) => {
     setCurrentResult(scan);

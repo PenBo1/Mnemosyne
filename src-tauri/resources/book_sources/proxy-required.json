@@ -1,0 +1,138 @@
+[
+  {
+    "url": "https://www.69shuba.com/",
+    "name": "69书吧",
+    "comment": "搜索有CF，可能启用的其他域名：69shuba.me，69shuba.cx",
+    "enabled": false,
+    "needProxy": true,
+    "search": {
+      "disabled": true,
+      "url": "https://69shuba.com/modules/article/search.php",
+      "method": "post",
+      "data": "{submit: Search, searchKey: %s}",
+      "result": "body > div.container > div.mybox > ul > li > div > div > ul > li",
+      "bookName": "div.newnav > h3 > a:nth-child(2)",
+      "author": "div.newnav > div.labelbox > label:nth-child(1)",
+      "category": "div.newnav > div.labelbox > label:nth-child(2)",
+      "status": "div.newnav > div.labelbox > label:nth-child(3)",
+      "latestChapter": "div.newnav > div.zxzj > p",
+      "lastUpdateTime": "div.newnav > div.zxzj > span"
+    },
+    "book": {
+      "url": "https://(?:www\\.)?69shuba\\.com/book/(.*?)\\.htm"
+    },
+    "toc": {
+      "url": "https://69shuba.com/book/%s/",
+      "item": "#catalog > ul > li > a",
+      "isDesc": true
+    },
+    "chapter": {
+      "title": ".txtnav > h1",
+      "content": ".txtnav",
+      "paragraphTagClosed": false,
+      "paragraphTag": "<br>+",
+      "filterTxt": "无一错一首一发一内一容一在一6一9一书一吧一看！|\\(本章完\\)|最⊥新⊥小⊥说⊥在⊥六⊥9⊥⊥书⊥⊥吧⊥⊥首⊥发！",
+      "filterTag": "h1, div"
+    }
+  },
+  {
+    "url": "https://quanben5.com/",
+    "name": "全本小说网",
+    "comment": "完本很全，搜索限流",
+    "enabled": false,
+    "needProxy": true,
+    "search": {
+      "url": "https://quanben5.com/?c=book&a=search.json&callback=search&keywords=%s&b=%s",
+      "method": "get",
+      "result": ".pic_txt_list",
+      "bookName": "h3 > a",
+      "author": "p.info > span"
+    },
+    "book": {
+      "url": "https://quanben5.com/n/(.*?)/",
+      "bookName": "h3 > span",
+      "author": "body > div.row > div > div:nth-child(1) > div.pic_txt_list > p:nth-child(3) > span",
+      "intro": "body > div.row > div > div:nth-child(1) > div.description",
+      "category": "body > div.row > div > div:nth-child(1) > div.pic_txt_list > p:nth-child(4) > span",
+      "coverUrl": "body > div.row > div > div:nth-child(1) > div.pic_txt_list > div > img",
+      "status": "body > div.row > div > div:nth-child(1) > div.pic_txt_list > p:nth-child(5) > span"
+    },
+    "toc": {
+      "url": "https://quanben5.com/n/%s/xiaoshuo.html",
+      "item": "ul > li > a"
+    },
+    "chapter": {
+      "title": ".content > h1",
+      "content": "#content",
+      "paragraphTagClosed": true,
+      "filterTxt": "\\(本章完\\)",
+      "filterTag": ""
+    }
+  },
+  {
+    "url": "https://www.dxmwx.org/",
+    "name": "大熊猫文学",
+    "comment": "",
+    "enabled": false,
+    "needProxy": true,
+    "search": {
+      "url": "https://www.dxmwx.org/list/topall_%s.html",
+      "method": "get",
+      "result": "#ListContents > div",
+      "bookName": ".margin0h5 > a.fonttext",
+      "author": ".margin0h5 > a:nth-child(2)",
+      "latestChapter": ".right_wid > div:nth-child(4) > a@js:r=r.replaceAll('最新章节','');",
+      "lastUpdateTime": ".right_wid > div:nth-child(4) > span",
+      "pagination": true,
+      "nextPage": "//div[@class='onlypc']//div//a[not(text()='首页') and not(text()='上一页') and not(text()='下一页') and not(text()='尾页')]"
+    },
+    "book": {
+      "url": "https://www.dxmwx.org/book/(.*?).html"
+    },
+    "toc": {
+      "url": "https://www.dxmwx.org/chapter/%s.html",
+      "item": "div:nth-child(2n+5) > span > a"
+    },
+    "chapter": {
+      "title": "#ChapterTitle",
+      "content": "#Lab_Contents",
+      "paragraphTagClosed": true,
+      "filterTxt": "\\(本章完\\)",
+      "filterTag": ""
+    }
+  },
+  {
+    "url": "https://101kks.com/",
+    "name": "101看书",
+    "comment": "目录 AJAX 有 CF",
+    "enabled": false,
+    "needProxy": true,
+    "search": {
+      "url": "https://101kks.com/search/%s/1.html",
+      "method": "get",
+      "result": "#article_list_content > li > div.newnav",
+      "bookName": "h3 > a:nth-child(2)",
+      "author": "div.labelbox > label:nth-child(1)",
+      "category": "div.labelbox > label:nth-child(2)",
+      "status": "div.labelbox > label:nth-child(3)",
+      "latestChapter": "div.zxzj > p > a",
+      "pagination": true,
+      "nextPage": "#pagelink > a:not(.pgroup):not(.ngroup):not(.next)"
+    },
+    "book": {
+      "url": "https://101kks.com/book/(.*?).html"
+    },
+    "toc": {
+      "url": "https://101kks.com/ajax_novels/chapterlist/%s.html",
+      "item": "body > ul > li > a"
+    },
+    "chapter": {
+      "title": ".txtnav > h1",
+      "content": "#txtcontent",
+      "paragraphTagClosed": false,
+      "paragraphTag": "<br>+",
+      "filterTxt": "\\(本章完\\)",
+      "filterTag": "div"
+    }
+  }
+]

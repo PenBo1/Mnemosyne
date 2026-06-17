@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { Novel, ChapterSummary, HookRecord, StoryFact } from "@/types";
 import { ipc } from "@/lib/ipc";
 
@@ -11,6 +13,7 @@ interface StoryState {
 }
 
 export function useOverview(workspaceId: string | null) {
+  const { t } = useI18n();
   const [novel, setNovel] = useState<Novel | null>(null);
   const [storyState, setStoryState] = useState<StoryState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,18 +35,24 @@ export function useOverview(workspaceId: string | null) {
       }
     } catch {
       setNovel(null);
+      toast.error(t.common.failedToLoad);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t.common.failedToLoad]);
 
   useEffect(() => { load(); }, [load]);
 
   const updateNovel = useCallback(async (title: string, genre: string) => {
     if (!novel) return;
-    const updated = await ipc<Novel>("update_novel", { id: novel.id, title, genre });
-    setNovel(updated);
-  }, [novel]);
+    try {
+      const updated = await ipc<Novel>("update_novel", { id: novel.id, title, genre });
+      setNovel(updated);
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [novel, t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   return { novel, storyState, loading, updateNovel, reload: load };
 }

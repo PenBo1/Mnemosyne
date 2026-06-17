@@ -5,6 +5,7 @@ import { GeneralSettings } from "./settings/GeneralSettings";
 import { ModelSettings } from "./settings/ModelSettings";
 import { PromptsSettings } from "./settings/PromptsSettings";
 import { AgentsSettings } from "./settings/AgentsSettings";
+import { BookSourcesSettings } from "./settings/BookSourcesSettings";
 import { AuditSettings } from "./settings/AuditSettings";
 import { SystemSettings } from "./settings/SystemSettings";
 
@@ -26,6 +27,9 @@ export function SettingsPage() {
           </TabsContent>
           <TabsContent value="agents" className="mt-0">
             <AgentsSettings />
+          </TabsContent>
+          <TabsContent value="bookSources" className="mt-0">
+            <BookSourcesSettings />
           </TabsContent>
           <TabsContent value="audit" className="mt-0">
             <AuditSettings />

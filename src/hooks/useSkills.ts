@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 import type { SkillMeta, Skill } from "@/types";
 import * as skillService from "@/services/skill";
 
 export function useSkills() {
+  const { t } = useI18n();
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,13 +18,13 @@ export function useSkills() {
       const result = await skillService.listSkills();
       setSkills(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load skills";
+      const message = err instanceof Error ? err.message : t.common.failedToLoad;
       setError(message);
       toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t.common.failedToLoad]);
 
   useEffect(() => {
     load();
@@ -34,13 +36,13 @@ export function useSkills() {
       await skillService.refreshSkills();
       await load();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to refresh skills";
+      const message = err instanceof Error ? err.message : t.common.failedToLoad;
       setError(message);
       toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, [load]);
+  }, [load, t.common.failedToLoad]);
 
   const getSkill = useCallback(async (name: string): Promise<Skill> => {
     return skillService.getSkill(name);
@@ -52,9 +54,14 @@ export function useSkills() {
     category: string;
     content: string;
   }) => {
-    await skillService.createSkill(params);
-    await load();
-  }, [load]);
+    try {
+      await skillService.createSkill(params);
+      await load();
+      toast.success(t.common.createdSuccessfully);
+    } catch {
+      toast.error(t.common.failedToCreate);
+    }
+  }, [load, t.common.createdSuccessfully, t.common.failedToCreate]);
 
   const update = useCallback(async (params: {
     name: string;
@@ -62,14 +69,24 @@ export function useSkills() {
     category: string;
     content: string;
   }) => {
-    await skillService.updateSkill(params);
-    await load();
-  }, [load]);
+    try {
+      await skillService.updateSkill(params);
+      await load();
+      toast.success(t.common.updatedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToUpdate);
+    }
+  }, [load, t.common.updatedSuccessfully, t.common.failedToUpdate]);
 
   const remove = useCallback(async (name: string) => {
-    await skillService.deleteSkill(name);
-    await load();
-  }, [load]);
+    try {
+      await skillService.deleteSkill(name);
+      await load();
+      toast.success(t.common.deletedSuccessfully);
+    } catch {
+      toast.error(t.common.failedToDelete);
+    }
+  }, [load, t.common.deletedSuccessfully, t.common.failedToDelete]);
 
   const filteredSkills = skills.filter(
     (skill) => filterCategory === "all" || skill.category === filterCategory
