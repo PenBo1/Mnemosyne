@@ -5,14 +5,6 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
 -- ═══════════════════════════════════════════════════════════
--- Schema Migrations (version tracking)
--- ═══════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version INTEGER PRIMARY KEY,
-    applied_at TEXT NOT NULL
-);
-
--- ═══════════════════════════════════════════════════════════
 -- Workspaces
 -- ═══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS workspaces (

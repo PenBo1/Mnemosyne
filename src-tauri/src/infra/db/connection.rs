@@ -9,12 +9,6 @@ use crate::errors::AppError;
 const SCHEMA_SQL: &str = include_str!("sql/schema.sql");
 const FEEDBACK_SCHEMA_SQL: &str = include_str!("sql/feedback_schema.sql");
 
-/// Migrations by version number. Each entry: (version, sql).
-/// Version 1 is implicit (initial schema.sql). Version 2+ are incremental.
-const MIGRATIONS: &[(i64, &str)] = &[
-    (2, "ALTER TABLE agents ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
-];
-
 pub struct Database {
     pub conn: Connection,
 }
@@ -28,7 +22,8 @@ impl Database {
         let conn = Connection::open(db_path)
             .map_err(|e| AppError::internal(format!("Failed to open database: {}", e)))?;
         let db = Self { conn };
-        db.init_with_schema(SCHEMA_SQL)?;
+        db.conn.execute_batch(SCHEMA_SQL)
+            .map_err(|e| AppError::internal(format!("Failed to init state schema: {}", e)))?;
         Ok(db)
     }
 
@@ -40,43 +35,9 @@ impl Database {
         let conn = Connection::open(db_path)
             .map_err(|e| AppError::internal(format!("Failed to open feedback database: {}", e)))?;
         let db = Self { conn };
-        db.init_with_schema(FEEDBACK_SCHEMA_SQL)?;
+        db.conn.execute_batch(FEEDBACK_SCHEMA_SQL)
+            .map_err(|e| AppError::internal(format!("Failed to init feedback schema: {}", e)))?;
         Ok(db)
-    }
-
-    fn init_with_schema(&self, schema_sql: &str) -> Result<(), AppError> {
-        self.conn.execute_batch(schema_sql)
-            .map_err(|e| AppError::internal(format!("Failed to init schema: {}", e)))?;
-        self.run_migrations()?;
-        Ok(())
-    }
-
-    fn run_migrations(&self) -> Result<(), AppError> {
-        let current: i64 = self.conn
-            .query_row(
-                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        for &(version, sql) in MIGRATIONS {
-            if version <= current {
-                continue;
-            }
-            let tx = self.conn.unchecked_transaction()
-                .map_err(|e| AppError::internal(format!("Failed to start migration tx: {}", e)))?;
-            tx.execute_batch(sql)
-                .map_err(|e| AppError::db_migration(format!("Migration v{} failed: {}", version, e)))?;
-            tx.execute(
-                "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
-                params![version, Utc::now().to_rfc3339()],
-            )
-            .map_err(|e| AppError::db_migration(format!("Failed to record migration v{}: {}", version, e)))?;
-            tx.commit()
-                .map_err(|e| AppError::db_migration(format!("Failed to commit migration v{}: {}", version, e)))?;
-        }
-        Ok(())
     }
 
     // ═══════════════════════════════════════════════════════════
