@@ -5,3 +5,4 @@ pub mod state;
 pub mod radar;
 pub mod utils;
 pub mod interaction;
+pub mod novel;

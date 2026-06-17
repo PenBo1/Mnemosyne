@@ -14,3 +14,4 @@ pub mod radar;
 pub mod sandbox;
 pub mod agent;
 pub mod agent_config;
+pub mod novel_sources;

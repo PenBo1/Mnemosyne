@@ -141,6 +141,10 @@ pub fn run() {
             app::commands::agent_config::toggle_agent_status,
             app::commands::novels_pipeline::novel_observe,
             app::commands::novels_pipeline::novel_reflect,
+            app::commands::novel_sources::novel_source_list,
+            app::commands::novel_sources::novel_search,
+            app::commands::novel_sources::novel_download,
+            app::commands::novel_sources::novel_list_local,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

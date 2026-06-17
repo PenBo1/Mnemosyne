@@ -38,6 +38,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { BookOpenIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, MoreVerticalIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useKnowledge } from "@/hooks/useKnowledge";
+import { NovelDownloadPanel } from "@/components/NovelDownloadPanel";
 import type { KnowledgeEntry } from "@/types";
 
 const KNOWLEDGE_CATEGORIES = ["writing", "research", "character", "world", "plot", "style", "reference", "other"] as const;
@@ -270,6 +271,8 @@ export function KnowledgePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <NovelDownloadPanel />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { ipc } from "@/lib/ipc";
-import type { Novel, BookConfig, WriteResult, AuditResult } from "@/types";
+import type { Novel, BookConfig, WriteResult, AuditResult, BookSource, SearchBookResult } from "@/types";
 
 export async function fetchNovels(): Promise<Novel[]> {
   return ipc<Novel[]>("list_novels");
@@ -72,4 +72,29 @@ export async function reflectChapter(
   chapterNumber: number
 ): Promise<void> {
   return ipc<void>("novel_reflect", { workspaceId, bookId, chapterNumber });
+}
+
+// ── Book Source (Novel Download) ──────────────────────
+
+export async function listBookSources(): Promise<BookSource[]> {
+  return ipc<BookSource[]>("novel_source_list");
+}
+
+export async function searchNovels(
+  sourceName: string,
+  keyword: string
+): Promise<SearchBookResult[]> {
+  return ipc<SearchBookResult[]>("novel_search", { sourceName, keyword });
+}
+
+export async function downloadNovel(
+  sourceName: string,
+  bookUrl: string,
+  bookName: string
+): Promise<string> {
+  return ipc<string>("novel_download", { sourceName, bookUrl, bookName });
+}
+
+export async function listLocalNovels(): Promise<string[]> {
+  return ipc<string[]>("novel_list_local");
 }

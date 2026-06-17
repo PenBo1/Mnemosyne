@@ -44,4 +44,5 @@ serde_yaml = "0.9"
 url = "2"
 urlencoding = "2"
 zip = "0.6"
+scraper = "0.22"
 
