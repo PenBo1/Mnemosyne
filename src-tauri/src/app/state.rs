@@ -8,6 +8,7 @@ use crate::infra::sandbox::enforce::SandboxEnforcer;
 pub struct AppState {
     pub data_dir: DataDir,
     pub db: Arc<tokio::sync::Mutex<Database>>,
+    pub feedback_db: Arc<tokio::sync::Mutex<Database>>,
     pub provider_registry: tokio::sync::Mutex<ProviderRegistry>,
     pub skill_manager: tokio::sync::Mutex<SkillManager>,
     pub sandbox: tokio::sync::Mutex<SandboxEnforcer>,

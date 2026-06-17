@@ -53,9 +53,13 @@ export interface Novel {
   workspace_id: string;
   title: string;
   genre: string;
-  status: string;
+  platform: string;
+  status: "drafting" | "paused" | "completed" | "archived";
+  language: "zh" | "en";
   word_count: number;
   chapter_count: number;
+  target_chapters: number;
+  chapter_words: number;
   created_at: string;
   updated_at: string;
 }
@@ -141,12 +145,14 @@ export interface Agent {
 export interface Session {
   id: string;
   novel_id: string | null;
+  session_type: "chat" | "pipeline" | "review";
   title: string;
   summary: string | null;
   message_count: number;
   input_tokens: number;
   output_tokens: number;
   cost: number;
+  status: "active" | "paused" | "completed" | "archived";
   created_at: string;
   updated_at: string;
 }

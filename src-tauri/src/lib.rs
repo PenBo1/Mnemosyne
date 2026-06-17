@@ -35,10 +35,16 @@ pub fn run() {
             tracing::info!(root = %data_dir.root().display(), "App data directory");
 
             let db_path = data_dir.state_db_path();
-            tracing::info!(path = %db_path.display(), "Opening database");
+            tracing::info!(path = %db_path.display(), "Opening state database");
             let database = Database::new(db_path.to_str().unwrap())
-                .expect("failed to open database");
-            tracing::info!("Database initialized");
+                .expect("failed to open state database");
+            tracing::info!("State database initialized");
+
+            let feedback_db_path = data_dir.feedback_db_path();
+            tracing::info!(path = %feedback_db_path.display(), "Opening feedback database");
+            let feedback_db = Database::new_feedback(feedback_db_path.to_str().unwrap())
+                .expect("failed to open feedback database");
+            tracing::info!("Feedback database initialized");
 
             let provider_registry = ProviderRegistry::new(&data_dir);
             tracing::info!(count = provider_registry.list_providers().len(), "Providers loaded");
@@ -55,6 +61,7 @@ pub fn run() {
             tracing::info!(count = skill_count, "Skills discovered");
 
             let db_arc = Arc::new(tokio::sync::Mutex::new(database));
+            let feedback_db_arc = Arc::new(tokio::sync::Mutex::new(feedback_db));
             let sandbox_policy = SandboxPolicy::restricted();
             let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
             let app_handle = app.handle().clone();
@@ -62,6 +69,7 @@ pub fn run() {
             app.manage(AppState {
                 data_dir,
                 db: db_arc,
+                feedback_db: feedback_db_arc,
                 provider_registry: tokio::sync::Mutex::new(provider_registry),
                 skill_manager: tokio::sync::Mutex::new(skill_manager),
                 sandbox: tokio::sync::Mutex::new(sandbox_enforcer),

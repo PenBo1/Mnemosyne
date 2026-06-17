@@ -1,5 +1,6 @@
 use tauri::State;
 use crate::errors::{IpcResponse, AppError};
+use crate::infra::db::models::{CreateNovelRequest, UpdateNovelRequest};
 use crate::AppState;
 
 #[tauri::command]
@@ -11,8 +12,15 @@ pub async fn create_novel(
 ) -> Result<IpcResponse<crate::infra::db::models::Novel>, AppError> {
     tracing::info!(workspace_id = %workspace_id, title = %title, genre = %genre, "create_novel");
     let db = state.db.lock().await;
-    let novel_id = uuid::Uuid::new_v4().to_string();
-    let novel = db.create_novel_with_workspace(&novel_id, &workspace_id, &title, &genre)?;
+    let novel = db.create_novel(&CreateNovelRequest {
+        workspace_id,
+        title,
+        genre,
+        platform: "local".to_string(),
+        language: "zh".to_string(),
+        target_chapters: 100,
+        chapter_words: 3000,
+    })?;
     tracing::info!(novel_id = %novel.id, "Novel created");
     Ok(IpcResponse::created(novel))
 }
@@ -25,7 +33,14 @@ pub async fn update_novel(
     genre: String,
 ) -> Result<IpcResponse<crate::infra::db::models::Novel>, AppError> {
     let db = state.db.lock().await;
-    let novel = db.update_novel(&id, &title, &genre)?;
+    let novel = db.update_novel(&id, &UpdateNovelRequest {
+        title: Some(title),
+        genre: Some(genre),
+        platform: None,
+        language: None,
+        target_chapters: None,
+        chapter_words: None,
+    })?;
     Ok(IpcResponse::ok(novel))
 }
 

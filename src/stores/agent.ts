@@ -59,11 +59,13 @@ export const useAgentStore = create<AgentState>((set, _get) => ({
       id: tempId,
       title: title || "New Session",
       novel_id: novelId || null,
+      session_type: "chat",
       summary: null,
       message_count: 0,
       input_tokens: 0,
       output_tokens: 0,
       cost: 0,
+      status: "active",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

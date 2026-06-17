@@ -31,10 +31,11 @@ pub async fn list_prompts(
 pub async fn get_prompt(
     state: State<'_, AppState>,
     id: String,
-) -> Result<IpcResponse<Option<crate::infra::db::models::Prompt>>, AppError> {
+) -> Result<IpcResponse<crate::infra::db::models::Prompt>, AppError> {
     tracing::debug!(prompt_id = %id, "get_prompt");
     let db = state.db.lock().await;
-    let prompt = db.get_prompt(&id)?;
+    let prompt = db.get_prompt(&id)?
+        .ok_or_else(|| AppError::prompt_not_found())?;
     Ok(IpcResponse::ok(prompt))
 }
 
@@ -42,7 +43,7 @@ pub async fn get_prompt(
 pub async fn update_prompt(
     state: State<'_, AppState>,
     req: UpdatePromptRequest,
-) -> Result<IpcResponse<Option<crate::infra::db::models::Prompt>>, AppError> {
+) -> Result<IpcResponse<crate::infra::db::models::Prompt>, AppError> {
     tracing::info!(prompt_id = %req.id, "update_prompt");
     let db = state.db.lock().await;
     let prompt = db.update_prompt(req)?;

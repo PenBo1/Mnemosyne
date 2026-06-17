@@ -42,6 +42,13 @@ pub async fn agent_send_message(
 ) -> Result<IpcResponse<String>, AppError> {
     tracing::info!(session_id = %session_id, content_len = content.len(), "agent_send_message called");
 
+    if content.trim().is_empty() {
+        return Err(AppError::invalid_input("Message content cannot be empty"));
+    }
+    if content.len() > 1_000_000 {
+        return Err(AppError::invalid_input("Message content too long (max 1MB)"));
+    }
+
     // Save user message to DB
     {
         let db = state.db.lock().await;

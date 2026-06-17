@@ -93,6 +93,7 @@ impl AppError {
     pub fn db_query(message: impl Into<String>) -> Self { Self::new(status::DB_QUERY_FAILED, "DB_QUERY_FAILED", message) }
     pub fn db_constraint(message: impl Into<String>) -> Self { Self::new(status::DB_CONSTRAINT_VIOLATION, "DB_CONSTRAINT", message) }
     pub fn db_busy() -> Self { Self::new(status::DB_BUSY, "DB_BUSY", "Database busy") }
+    pub fn db_migration(message: impl Into<String>) -> Self { Self::new(status::DB_MIGRATION_FAILED, "DB_MIGRATION", message) }
     pub fn db_corruption(message: impl Into<String>) -> Self { Self::new(status::DB_CORRUPTION, "DB_CORRUPTION", message) }
 
     // ── 5xx: 网络错误 ──────────────────────────────────────

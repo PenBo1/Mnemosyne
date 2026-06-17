@@ -66,9 +66,13 @@ pub struct Novel {
     pub workspace_id: String,
     pub title: String,
     pub genre: String,
+    pub platform: String,
     pub status: String,
+    pub language: String,
     pub word_count: i64,
     pub chapter_count: i64,
+    pub target_chapters: i64,
+    pub chapter_words: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -79,9 +83,10 @@ pub struct Chapter {
     pub novel_id: String,
     pub number: i64,
     pub title: String,
-    pub content: String,
     pub status: String,
     pub word_count: i64,
+    pub audit_score: Option<f64>,
+    pub revision_count: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -126,25 +131,22 @@ pub struct RadarResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentRow {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub model: String,
-    pub system_prompt: String,
-    pub temperature: f64,
-    pub max_tokens: i64,
-    pub status: String,
-    pub created_at: String,
+pub struct CreateNovelRequest {
+    pub workspace_id: String,
+    pub title: String,
+    pub genre: String,
+    pub platform: String,
+    pub language: String,
+    pub target_chapters: i64,
+    pub chapter_words: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateAgentRequest {
-    pub id: String,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub model: Option<String>,
-    pub system_prompt: Option<String>,
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<i64>,
+pub struct UpdateNovelRequest {
+    pub title: Option<String>,
+    pub genre: Option<String>,
+    pub platform: Option<String>,
+    pub language: Option<String>,
+    pub target_chapters: Option<i64>,
+    pub chapter_words: Option<i64>,
 }

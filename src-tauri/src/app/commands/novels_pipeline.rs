@@ -1,5 +1,6 @@
 use crate::errors::{AppError, IpcResponse};
 use crate::domain::pipeline::{PipelineConfig, PipelineRunner};
+use crate::infra::db::models::CreateNovelRequest;
 use crate::AppState;
 use tauri::State;
 
@@ -41,7 +42,15 @@ pub async fn novel_create(
 
     {
         let db = state.db.lock().await;
-        db.create_novel_with_workspace(&config.id, &workspace_id, &title, &genre)?;
+        db.insert_novel(&config.id, &CreateNovelRequest {
+            workspace_id: workspace_id.clone(),
+            title: title.clone(),
+            genre: genre.clone(),
+            platform: "local".to_string(),
+            language: "zh".to_string(),
+            target_chapters: 100,
+            chapter_words: 3000,
+        })?;
     }
 
     Ok(IpcResponse::created(config))
