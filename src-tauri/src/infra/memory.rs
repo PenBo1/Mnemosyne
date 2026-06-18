@@ -26,31 +26,33 @@ impl MemoryStore {
             books: RwLock::new(HashMap::new()),
             data_dir,
         });
-        let store_clone = store.clone();
-        tokio::spawn(async move { store_clone.load_all().await; });
+        store.load_all_sync();
         store
     }
 
-    async fn load_all(&self) {
+    fn load_all_sync(&self) {
         let memory_dir = self.data_dir.join("memory");
         if !memory_dir.exists() {
-            let _ = tokio::fs::create_dir_all(&memory_dir).await;
+            let _ = std::fs::create_dir_all(&memory_dir);
             return;
         }
-        let mut entries = match tokio::fs::read_dir(&memory_dir).await {
+        let entries = match std::fs::read_dir(&memory_dir) {
             Ok(e) => e,
             Err(_) => return,
         };
-        while let Ok(Some(entry)) = entries.next_entry().await {
+        let mut books = match self.books.try_write() {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
             let book_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
             if book_id.is_empty() { continue; }
-            if let Ok(content) = tokio::fs::read_to_string(&path).await {
+            if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(data) = serde_json::from_str::<MemoryData>(&content) {
                     let mut memory = MemorySystem::new(data.budget);
                     for e in data.entries { memory.archive(e); }
-                    let mut books = self.books.write().await;
                     books.insert(book_id, Arc::new(RwLock::new(memory)));
                 }
             }

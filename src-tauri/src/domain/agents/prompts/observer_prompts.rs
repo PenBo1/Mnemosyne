@@ -1,5 +1,5 @@
-pub fn build_system_prompt(language: &str) -> String {
-    match language {
+pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+    let task_prompt = match language {
         "en" => {
             r#"You are a fact extraction specialist. Read the chapter text and extract EVERY observable fact change.
 
@@ -60,7 +60,12 @@ pub fn build_system_prompt(language: &str) -> String {
   "chapter_summary": { "chapter": N, "title": "", "characters": [], "events": [], "state_changes": [], "hook_activity": [], "mood": "", "chapter_type": "" }
 }"#
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 pub fn build_user_prompt(

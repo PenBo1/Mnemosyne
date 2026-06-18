@@ -1,5 +1,5 @@
-pub fn build_system_prompt(language: &str) -> String {
-    match language {
+pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+    let task_prompt = match language {
         "en" => {
             r#"You are a strict web-fiction structural editor. Audit the chapter for completion and structure across 29 dimensions.
 
@@ -94,7 +94,12 @@ passed is false ONLY when critical-severity issues exist."#
 
 只有存在 critical 级别问题时 passed 才为 false。"#
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 pub fn build_user_message(

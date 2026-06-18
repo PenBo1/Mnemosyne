@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
 use crate::domain::story::{AuditResult, AuditIssue, AuditSeverity};
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::prompts::auditor_prompts;
+use super::agent_identity::AgentIdentity;
 
 pub struct ContinuityAuditor;
 
@@ -19,11 +21,14 @@ impl ContinuityAuditor {
         ctx: &AgentContext,
         book_dir: &std::path::Path,
         chapter_number: u32,
+        data_dir: &DataDir,
     ) -> Result<AuditResult, AppError> {
         let language = read_book_language(book_dir).unwrap_or_else(|| "zh".to_string());
         let chapter_content = read_chapter_content(book_dir, chapter_number)?;
 
-        let system = auditor_prompts::build_system_prompt(&language);
+        let identity = AgentIdentity::load(data_dir, "auditor");
+        let identity_prefix = identity.build_system_prefix();
+        let system = auditor_prompts::build_system_prompt(&language, Some(&identity_prefix));
         let user = auditor_prompts::build_user_message(
             chapter_number,
             &chapter_content,

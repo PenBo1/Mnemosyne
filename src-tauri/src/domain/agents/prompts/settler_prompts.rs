@@ -1,5 +1,5 @@
-pub fn build_system_prompt(language: &str) -> String {
-    match language {
+pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+    let task_prompt = match language {
         "en" => {
             r#"You are a state management specialist. Given the observer's extraction results and the current story state, produce a state delta that updates the truth files.
 
@@ -38,7 +38,12 @@ pub fn build_system_prompt(language: &str) -> String {
 - 不要删除已有事实
 - 输出前验证 JSON 格式"#
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 pub fn build_user_message(

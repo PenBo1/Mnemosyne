@@ -1,6 +1,6 @@
 use crate::domain::agents::reviser::ReviseMode;
 
-pub fn build_system_prompt(mode: &ReviseMode, language: &str) -> String {
+pub fn build_system_prompt(mode: &ReviseMode, language: &str, identity_prefix: Option<&str>) -> String {
     let mode_desc = match mode {
         ReviseMode::Auto => match language {
             "en" => "Auto mode: Fix all critical issues first, then warning issues. Preserve the original style and tone. Minimize changes.",
@@ -24,7 +24,7 @@ pub fn build_system_prompt(mode: &ReviseMode, language: &str) -> String {
         },
     };
 
-    match language {
+    let task_prompt = match language {
         "en" => {
             format!(
                 r#"You are a revision specialist. Revise the chapter based on the audit feedback.
@@ -63,7 +63,12 @@ Return the full revised chapter text wrapped in === REVISED_CONTENT === markers.
                 mode_desc
             )
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 pub fn build_user_message(

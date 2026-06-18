@@ -7,9 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
-import { GlobeIcon, AlertTriangleIcon } from "lucide-react";
+import { AlertTriangleIcon } from "lucide-react";
 import { useGeneralSettings } from "@/hooks/useGeneralSettings";
 import type { LogLevel } from "@/lib/settings";
 
@@ -31,24 +30,42 @@ export function GeneralSettings() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <GlobeIcon className="size-5" />
-          {t.settings.general}
-        </h2>
+        <h1 className="text-2xl font-bold tracking-tight">{t.settings.general}</h1>
         <p className="text-sm text-muted-foreground">{t.settings.generalDesc}</p>
       </div>
-      <FieldGroup>
-        <Field orientation="horizontal">
-          <FieldLabel htmlFor="theme" className="flex-1">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">{t.settings.field.theme}</span>
-              <span className="text-xs text-muted-foreground">
-                {t.settings.description.theme}
-              </span>
-            </div>
-          </FieldLabel>
+
+      {/* Language */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">{t.settings.field.language}</span>
+            <span className="text-xs text-muted-foreground">
+              {t.settings.description.language}
+            </span>
+          </div>
+          <Select value={locale} onValueChange={(v) => setLocale(v as "en" | "zh")}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en">English</SelectItem>
+              <SelectItem value="zh">中文</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Appearance & Notifications */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">{t.settings.field.theme}</span>
+            <span className="text-xs text-muted-foreground">
+              {t.settings.description.theme}
+            </span>
+          </div>
           <Select value={theme} onValueChange={(v) => setTheme(v as "light" | "dark" | "system")}>
-            <SelectTrigger className="w-40" id="theme">
+            <SelectTrigger className="w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -57,69 +74,53 @@ export function GeneralSettings() {
               <SelectItem value="system">{t.settings.themeSystem}</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
-        <Field orientation="horizontal">
-          <FieldLabel htmlFor="language" className="flex-1">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">{t.settings.field.language}</span>
-              <span className="text-xs text-muted-foreground">
-                {t.settings.description.language}
-              </span>
-            </div>
-          </FieldLabel>
-          <Select value={locale} onValueChange={(v) => setLocale(v as "en" | "zh")}>
-            <SelectTrigger className="w-40" id="language">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="zh">中文</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field orientation="horizontal">
-          <FieldLabel htmlFor="notifications" className="flex-1">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">{t.settings.field.notifications}</span>
-              <span className="text-xs text-muted-foreground">
-                {t.settings.description.notifications}
-              </span>
-            </div>
-          </FieldLabel>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">{t.settings.field.notifications}</span>
+            <span className="text-xs text-muted-foreground">
+              {t.settings.description.notifications}
+            </span>
+          </div>
           <Switch
-            id="notifications"
             size="sm"
             checked={notifications}
             onCheckedChange={toggleNotifications}
           />
-        </Field>
-        <Field orientation="horizontal">
-          <FieldLabel htmlFor="log-level" className="flex-1">
+        </div>
+      </div>
+
+      {/* Advanced */}
+      <div className="rounded-lg border bg-card">
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">{t.settings.field.logLevel}</span>
               <span className="text-xs text-muted-foreground">
                 {t.settings.description.logLevel}
               </span>
             </div>
-          </FieldLabel>
-          <Select value={logLevel} onValueChange={changeLogLevel}>
-            <SelectTrigger className="w-40" id="log-level">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(["trace", "debug", "info", "warn", "error"] as LogLevel[]).map((level) => (
-                <SelectItem key={level} value={level}>{getLogLevelLabel(t, level)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        {logLevelChanged && (
-          <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 px-3 py-2 rounded-md">
-            <AlertTriangleIcon className="size-4 shrink-0" />
-            <span>{t.settings.logLevelRestartRequired}</span>
+            <Select value={logLevel} onValueChange={changeLogLevel}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["trace", "debug", "info", "warn", "error"] as LogLevel[]).map((level) => (
+                  <SelectItem key={level} value={level}>{getLogLevelLabel(t, level)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
-      </FieldGroup>
+
+          {logLevelChanged && (
+            <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 px-3 py-2 rounded-md mt-3">
+              <AlertTriangleIcon className="size-4 shrink-0" />
+              <span>{t.settings.logLevelRestartRequired}</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

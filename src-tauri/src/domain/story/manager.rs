@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::errors::AppError;
+use crate::infra::gc::utils;
 
 use super::models::*;
 
@@ -103,7 +104,7 @@ impl StoryManager {
         std::fs::create_dir_all(&dir)
             .map_err(|e| AppError::internal(format!("Failed to create chapters dir: {}", e)))?;
 
-        let filename = format!("{:04}_{}.md", chapter.number, sanitize_filename(&chapter.title));
+        let filename = format!("{:04}_{}.md", chapter.number, utils::sanitize_filename(&chapter.title));
         let path = dir.join(filename);
         let content = format!("# {}\n\n{}", chapter.title, chapter.content);
         std::fs::write(&path, content)
@@ -252,13 +253,4 @@ impl StoryManager {
             .map_err(|e| AppError::internal(format!("Failed to read control doc: {}", e)))?;
         Ok(Some(content))
     }
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
-        .collect::<String>()
-        .chars()
-        .take(50)
-        .collect()
 }

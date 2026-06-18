@@ -290,10 +290,10 @@ impl Scheduler {
         }
 
         let observer = crate::domain::agents::observer::ObserverAgent::new();
-        let ctx = self.pipeline.agent_ctx_for("observer", Some(book_id));
+        let ctx = self.pipeline.agent_ctx_for("observer", Some(book_id)).await;
         let language = "zh";
 
-        match observer.observe_chapter(&ctx, chapter, &title, &content, language).await {
+        match observer.observe_chapter(&ctx, chapter, &title, &content, language, &self.pipeline.config.data_dir).await {
             Ok(output) => {
                 let facts_json: Vec<serde_json::Value> = output.facts.iter().map(|f| {
                     serde_json::json!({ "subject": f.subject, "predicate": f.predicate, "object": f.object, "category": f.category })

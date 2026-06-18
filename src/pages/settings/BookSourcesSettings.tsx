@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -23,7 +22,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  BookOpenIcon,
   MoreVerticalIcon,
   PlusIcon,
   Trash2Icon,
@@ -186,10 +184,7 @@ export function BookSourcesSettings() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <BookOpenIcon className="size-5" />
-            {t.settings.bookSources}
-          </h2>
+          <h1 className="text-2xl font-bold tracking-tight">{t.settings.bookSources}</h1>
           <p className="text-sm text-muted-foreground">{t.settings.bookSourcesDesc}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -208,30 +203,28 @@ export function BookSourcesSettings() {
           <Spinner className="size-6" />
         </div>
       ) : sources.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <BookOpenIcon className="size-12 mx-auto mb-4 opacity-50" />
-          <p>暂无书源</p>
+        <div className="rounded-lg border bg-card">
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <GlobeIcon className="size-12 mb-4 opacity-30" />
+            <p className="text-lg font-medium">{t.settings.bookSourcesEmpty}</p>
+          </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-lg border bg-card divide-y">
           {sources.map((source) => (
-            <Card key={source.name} className="relative">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="truncate text-base flex items-center gap-2">
-                      <GlobeIcon className="size-4 shrink-0" />
-                      <span>{source.name}</span>
-                    </CardTitle>
-                    <CardDescription className="mt-1 flex items-center gap-2">
-                      <Badge variant={source.disabled ? "secondary" : "default"}>
-                        {source.disabled ? "禁用" : "启用"}
-                      </Badge>
-                      {source.search?.disabled && (
-                        <Badge variant="outline">搜索不可用</Badge>
-                      )}
-                    </CardDescription>
-                  </div>
+            <div key={source.name} className="px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <GlobeIcon className="size-4 shrink-0" />
+                  <span className="text-sm font-medium">{source.name}</span>
+                  <Badge variant={source.disabled ? "secondary" : "default"} className="text-xs">
+                    {source.disabled ? t.settings.bookSourceDisabled : t.settings.bookSourceEnabled}
+                  </Badge>
+                  {source.search?.disabled && (
+                    <Badge variant="outline" className="text-xs">{t.settings.bookSourceNoSearch}</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon-sm">
@@ -241,7 +234,7 @@ export function BookSourcesSettings() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEditDialog(source)}>
                         <PencilIcon />
-                        <span>编辑</span>
+                        <span>{t.common.edit}</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setDeleteConfirm(source.name)}
@@ -253,24 +246,22 @@ export function BookSourcesSettings() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <p className="line-clamp-1 text-sm text-muted-foreground mb-3">{source.url}</p>
-                {source.comment && (
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{source.comment}</p>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {source.search?.disabled ? "无搜索" : "可搜索"}
-                  </span>
-                  <Switch
-                    checked={!source.disabled}
-                    onCheckedChange={() => handleToggle(source)}
-                    disabled={toggling === source.name}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+              <p className="line-clamp-1 text-xs text-muted-foreground mb-2">{source.url}</p>
+              {source.comment && (
+                <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{source.comment}</p>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {source.search?.disabled ? t.settings.bookSourceNoSearch : t.settings.bookSourceSearchable}
+                </span>
+                <Switch
+                  checked={!source.disabled}
+                  onCheckedChange={() => handleToggle(source)}
+                  disabled={toggling === source.name}
+                />
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -279,28 +270,28 @@ export function BookSourcesSettings() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingSource ? "编辑书源" : "新建书源"}</DialogTitle>
+            <DialogTitle>{editingSource ? t.settings.bookSourceEdit : t.settings.bookSourceCreate}</DialogTitle>
             <DialogDescription>
-              {editingSource ? "修改书源配置" : "添加新的书源配置"}
+              {editingSource ? t.settings.bookSourceEditDesc : t.settings.bookSourceCreateDesc}
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <FieldGroup>
               <Field>
-                <FieldLabel>名称</FieldLabel>
-                <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="书源名称" />
+                <FieldLabel>{t.settings.bookSourceName}</FieldLabel>
+                <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder={t.settings.bookSourceNamePlaceholder} />
               </Field>
               <Field>
                 <FieldLabel>URL</FieldLabel>
                 <Input value={formUrl} onChange={(e) => setFormUrl(e.target.value)} placeholder="https://..." />
               </Field>
               <Field>
-                <FieldLabel>备注</FieldLabel>
-                <Input value={formComment} onChange={(e) => setFormComment(e.target.value)} placeholder="书源备注信息" />
+                <FieldLabel>{t.settings.bookSourceComment}</FieldLabel>
+                <Input value={formComment} onChange={(e) => setFormComment(e.target.value)} placeholder={t.settings.bookSourceCommentPlaceholder} />
               </Field>
               <Field>
                 <div className="flex items-center justify-between">
-                  <FieldLabel>启用</FieldLabel>
+                  <FieldLabel>{t.settings.bookSourceEnabled}</FieldLabel>
                   <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
                 </div>
               </Field>
@@ -308,38 +299,38 @@ export function BookSourcesSettings() {
               <FieldSeparator />
 
               <Field>
-                <FieldLabel>搜索 URL</FieldLabel>
-                <Input value={formSearchUrl} onChange={(e) => setFormSearchUrl(e.target.value)} placeholder="搜索接口地址" />
+                <FieldLabel>{t.settings.bookSourceSearchUrl}</FieldLabel>
+                <Input value={formSearchUrl} onChange={(e) => setFormSearchUrl(e.target.value)} placeholder={t.settings.bookSourceSearchUrlPlaceholder} />
               </Field>
               <Field>
-                <FieldLabel>搜索方法</FieldLabel>
-                <Input value={formSearchMethod} onChange={(e) => setFormSearchMethod(e.target.value)} placeholder="get / post" />
+                <FieldLabel>{t.settings.bookSourceSearchMethod}</FieldLabel>
+                <Input value={formSearchMethod} onChange={(e) => setFormSearchMethod(e.target.value)} placeholder={t.settings.bookSourceSearchMethodPlaceholder} />
               </Field>
               <Field>
-                <FieldLabel>搜索结果选择器</FieldLabel>
-                <Textarea value={formSearchResult} onChange={(e) => setFormSearchResult(e.target.value)} placeholder="CSS 选择器" className="min-h-[60px]" />
-              </Field>
-
-              <FieldSeparator />
-
-              <Field>
-                <FieldLabel>目录选择器</FieldLabel>
-                <Input value={formTocItem} onChange={(e) => setFormTocItem(e.target.value)} placeholder="CSS 选择器" />
+                <FieldLabel>{t.settings.bookSourceSearchResult}</FieldLabel>
+                <Textarea value={formSearchResult} onChange={(e) => setFormSearchResult(e.target.value)} placeholder={t.settings.bookSourceSearchResultPlaceholder} className="min-h-[60px]" />
               </Field>
 
               <FieldSeparator />
 
               <Field>
-                <FieldLabel>章节标题选择器</FieldLabel>
-                <Input value={formChapterTitle} onChange={(e) => setFormChapterTitle(e.target.value)} placeholder="CSS 选择器" />
+                <FieldLabel>{t.settings.bookSourceTocItem}</FieldLabel>
+                <Input value={formTocItem} onChange={(e) => setFormTocItem(e.target.value)} placeholder={t.settings.bookSourceTocItemPlaceholder} />
+              </Field>
+
+              <FieldSeparator />
+
+              <Field>
+                <FieldLabel>{t.settings.bookSourceChapterTitle}</FieldLabel>
+                <Input value={formChapterTitle} onChange={(e) => setFormChapterTitle(e.target.value)} placeholder={t.settings.bookSourceChapterTitlePlaceholder} />
               </Field>
               <Field>
-                <FieldLabel>章节内容选择器</FieldLabel>
-                <Input value={formChapterContent} onChange={(e) => setFormChapterContent(e.target.value)} placeholder="CSS 选择器" />
+                <FieldLabel>{t.settings.bookSourceChapterContent}</FieldLabel>
+                <Input value={formChapterContent} onChange={(e) => setFormChapterContent(e.target.value)} placeholder={t.settings.bookSourceChapterContentPlaceholder} />
               </Field>
               <Field>
-                <FieldLabel>内容过滤规则</FieldLabel>
-                <Input value={formChapterFilter} onChange={(e) => setFormChapterFilter(e.target.value)} placeholder="正则表达式" />
+                <FieldLabel>{t.settings.bookSourceContentFilter}</FieldLabel>
+                <Input value={formChapterFilter} onChange={(e) => setFormChapterFilter(e.target.value)} placeholder={t.settings.bookSourceContentFilterPlaceholder} />
               </Field>
             </FieldGroup>
           </ScrollArea>
@@ -358,9 +349,9 @@ export function BookSourcesSettings() {
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除书源</DialogTitle>
+            <DialogTitle>{t.settings.bookSourceDelete}</DialogTitle>
             <DialogDescription>
-              确定要删除书源 "{deleteConfirm}" 吗？此操作无法撤销。
+              {t.settings.bookSourceDeleteConfirm.replace("{name}", deleteConfirm || "")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

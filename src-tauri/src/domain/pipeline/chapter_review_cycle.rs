@@ -3,6 +3,8 @@ use crate::domain::story::AuditResult;
 use crate::domain::agents::*;
 use crate::domain::agents::base::AgentContext;
 use crate::domain::agents::reviser::ReviseMode;
+use crate::infra::data_dir::DataDir;
+use crate::infra::gc::utils;
 
 pub struct ReviewCycleResult {
     pub final_content: String,
@@ -20,10 +22,11 @@ pub async fn run_chapter_review_cycle(
     initial_content: &str,
     initial_title: &str,
     max_iterations: u32,
+    data_dir: &DataDir,
 ) -> Result<ReviewCycleResult, AppError> {
     // Initial audit
     let auditor = ContinuityAuditor::new();
-    let mut audit = auditor.audit_chapter(auditor_ctx, book_dir, chapter_number).await?;
+    let mut audit = auditor.audit_chapter(auditor_ctx, book_dir, chapter_number, data_dir).await?;
 
     let mut current_content = initial_content.to_string();
     let mut revised = false;
@@ -36,6 +39,7 @@ pub async fn run_chapter_review_cycle(
                 let output = reviser.revise_chapter(
                     reviser_ctx, book_dir, chapter_number,
                     &current_content, &audit, ReviseMode::Auto,
+                    data_dir,
                 ).await?;
 
                 current_content = output.content;
@@ -46,14 +50,14 @@ pub async fn run_chapter_review_cycle(
                     book_dir, chapter_number, initial_title, &current_content,
                 )?;
 
-                audit = auditor.audit_chapter(auditor_ctx, book_dir, chapter_number).await?;
+                audit = auditor.audit_chapter(auditor_ctx, book_dir, chapter_number, data_dir).await?;
             } else {
                 break;
             }
         }
     }
 
-    let word_count = count_words(&current_content, "zh");
+    let word_count = utils::count_words(&current_content, "zh");
 
     Ok(ReviewCycleResult {
         final_content: current_content,
@@ -61,22 +65,4 @@ pub async fn run_chapter_review_cycle(
         revised,
         audit_result: audit,
     })
-}
-
-fn count_words(text: &str, language: &str) -> u32 {
-    if language == "en" {
-        text.split_whitespace().count() as u32
-    } else {
-        let mut count = 0u32;
-        for ch in text.chars() {
-            if ch.is_ascii_alphanumeric() || ch.is_ascii_punctuation() {
-            } else if !ch.is_whitespace() {
-                count += 1;
-            }
-        }
-        let ascii_words: u32 = text.split_whitespace()
-            .filter(|w| w.bytes().all(|b| b.is_ascii()))
-            .count() as u32;
-        count + ascii_words
-    }
 }

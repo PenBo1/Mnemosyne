@@ -15,9 +15,25 @@ use crate::errors::AppError;
 ///   - mnemosyne.log              # Rolling daily log files
 /// - skills/                      # Local skill definitions
 /// - book_sources/                # Book source JSON files
+/// - agents/                      # Per-agent identity files (SOUL.md, CONTEXT.md, MEMORY.md)
+///   - architect/
+///   - planner/
+///   - composer/
+///   - writer/
+///   - auditor/
+///   - reviser/
+///   - observer/
+///   - reflector/
+#[derive(Clone)]
 pub struct DataDir {
     root: PathBuf,
 }
+
+/// All agent roles that have identity files.
+pub const AGENT_ROLES: &[&str] = &[
+    "architect", "planner", "composer", "writer",
+    "auditor", "reviser", "observer", "reflector",
+];
 
 impl DataDir {
     pub fn new(root: PathBuf) -> Self {
@@ -39,6 +55,7 @@ impl DataDir {
 
         self.ensure_config_json()?;
         self.ensure_default_book_sources()?;
+        self.ensure_agent_identities()?;
 
         Ok(())
     }
@@ -63,6 +80,32 @@ impl DataDir {
 
     pub fn book_sources_dir(&self) -> PathBuf {
         self.root.join("book_sources")
+    }
+
+    pub fn agents_dir(&self) -> PathBuf {
+        self.root.join("agents")
+    }
+
+    /// Get the identity directory for a specific agent role.
+    pub fn agent_dir(&self, role: &str) -> PathBuf {
+        self.agents_dir().join(role)
+    }
+
+    // --- Agent identity file getters ---
+
+    /// Get SOUL.md path for an agent role.
+    pub fn agent_soul_path(&self, role: &str) -> PathBuf {
+        self.agent_dir(role).join("SOUL.md")
+    }
+
+    /// Get CONTEXT.md path for an agent role.
+    pub fn agent_context_path(&self, role: &str) -> PathBuf {
+        self.agent_dir(role).join("CONTEXT.md")
+    }
+
+    /// Get MEMORY.md path for an agent role.
+    pub fn agent_memory_path(&self, role: &str) -> PathBuf {
+        self.agent_dir(role).join("MEMORY.md")
     }
 
     // --- File getters ---
@@ -115,6 +158,44 @@ impl DataDir {
     fn ensure_default_book_sources(&self) -> Result<(), AppError> {
         let dir = self.book_sources_dir();
         crate::domain::novel::source::extract_builtin_sources_to_dir(&dir)?;
+        Ok(())
+    }
+
+    /// Create default agent identity files (SOUL.md, CONTEXT.md, MEMORY.md)
+    /// for each agent role. Existing files are never overwritten.
+    fn ensure_agent_identities(&self) -> Result<(), AppError> {
+        let agents_dir = self.agents_dir();
+        std::fs::create_dir_all(&agents_dir)
+            .map_err(|e| AppError::internal(format!("Failed to create agents dir: {}", e)))?;
+
+        for role in AGENT_ROLES {
+            let role_dir = agents_dir.join(role);
+            std::fs::create_dir_all(&role_dir)
+                .map_err(|e| AppError::internal(format!("Failed to create agent dir {}: {}", role, e)))?;
+
+            let soul_path = role_dir.join("SOUL.md");
+            if !soul_path.exists() {
+                let default = crate::domain::agents::identity::default_soul(role);
+                std::fs::write(&soul_path, default)
+                    .map_err(|e| AppError::internal(format!("Failed to write default SOUL.md for {}: {}", role, e)))?;
+            }
+
+            let context_path = role_dir.join("CONTEXT.md");
+            if !context_path.exists() {
+                let default = crate::domain::agents::identity::default_context(role);
+                std::fs::write(&context_path, default)
+                    .map_err(|e| AppError::internal(format!("Failed to write default CONTEXT.md for {}: {}", role, e)))?;
+            }
+
+            let memory_path = role_dir.join("MEMORY.md");
+            if !memory_path.exists() {
+                std::fs::write(&memory_path, "# Agent Memory\n\n<!-- Agent accumulates learning notes here across pipeline runs. -->\n")
+                    .map_err(|e| AppError::internal(format!("Failed to write default MEMORY.md for {}: {}", role, e)))?;
+            }
+
+            tracing::debug!(role = role, "Ensured agent identity files");
+        }
+
         Ok(())
     }
 }

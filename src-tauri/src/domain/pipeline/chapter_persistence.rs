@@ -1,4 +1,5 @@
 use crate::errors::AppError;
+use crate::infra::gc::utils;
 
 /// Save a chapter file to disk
 pub fn save_chapter_file(
@@ -20,8 +21,8 @@ pub fn save_chapter_file(
         }
     }
 
-    let filename = format!("{}{}.md", prefix, sanitize_filename(title));
-    let heading = if is_english_book(book_dir) {
+    let filename = format!("{}{}.md", prefix, utils::sanitize_filename(title));
+    let heading = if utils::is_english_book(book_dir) {
         format!("# Chapter {}: {}", chapter_number, title)
     } else {
         format!("# 第{}章 {}", chapter_number, title)
@@ -99,23 +100,4 @@ fn append_chapter_summary(story_dir: &std::path::Path, summary: &str) -> Result<
 
     std::fs::write(path, content)?;
     Ok(())
-}
-
-fn is_english_book(book_dir: &std::path::Path) -> bool {
-    let config_path = book_dir.join("book.json");
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-            return config.get("language").and_then(|v| v.as_str()) == Some("en");
-        }
-    }
-    false
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
-        .collect::<String>()
-        .chars()
-        .take(50)
-        .collect()
 }

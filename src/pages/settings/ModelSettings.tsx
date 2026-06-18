@@ -1,10 +1,8 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  CpuIcon,
   CheckCircleIcon,
   XCircleIcon,
   Loader2Icon,
@@ -76,10 +74,7 @@ export function ModelSettings() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <CpuIcon className="size-5" />
-            {t.settings.modelSettings.title}
-          </h2>
+          <h1 className="text-2xl font-bold tracking-tight">{t.settings.modelSettings.title}</h1>
           <p className="text-sm text-muted-foreground">
             {t.settings.modelSettings.subtitle}
           </p>
@@ -90,53 +85,46 @@ export function ModelSettings() {
         </Button>
       </div>
 
+      {/* Active Model */}
       {activeModelId && (() => {
         const active = models.find((m) => m.id === activeModelId);
         if (!active) return null;
         return (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t.settings.modelSettings.defaultModel}</CardTitle>
-              <CardDescription>{t.settings.modelSettings.defaultModelDesc}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <p className="text-sm">
-                    <span className="text-muted-foreground">{t.settings.modelSettings.provider}: </span>
-                    <span className="font-medium">{active.provider}</span>
-                  </p>
-                  <p className="text-sm">
-                    <span className="text-muted-foreground">{t.settings.modelSettings.model}: </span>
-                    <span className="font-medium">{active.name}</span>
-                  </p>
-                </div>
+          <div className="rounded-lg border bg-card">
+            <div className="px-4 py-3 border-b">
+              <span className="text-sm font-medium">{t.settings.modelSettings.defaultModel}</span>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-muted-foreground">{t.settings.modelSettings.provider}:</span>
+                <span className="font-medium">{active.provider}</span>
+                <span className="text-muted-foreground">{t.settings.modelSettings.model}:</span>
+                <span className="font-medium">{active.name}</span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         );
       })()}
 
-      <div className="grid gap-4">
+      {/* Model List */}
+      <div className="rounded-lg border bg-card">
         {models.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              {t.settings.modelSettings.noProviders}
-            </CardContent>
-          </Card>
+          <div className="px-4 py-8 text-center text-muted-foreground">
+            {t.settings.modelSettings.noProviders}
+          </div>
         ) : (
-          models.map((model) => (
-            <Card key={model.id}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
+          <div className="divide-y">
+            {models.map((model) => (
+              <div key={model.id} className="px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <CardTitle className="text-base">{model.name}</CardTitle>
+                    <span className="text-sm font-medium">{model.name}</span>
                     <Badge variant="secondary" className="text-xs capitalize">{model.provider}</Badge>
                     {activeModelId === model.id && (
                       <Badge variant="default" className="text-xs">{t.common.active}</Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -169,14 +157,10 @@ export function ModelSettings() {
                     </Button>
                   </div>
                 </div>
-                <CardDescription>
-                  {model.model} · {model.base_url || t.common.defaultUrl}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {model.api_key.slice(0, 8)}...{model.api_key.slice(-4)}
+                  <p className="text-xs text-muted-foreground">
+                    {model.model} · {model.base_url || t.common.defaultUrl}
+                    <span className="ml-2 font-mono">{model.api_key.slice(0, 8)}...{model.api_key.slice(-4)}</span>
                   </p>
                   <Button
                     variant={activeModelId === model.id ? "default" : "outline"}
@@ -188,9 +172,9 @@ export function ModelSettings() {
                       : t.settings.modelSettings.selectModel}
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          ))
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

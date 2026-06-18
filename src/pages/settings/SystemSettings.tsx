@@ -1,7 +1,5 @@
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { ShieldCheckIcon, InfoIcon } from "lucide-react";
+import { InfoIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 export function SystemSettings() {
@@ -10,37 +8,39 @@ export function SystemSettings() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <ShieldCheckIcon className="size-5" />
-          {t.settings.system}
-        </h2>
+        <h1 className="text-2xl font-bold tracking-tight">{t.settings.system}</h1>
         <p className="text-sm text-muted-foreground">{t.settings.systemDesc}</p>
       </div>
-      <FieldGroup>
-        <Field orientation="horizontal">
-          <FieldLabel className="flex-1 text-muted-foreground">{t.common.app}</FieldLabel>
-          <Badge variant="secondary">Mnemosyne v0.1.0</Badge>
-        </Field>
-        <Separator />
-        <Field orientation="horizontal">
-          <FieldLabel className="flex-1 text-muted-foreground">{t.common.framework}</FieldLabel>
-          <span className="text-sm">Tauri v2 + React 19</span>
-        </Field>
-        <Separator />
-        <Field orientation="horizontal">
-          <FieldLabel className="flex-1 text-muted-foreground">{t.common.runtime}</FieldLabel>
-          <span className="text-sm">Vite + TypeScript</span>
-        </Field>
-      </FieldGroup>
 
-      <div>
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <InfoIcon className="size-4" />
-          {t.settings.systemDesc}
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t.ai.comingSoon}
-        </p>
+      {/* System Info */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <span className="text-sm font-medium">{t.common.app}</span>
+          <Badge variant="secondary">Mnemosyne v0.1.0</Badge>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <span className="text-sm font-medium">{t.common.framework}</span>
+          <span className="text-sm text-muted-foreground">Tauri v2 + React 19</span>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3">
+          <span className="text-sm font-medium">{t.common.runtime}</span>
+          <span className="text-sm text-muted-foreground">Vite + TypeScript</span>
+        </div>
+      </div>
+
+      {/* Coming Soon */}
+      <div className="rounded-lg border bg-card">
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2 mb-1">
+            <InfoIcon className="size-4 text-muted-foreground" />
+            <span className="text-sm font-medium">{t.settings.systemDesc}</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {t.ai.comingSoon}
+          </p>
+        </div>
       </div>
     </div>
   );

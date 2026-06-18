@@ -39,7 +39,6 @@ import {
   SparklesIcon,
   WrenchIcon,
   CpuIcon,
-  BarChart3Icon,
 } from "lucide-react";
 import { useAppState, useAppDispatch } from "@/lib/app-context";
 import { useI18n } from "@/lib/i18n";
@@ -157,19 +156,15 @@ export function AppSidebar() {
                       <span>{t.sidebar.newChat}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
+                  <SidebarMenuItem className="group/tools">
                     <SidebarMenuButton
                       isActive={TOOLS_SUB_ITEMS.some((item) => item.id === currentPage)}
                       onClick={() => setExpandedTools(!expandedTools)}
                       tooltip={t.sidebar.tools}
                     >
-                      <WrenchIcon />
+                      <WrenchIcon className="group-hover/tools:hidden" />
+                      <ChevronRightIcon className={`hidden group-hover/tools:block transition-transform duration-200 ${expandedTools ? 'rotate-90' : ''}`} />
                       <span>{t.sidebar.tools}</span>
-                      {expandedTools ? (
-                        <ChevronDownIcon className="ml-auto size-3.5" />
-                      ) : (
-                        <ChevronRightIcon className="ml-auto size-3.5" />
-                      )}
                     </SidebarMenuButton>
                     {expandedTools && (
                       <SidebarMenuSub>
@@ -205,16 +200,6 @@ export function AppSidebar() {
                     >
                       <TrendingUpIcon />
                       <span>{t.dashboard.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={currentPage === "ai-analytics"}
-                      onClick={() => navigateTo("ai-analytics")}
-                      tooltip="AI Analytics"
-                    >
-                      <BarChart3Icon />
-                      <span>AI Analytics</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>

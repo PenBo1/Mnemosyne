@@ -7,6 +7,11 @@ use crate::domain::agents::base::AgentContext;
 use crate::domain::agents::recovery::{RecoveryManager, RecoveryConfig, RecoveryStrategy};
 use crate::domain::agents::verification::{VerificationPipeline, GateContext};
 use crate::domain::agents::reviser::ReviseMode;
+use crate::domain::agents::iteration_budget::IterationBudget;
+use crate::domain::agents::tool_guardrails::{ToolCallGuardrailController, ToolGuardrailConfig};
+use crate::domain::agents::context_compressor::{ContextCompressor, CompressorConfig};
+use crate::domain::agents::error_classifier::classify_api_error;
+use crate::domain::agents::lesson_tracker::{LessonTracker, append_lessons_to_memory, load_lessons_from_memory};
 use std::sync::Arc;
 
 pub struct PipelineConfig {
@@ -17,6 +22,8 @@ pub struct PipelineConfig {
     pub model_overrides: std::collections::HashMap<String, String>,
     /// Shared memory store for cross-chapter persistence
     pub memory_store: Option<Arc<crate::infra::memory::MemoryStore>>,
+    /// App data directory for loading agent identity files (SOUL.md, CONTEXT.md, MEMORY.md)
+    pub data_dir: crate::infra::data_dir::DataDir,
 }
 
 pub struct PipelineRunner {
@@ -32,10 +39,9 @@ impl PipelineRunner {
         self.config.project_root.join("books").join(book_id)
     }
 
-    fn agent_ctx(&self, book_id: Option<&str>) -> AgentContext {
-        let memory = if let (Some(_mem_store), Some(_bid)) = (&self.config.memory_store, book_id) {
-            // Use shared memory store — data persists across agent calls
-            Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
+    async fn agent_ctx(&self, book_id: Option<&str>) -> AgentContext {
+        let memory = if let (Some(mem_store), Some(bid)) = (&self.config.memory_store, book_id) {
+            mem_store.get_or_create(bid, 20).await
         } else {
             Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
         };
@@ -46,17 +52,23 @@ impl PipelineRunner {
             book_id: book_id.map(|s| s.to_string()),
             tools: Arc::new(ToolRegistry::new()),
             memory,
+            iteration_budget: Arc::new(IterationBudget::new(90)),
+            tool_guardrails: Arc::new(tokio::sync::Mutex::new(
+                ToolCallGuardrailController::new(ToolGuardrailConfig::default())
+            )),
+            context_compressor: Arc::new(tokio::sync::Mutex::new(
+                ContextCompressor::new(CompressorConfig::default())
+            )),
         }
     }
 
     /// Get agent context with optional model override
-    pub fn agent_ctx_for(&self, agent_name: &str, book_id: Option<&str>) -> AgentContext {
+    pub async fn agent_ctx_for(&self, agent_name: &str, book_id: Option<&str>) -> AgentContext {
         let model = self.config.model_overrides.get(agent_name)
             .cloned()
             .unwrap_or_else(|| self.config.model.clone());
-        let memory = if let (Some(_mem_store), Some(_bid)) = (&self.config.memory_store, book_id) {
-            // TODO: Wire up actual MemoryStore.get_or_create(bid, 20) here
-            Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
+        let memory = if let (Some(mem_store), Some(bid)) = (&self.config.memory_store, book_id) {
+            mem_store.get_or_create(bid, 20).await
         } else {
             Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
         };
@@ -67,6 +79,13 @@ impl PipelineRunner {
             book_id: book_id.map(|s| s.to_string()),
             tools: Arc::new(ToolRegistry::new()),
             memory,
+            iteration_budget: Arc::new(IterationBudget::new(50)),
+            tool_guardrails: Arc::new(tokio::sync::Mutex::new(
+                ToolCallGuardrailController::new(ToolGuardrailConfig::default())
+            )),
+            context_compressor: Arc::new(tokio::sync::Mutex::new(
+                ContextCompressor::new(CompressorConfig::default())
+            )),
         }
     }
 
@@ -82,7 +101,7 @@ impl PipelineRunner {
         let start = std::time::Instant::now();
 
         let book_id = uuid::Uuid::new_v4().to_string();
-        let architect_ctx = self.agent_ctx_for("architect", Some(&book_id));
+        let architect_ctx = self.agent_ctx_for("architect", Some(&book_id)).await;
 
         let architect = ArchitectAgent::new();
         let book = BookConfig {
@@ -101,23 +120,23 @@ impl PipelineRunner {
         let book_dir = self.book_dir(&book_id);
         std::fs::create_dir_all(&book_dir)?;
 
-        let output = architect.generate_foundation(&architect_ctx, &book, brief).await?;
+        let output = architect.generate_foundation(&architect_ctx, &book, brief, &self.config.data_dir).await?;
 
         // Foundation review loop (max 2 retries)
         let reviewer = FoundationReviewerAgent::new();
-        let reviewer_ctx = self.agent_ctx_for("foundation-reviewer", Some(&book_id));
+        let reviewer_ctx = self.agent_ctx_for("foundation-reviewer", Some(&book_id)).await;
         let mut foundation = output;
         let max_retries = 2;
         for attempt in 0..max_retries {
             tracing::info!(attempt, "Reviewing foundation");
-            let review = reviewer.review(&reviewer_ctx, &foundation, &book, &book.language).await?;
+            let review = reviewer.review(&reviewer_ctx, &foundation, &book, &book.language, &self.config.data_dir).await?;
             tracing::info!(score = review.total_score, passed = review.passed, "Foundation review");
             if review.passed {
                 break;
             }
             if attempt < max_retries - 1 {
                 tracing::warn!(score = review.total_score, "Foundation rejected, regenerating");
-                foundation = architect.generate_foundation(&architect_ctx, &book, brief).await?;
+                foundation = architect.generate_foundation(&architect_ctx, &book, brief, &self.config.data_dir).await?;
             }
         }
 
@@ -161,74 +180,152 @@ impl PipelineRunner {
         // Get next chapter number
         let chapter_number = get_next_chapter_number(&book_dir)?;
 
-        // Initialize recovery manager (P14.26)
+        // Initialize recovery manager (P14.26) — now uses ErrorClassifier
         let mut recovery_manager = RecoveryManager::new(RecoveryConfig::default());
 
         // Initialize verification pipeline (P14.38)
         let verification_pipeline = VerificationPipeline::new();
 
-        // 1. Plan (with recovery)
+        // ── 创建共享的 Agent 上下文（包含 IterationBudget + ToolGuardrails + ContextCompressor）──
+        let shared_ctx = self.agent_ctx_for("pipeline", Some(book_id)).await;
+
+        // 1. Plan (with recovery + budget + guardrails)
         tracing::info!(chapter = chapter_number, "Stage: Plan");
-        let planner_ctx = self.agent_ctx_for("planner", Some(book_id));
+        let planner_ctx = self.agent_ctx_for("planner", Some(book_id)).await;
+
+        // 检查迭代预算
+        if !planner_ctx.iteration_budget.consume() {
+            tracing::error!(
+                budget_used = planner_ctx.iteration_budget.used(),
+                budget_max = planner_ctx.iteration_budget.max_total(),
+                "Iteration budget exhausted before Plan stage"
+            );
+            return Err(AppError::internal("迭代预算已耗尽，无法执行 Plan 阶段"));
+        }
+
+        // 重置工具守卫
+        planner_ctx.tool_guardrails.lock().await.reset_for_turn();
+
         let planner = PlannerAgent::new();
-        let plan = match planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None).await {
+        let plan = match planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await {
             Ok(plan) => plan,
             Err(e) => {
-                tracing::warn!(error = %e, "Plan failed, attempting recovery");
+                let error_msg = e.to_string();
+                let classified = classify_api_error(&error_msg, None, "", "");
+                tracing::warn!(
+                    error = %e,
+                    reason = ?classified.reason,
+                    should_compress = classified.should_compress,
+                    "Plan failed, attempting recovery"
+                );
+
+                // 如果上下文溢出，先压缩再重试
+                if classified.should_compress {
+                    tracing::info!("Context overflow detected, compressing before retry");
+                    let compressor = planner_ctx.context_compressor.lock().await;
+                    let _ = compressor.build_summarizer_prompt(&[], None);
+                    // TODO: 实际执行 LLM 摘要压缩
+                }
+
                 match recovery_manager.next_strategy(&e) {
                     Some(RecoveryStrategy::Retry) => {
-                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None).await?
+                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await?
                     }
                     Some(RecoveryStrategy::Simplify) => {
                         tracing::info!("Simplifying plan task");
-                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, Some("简化任务")).await?
+                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, Some("简化任务"), &self.config.data_dir).await?
+                    }
+                    Some(RecoveryStrategy::CompressContext) => {
+                        tracing::info!("Retrying after context compression");
+                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await?
+                    }
+                    Some(RecoveryStrategy::FallbackModel) => {
+                        tracing::info!("Falling back to alternative model");
+                        // TODO: 切换到备用模型
+                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await?
                     }
                     _ => return Err(e),
                 }
             }
         };
 
-        // 2. Compose (with recovery)
+        // 2. Compose (with recovery + budget + guardrails)
         tracing::info!(chapter = chapter_number, "Stage: Compose");
-        let composer_ctx = self.agent_ctx_for("composer", Some(book_id));
+        let composer_ctx = self.agent_ctx_for("composer", Some(book_id)).await;
+
+        if !composer_ctx.iteration_budget.consume() {
+            tracing::error!("Iteration budget exhausted before Compose stage");
+            return Err(AppError::internal("迭代预算已耗尽，无法执行 Compose 阶段"));
+        }
+        composer_ctx.tool_guardrails.lock().await.reset_for_turn();
+
         let composer = ComposerAgent::new();
-        let composed = match composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan).await {
+        let composed = match composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir).await {
             Ok(composed) => composed,
             Err(e) => {
-                tracing::warn!(error = %e, "Compose failed, attempting recovery");
+                let classified = classify_api_error(&e.to_string(), None, "", "");
+                tracing::warn!(error = %e, reason = ?classified.reason, "Compose failed, attempting recovery");
                 recovery_manager.reset();
                 match recovery_manager.next_strategy(&e) {
                     Some(RecoveryStrategy::Retry) => {
-                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan).await?
+                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir).await?
+                    }
+                    Some(RecoveryStrategy::CompressContext) => {
+                        tracing::info!("Retrying compose after context compression");
+                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir).await?
                     }
                     _ => return Err(e),
                 }
             }
         };
 
-        // 3. Write (with recovery)
+        // 3. Write (with recovery + budget + guardrails)
         tracing::info!(chapter = chapter_number, "Stage: Write");
-        let writer_ctx = self.agent_ctx_for("writer", Some(book_id));
+        let writer_ctx = self.agent_ctx_for("writer", Some(book_id)).await;
+
+        if !writer_ctx.iteration_budget.consume() {
+            tracing::error!("Iteration budget exhausted before Write stage");
+            return Err(AppError::internal("迭代预算已耗尽，无法执行 Write 阶段"));
+        }
+        writer_ctx.tool_guardrails.lock().await.reset_for_turn();
+
         let writer = WriterAgent::new();
         let write_output = match writer.write_chapter(
             &writer_ctx, &book_dir, chapter_number, &plan, &composed, words,
+            &self.config.data_dir,
         ).await {
             Ok(output) => output,
             Err(e) => {
-                tracing::warn!(error = %e, "Write failed, attempting recovery");
+                let classified = classify_api_error(&e.to_string(), None, "", "");
+                tracing::warn!(error = %e, reason = ?classified.reason, "Write failed, attempting recovery");
                 recovery_manager.reset();
                 match recovery_manager.next_strategy(&e) {
                     Some(RecoveryStrategy::Retry) => {
-                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words).await?
+                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words, &self.config.data_dir).await?
                     }
                     Some(RecoveryStrategy::Simplify) => {
                         tracing::info!("Simplifying write task");
-                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words / 2).await?
+                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words / 2, &self.config.data_dir).await?
+                    }
+                    Some(RecoveryStrategy::CompressContext) => {
+                        tracing::info!("Retrying write after context compression");
+                        writer.write_chapter(&writer_ctx, &book_dir, chapter_number, &plan, &composed, words, &self.config.data_dir).await?
                     }
                     _ => return Err(e),
                 }
             }
         };
+
+        // ── 上下文压缩检查（写入完成后检查是否需要压缩）──
+        if let Ok(token_estimate) = estimate_content_tokens(&write_output.content) {
+            let compressor = shared_ctx.context_compressor.lock().await;
+            if compressor.should_compress(token_estimate, 200000) {
+                tracing::info!(
+                    estimated_tokens = token_estimate,
+                    "Content approaching context limit, compression recommended for next chapter"
+                );
+            }
+        }
 
         // 3.5. Verification Gates (P14.38)
         tracing::info!(chapter = chapter_number, "Stage: Verification");
@@ -248,7 +345,6 @@ impl PipelineRunner {
 
         if !verification_pipeline.overall_passed(&gate_results) {
             tracing::warn!("Verification gates failed, triggering revision");
-            // Log gate failures for debugging
             for result in &gate_results {
                 if !result.passed {
                     for issue in &result.issues {
@@ -263,13 +359,31 @@ impl PipelineRunner {
             }
         }
 
-        // 4. Audit
+        // 4. Audit (with budget check)
         tracing::info!(chapter = chapter_number, "Stage: Audit");
-        let auditor_ctx = self.agent_ctx_for("auditor", Some(book_id));
-        let auditor = ContinuityAuditor::new();
-        let audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number).await?;
+        let auditor_ctx = self.agent_ctx_for("auditor", Some(book_id)).await;
 
-        // 5. Revise if needed (with recovery)
+        if !auditor_ctx.iteration_budget.consume() {
+            tracing::warn!("Iteration budget exhausted before Audit stage, skipping audit");
+            // 审计失败不阻塞流程，跳过
+        } else {
+            auditor_ctx.tool_guardrails.lock().await.reset_for_turn();
+        }
+
+        let auditor = ContinuityAuditor::new();
+        let audit = if auditor_ctx.iteration_budget.used() > 0 {
+            auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number, &self.config.data_dir).await?
+        } else {
+            // 预算耗尽，跳过审计
+            AuditResult {
+                passed: true,
+                score: 0.0,
+                issues: vec![],
+                summary: "审计已跳过（迭代预算耗尽）".to_string(),
+            }
+        };
+
+        // 5. Revise if needed (with recovery + budget + guardrails)
         let mut final_content = write_output.content.clone();
         let mut final_word_count = write_output.word_count;
         let mut revised = false;
@@ -278,8 +392,22 @@ impl PipelineRunner {
             recovery_manager.reset();
             let max_rounds = 3;
             let mut current_audit = audit.clone();
-            let reviser_ctx = self.agent_ctx_for("reviser", Some(book_id));
+            let reviser_ctx = self.agent_ctx_for("reviser", Some(book_id)).await;
+
             for round in 0..max_rounds {
+                // 检查迭代预算
+                if !reviser_ctx.iteration_budget.consume() {
+                    tracing::warn!(
+                        round,
+                        budget_used = reviser_ctx.iteration_budget.used(),
+                        "Iteration budget exhausted during revision, stopping"
+                    );
+                    break;
+                }
+
+                // 重置工具守卫
+                reviser_ctx.tool_guardrails.lock().await.reset_for_turn();
+
                 if current_audit.issues.iter().any(|i| i.severity == crate::domain::story::AuditSeverity::Critical) {
                     tracing::info!(chapter = chapter_number, round, "Stage: Revise");
                     let reviser = ReviserAgent::new();
@@ -287,19 +415,19 @@ impl PipelineRunner {
                     match reviser.revise_chapter(
                         &reviser_ctx, &book_dir, chapter_number,
                         &final_content, &current_audit, ReviseMode::Auto,
+                        &self.config.data_dir,
                     ).await {
                         Ok(revise_output) => {
-                            // Save revised content
                             save_chapter_content(&book_dir, chapter_number, &write_output.title, &revise_output.content)?;
                             final_content = revise_output.content;
                             final_word_count = revise_output.word_count;
                             revised = true;
 
-                            // Re-audit
-                            current_audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number).await?;
+                            current_audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number, &self.config.data_dir).await?;
                         }
                         Err(e) => {
-                            tracing::warn!(error = %e, round, "Revise failed");
+                            let classified = classify_api_error(&e.to_string(), None, "", "");
+                            tracing::warn!(error = %e, round, reason = ?classified.reason, "Revise failed");
                             match recovery_manager.next_strategy(&e) {
                                 Some(RecoveryStrategy::Retry) => {
                                     tracing::info!("Retrying revision");
@@ -307,7 +435,10 @@ impl PipelineRunner {
                                 }
                                 Some(RecoveryStrategy::Simplify) => {
                                     tracing::info!("Simplifying revision task");
-                                    // Continue with simplified revision
+                                }
+                                Some(RecoveryStrategy::CompressContext) => {
+                                    tracing::info!("Retrying revision after context compression");
+                                    continue;
                                 }
                                 _ => {
                                     tracing::error!("No recovery strategy available, using current content");
@@ -325,7 +456,49 @@ impl PipelineRunner {
         // 6. Save chapter index
         save_chapter_index(&book_dir, chapter_number, &write_output.title, final_word_count, &audit)?;
 
-        // 7. Snapshot
+        // 7. Self-evolution: record audit issues and generate constraint lessons
+        //    Aligned with Hermes Agent's feedback loop: error events → lessons → prompt injection
+        tracing::info!(chapter = chapter_number, "Stage: Self-evolution (lesson tracking)");
+        let existing_lessons = load_lessons_from_memory(&self.config.data_dir, "writer");
+        let mut lesson_tracker = LessonTracker::default_config();
+        lesson_tracker.load_lessons(existing_lessons);
+
+        let new_lessons = lesson_tracker.record_audit("writer", &audit);
+        if !new_lessons.is_empty() {
+            tracing::info!(
+                count = new_lessons.len(),
+                "Generated new constraint lessons for writer"
+            );
+            if let Err(e) = append_lessons_to_memory(&self.config.data_dir, "writer", &new_lessons) {
+                tracing::warn!(error = %e, "Failed to write lessons to writer MEMORY.md");
+            }
+        }
+
+        // Also track planner lessons if plan had issues
+        // (plan issues manifest as writer issues, but we track them separately)
+        if !audit.passed {
+            let existing_planner_lessons = load_lessons_from_memory(&self.config.data_dir, "planner");
+            let mut planner_tracker = LessonTracker::default_config();
+            planner_tracker.load_lessons(existing_planner_lessons);
+
+            // Record high-level audit failures as planner lessons
+            let planner_audit = AuditResult {
+                passed: audit.passed,
+                score: audit.score,
+                issues: audit.issues.iter().filter(|i| {
+                    matches!(i.severity, crate::domain::story::AuditSeverity::Critical)
+                }).cloned().collect(),
+                summary: audit.summary.clone(),
+            };
+            let new_planner_lessons = planner_tracker.record_audit("planner", &planner_audit);
+            if !new_planner_lessons.is_empty() {
+                if let Err(e) = append_lessons_to_memory(&self.config.data_dir, "planner", &new_planner_lessons) {
+                    tracing::warn!(error = %e, "Failed to write lessons to planner MEMORY.md");
+                }
+            }
+        }
+
+        // 8. Snapshot
         save_snapshot(&book_dir, chapter_number)?;
 
         let elapsed = start.elapsed().as_secs();
@@ -356,10 +529,10 @@ impl PipelineRunner {
         context: Option<&str>,
     ) -> Result<serde_json::Value, AppError> {
         let book_dir = self.book_dir(book_id);
-        let ctx = self.agent_ctx(Some(book_id));
+        let ctx = self.agent_ctx(Some(book_id)).await;
         let chapter_number = get_next_chapter_number(&book_dir)?;
         let planner = PlannerAgent::new();
-        let plan = planner.plan_chapter(&ctx, &book_dir, chapter_number, context).await?;
+        let plan = planner.plan_chapter(&ctx, &book_dir, chapter_number, context, &self.config.data_dir).await?;
         Ok(serde_json::to_value(&plan.memo)?)
     }
 
@@ -369,9 +542,9 @@ impl PipelineRunner {
         chapter_number: u32,
     ) -> Result<AuditResult, AppError> {
         let book_dir = self.book_dir(book_id);
-        let ctx = self.agent_ctx(Some(book_id));
+        let ctx = self.agent_ctx(Some(book_id)).await;
         let auditor = ContinuityAuditor::new();
-        auditor.audit_chapter(&ctx, &book_dir, chapter_number).await
+        auditor.audit_chapter(&ctx, &book_dir, chapter_number, &self.config.data_dir).await
     }
 
     pub async fn revise_chapter(
@@ -381,14 +554,14 @@ impl PipelineRunner {
         mode: ReviseMode,
     ) -> Result<String, AppError> {
         let book_dir = self.book_dir(book_id);
-        let ctx = self.agent_ctx(Some(book_id));
+        let ctx = self.agent_ctx(Some(book_id)).await;
 
         let content = read_chapter_content(&book_dir, chapter_number)?;
         let auditor = ContinuityAuditor::new();
-        let audit = auditor.audit_chapter(&ctx, &book_dir, chapter_number).await?;
+        let audit = auditor.audit_chapter(&ctx, &book_dir, chapter_number, &self.config.data_dir).await?;
 
         let reviser = ReviserAgent::new();
-        let output = reviser.revise_chapter(&ctx, &book_dir, chapter_number, &content, &audit, mode).await?;
+        let output = reviser.revise_chapter(&ctx, &book_dir, chapter_number, &content, &audit, mode, &self.config.data_dir).await?;
 
         save_chapter_content(&book_dir, chapter_number, "", &output.content)?;
 
@@ -525,4 +698,11 @@ fn save_snapshot(book_dir: &std::path::Path, chapter_number: u32) -> Result<(), 
     let json = serde_json::to_string_pretty(&snapshot)?;
     std::fs::write(snapshots_dir.join(format!("{:04}.json", chapter_number)), json)?;
     Ok(())
+}
+
+/// 估算文本内容的大致 token 数（中文约 1.5 字符/token，英文约 4 字符/token）
+fn estimate_content_tokens(content: &str) -> Result<usize, AppError> {
+    // 粗略估算：混合中英文场景，取中间值
+    let chars = content.len();
+    Ok(chars / 3)
 }

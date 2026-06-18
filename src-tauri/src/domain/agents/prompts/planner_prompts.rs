@@ -1,5 +1,5 @@
-pub fn build_system_prompt(language: &str) -> String {
-    match language {
+pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+    let task_prompt = match language {
         "en" => {
             r#"You are this novel's editor-in-chief. Your job is to produce a chapter_memo for the next chapter. You do NOT write prose — you plan what this chapter must accomplish.
 
@@ -78,7 +78,12 @@ defer:
 ## 不要做
 <2-4条硬约束>"#
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 pub fn build_user_message(

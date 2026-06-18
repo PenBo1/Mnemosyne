@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::prompts::observer_prompts;
+use super::agent_identity::AgentIdentity;
 
 pub struct ObserverAgent;
 
@@ -20,8 +22,11 @@ impl ObserverAgent {
         title: &str,
         content: &str,
         language: &str,
+        data_dir: &DataDir,
     ) -> Result<ObservationOutput, AppError> {
-        let system = observer_prompts::build_system_prompt(language);
+        let identity = AgentIdentity::load(data_dir, "observer");
+        let identity_prefix = identity.build_system_prefix();
+        let system = observer_prompts::build_system_prompt(language, Some(&identity_prefix));
         let user = observer_prompts::build_user_prompt(chapter_number, title, content, language);
 
         let response = self.chat(ctx, &system, &user).await?;

@@ -10,7 +10,6 @@ import { AgentChat } from "@/components/AgentChat";
 import { ChapterReader } from "@/pages/ChapterReader";
 import { MemoryPage } from "@/pages/MemoryPage";
 import { DashboardPage } from "@/pages/DashboardPage";
-import { AiAnalyticsPage } from "@/pages/AiAnalyticsPage";
 import { KnowledgePage } from "@/pages/KnowledgePage";
 import { OverviewPage } from "@/pages/novel/OverviewPage";
 import { CharactersPage } from "@/pages/novel/CharactersPage";
@@ -75,7 +74,6 @@ export function Router() {
         {currentPage === "novels" && <NovelDownloadPage />}
         {currentPage === "skills" && <SkillsPage />}
         {currentPage === "dashboard" && <DashboardPage />}
-        {currentPage === "ai-analytics" && <AiAnalyticsPage />}
         {currentPage === "knowledge" && <KnowledgePage />}
       </div>
     </ScrollArea>

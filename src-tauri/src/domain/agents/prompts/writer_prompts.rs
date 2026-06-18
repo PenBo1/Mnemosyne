@@ -1,5 +1,9 @@
-pub fn build_creative_system_prompt(language: &str, target_words: u32) -> String {
-    match language {
+pub fn build_creative_system_prompt(
+    language: &str,
+    target_words: u32,
+    identity_prefix: Option<&str>,
+) -> String {
+    let task_prompt = match language {
         "en" => {
             format!(
                 r#"You are a skilled web-fiction novelist. Write chapter prose following the chapter memo and context package.
@@ -50,7 +54,12 @@ pub fn build_creative_system_prompt(language: &str, target_words: u32) -> String
                 target_words
             )
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt,
+    }
 }
 
 pub fn build_creative_user_prompt(

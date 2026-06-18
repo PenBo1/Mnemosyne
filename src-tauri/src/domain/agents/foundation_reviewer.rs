@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
 use crate::domain::story::BookConfig;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::architect::ArchitectOutput;
+use super::agent_identity::AgentIdentity;
 
 pub struct FoundationReviewerAgent;
 
@@ -20,8 +22,11 @@ impl FoundationReviewerAgent {
         foundation: &ArchitectOutput,
         book: &BookConfig,
         language: &str,
+        data_dir: &DataDir,
     ) -> Result<FoundationReviewResult, AppError> {
-        let system = build_review_system_prompt(language);
+        let identity = AgentIdentity::load(data_dir, "architect");
+        let identity_prefix = identity.build_system_prefix();
+        let system = build_review_system_prompt(language, Some(&identity_prefix));
         let user = build_review_user_prompt(foundation, book, language);
 
         let response = self.chat(ctx, &system, &user).await?;
@@ -54,8 +59,8 @@ pub struct DimensionScore {
     pub feedback: String,
 }
 
-fn build_review_system_prompt(language: &str) -> String {
-    match language {
+fn build_review_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+    let task_prompt = match language {
         "en" => {
             r#"You are a story foundation quality reviewer. Audit the generated foundation for completeness, internal consistency, and potential issues.
 
@@ -104,7 +109,12 @@ passed is true when total_score >= 60 and no dimension is below 8."#
 
 total_score >= 60 且没有维度低于 8 分时 passed 为 true。"#
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 fn build_review_user_prompt(foundation: &ArchitectOutput, book: &BookConfig, language: &str) -> String {

@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
 use crate::infra::gc::utils;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::planner::PlanOutput;
 use super::composer::ComposeOutput;
 use super::prompts::writer_prompts;
+use super::agent_identity::AgentIdentity;
 
 pub struct WriterAgent;
 
@@ -24,14 +26,20 @@ impl WriterAgent {
         plan: &PlanOutput,
         composed: &ComposeOutput,
         target_words: u32,
+        data_dir: &DataDir,
     ) -> Result<WriteOutput, AppError> {
         let language = read_book_language(book_dir).unwrap_or_else(|| "zh".to_string());
+
+        // Load agent identity from data directory
+        let identity = AgentIdentity::load(data_dir, "writer");
+        let identity_prefix = identity.build_system_prefix();
 
         // ── Phase 1: Creative writing ──
         tracing::info!(chapter = chapter_number, "Phase 1: creative writing");
         let creative_system = writer_prompts::build_creative_system_prompt(
             &language,
             target_words,
+            Some(&identity_prefix),
         );
         let creative_user = writer_prompts::build_creative_user_prompt(
             book_dir,
@@ -45,8 +53,11 @@ impl WriterAgent {
         let creative = parse_creative_output(&creative_response.content, chapter_number, &language)?;
 
         // ── Phase 2: State settlement (Observer + Reflector) ──
+        // Each sub-agent loads its OWN identity — not the writer's
         tracing::info!(chapter = chapter_number, "Phase 2a: observing facts");
-        let observer_system = super::prompts::observer_prompts::build_system_prompt(&language);
+        let observer_identity = AgentIdentity::load(data_dir, "observer");
+        let observer_prefix = observer_identity.build_system_prefix();
+        let observer_system = super::prompts::observer_prompts::build_system_prompt(&language, Some(&observer_prefix));
         let observer_user = super::prompts::observer_prompts::build_user_prompt(
             chapter_number,
             &creative.title,
@@ -56,7 +67,9 @@ impl WriterAgent {
         let observations = self.chat(ctx, &observer_system, &observer_user).await?;
 
         tracing::info!(chapter = chapter_number, "Phase 2b: reflecting into truth files");
-        let settler_system = super::prompts::settler_prompts::build_system_prompt(&language);
+        let reflector_identity = AgentIdentity::load(data_dir, "reflector");
+        let reflector_prefix = reflector_identity.build_system_prefix();
+        let settler_system = super::prompts::settler_prompts::build_system_prompt(&language, Some(&reflector_prefix));
         let settler_user = super::prompts::settler_prompts::build_user_message(
             chapter_number,
             &creative.title,

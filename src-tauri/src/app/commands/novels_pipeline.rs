@@ -8,6 +8,7 @@ fn build_runner(
     provider_registry: &crate::infra::llm::ProviderRegistry,
     workspace_path: std::path::PathBuf,
     memory_store: Option<std::sync::Arc<crate::infra::memory::MemoryStore>>,
+    data_dir: crate::infra::data_dir::DataDir,
 ) -> Result<PipelineRunner, AppError> {
     let provider = provider_registry.default()?;
     let model = provider_registry.default_model().to_string();
@@ -17,6 +18,7 @@ fn build_runner(
         project_root: workspace_path,
         model_overrides: std::collections::HashMap::new(),
         memory_store,
+        data_dir,
     };
     Ok(PipelineRunner::new(config))
 }
@@ -38,7 +40,7 @@ pub async fn novel_create(
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store)?;
+    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
     drop(registry);
 
     let config = runner.create_book(&title, &genre, brief.as_deref()).await?;
@@ -75,7 +77,7 @@ pub async fn novel_write_next(
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store)?;
+    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
     drop(registry);
 
     let result = runner.write_next_chapter(&book_id, target_words).await?;
@@ -98,7 +100,7 @@ pub async fn novel_plan(
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store)?;
+    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
     drop(registry);
 
     let result = runner.plan_chapter(&book_id, context.as_deref()).await?;
@@ -121,7 +123,7 @@ pub async fn novel_audit(
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store)?;
+    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
     drop(registry);
 
     let result = runner.audit_chapter(&book_id, chapter_number).await?;
@@ -144,7 +146,7 @@ pub async fn novel_revise(
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store)?;
+    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
     drop(registry);
 
     let result = runner.revise_chapter(&book_id, chapter_number, Default::default()).await?;
@@ -167,7 +169,7 @@ pub async fn novel_observe(
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store.clone())?;
+    let runner = build_runner(&registry, workspace_path, memory_store.clone(), state.data_dir.clone())?;
     drop(registry);
 
     // Observe extracts facts from the chapter
@@ -198,10 +200,10 @@ pub async fn novel_observe(
 
     // Use ObserverAgent to extract facts
     let observer = crate::domain::agents::observer::ObserverAgent::new();
-    let ctx = runner.agent_ctx_for("observer", Some(&book_id));
+    let ctx = runner.agent_ctx_for("observer", Some(&book_id)).await;
     let language = "zh";
 
-    match observer.observe_chapter(&ctx, chapter_number, &chapter_title, &chapter_content, language).await {
+    match observer.observe_chapter(&ctx, chapter_number, &chapter_title, &chapter_content, language, &state.data_dir).await {
         Ok(output) => {
             let facts_json: Vec<serde_json::Value> = output.facts.iter().map(|f| {
                 serde_json::json!({

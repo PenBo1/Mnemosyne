@@ -2,9 +2,11 @@ use async_trait::async_trait;
 use crate::errors::AppError;
 use crate::domain::story::AuditResult;
 use crate::infra::gc::utils;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::prompts::reviser_prompts;
+use super::agent_identity::AgentIdentity;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReviseMode {
@@ -38,9 +40,12 @@ impl ReviserAgent {
         chapter_content: &str,
         audit: &AuditResult,
         mode: ReviseMode,
+        data_dir: &DataDir,
     ) -> Result<ReviseOutput, AppError> {
         let language = read_book_language(book_dir).unwrap_or_else(|| "zh".to_string());
-        let system = reviser_prompts::build_system_prompt(&mode, &language);
+        let identity = AgentIdentity::load(data_dir, "reviser");
+        let identity_prefix = identity.build_system_prefix();
+        let system = reviser_prompts::build_system_prompt(&mode, &language, Some(&identity_prefix));
         let user = reviser_prompts::build_user_message(
             chapter_number,
             chapter_content,

@@ -36,6 +36,7 @@ pub async fn scheduler_init(
         project_root: workspace_path,
         model_overrides: std::collections::HashMap::new(),
         memory_store: Some(memory_store.clone()),
+        data_dir: state.data_dir.clone(),
     });
 
     let config = SchedulerConfig::default();

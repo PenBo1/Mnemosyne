@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
 use crate::domain::story::BookConfig;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::prompts::architect_prompts;
+use super::agent_identity::AgentIdentity;
 
 pub struct ArchitectAgent;
 
@@ -19,8 +21,11 @@ impl ArchitectAgent {
         ctx: &AgentContext,
         book: &BookConfig,
         external_context: Option<&str>,
+        data_dir: &DataDir,
     ) -> Result<ArchitectOutput, AppError> {
-        let system = architect_prompts::build_system_prompt(&book.language);
+        let identity = AgentIdentity::load(data_dir, "architect");
+        let identity_prefix = identity.build_system_prefix();
+        let system = architect_prompts::build_system_prompt(&book.language, Some(&identity_prefix));
         let user = architect_prompts::build_user_prompt(
             book,
             external_context,

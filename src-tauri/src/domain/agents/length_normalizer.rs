@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
+use crate::infra::gc::utils;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 
@@ -19,7 +20,7 @@ impl LengthNormalizerAgent {
         target_words: u32,
         language: &str,
     ) -> Result<NormalizeOutput, AppError> {
-        let current_words = count_words(content, language);
+        let current_words = utils::count_words(content, language);
         let spec = LengthSpec::from_chapter_words(target_words);
 
         match spec.check(current_words) {
@@ -36,7 +37,7 @@ impl LengthNormalizerAgent {
                 );
                 let user = format!("Adjust this text to {} words:\n\n{}", target_words, content);
                 let response = self.chat(ctx, &system, &user).await?;
-                let normalized_words = count_words(&response.content, language);
+                let normalized_words = utils::count_words(&response.content, language);
                 Ok(NormalizeOutput {
                     content: response.content,
                     word_count: normalized_words,
@@ -112,22 +113,4 @@ pub enum LengthCheck {
     OutsideSoft,
     TooShort,
     TooLong,
-}
-
-fn count_words(text: &str, language: &str) -> u32 {
-    if language == "en" {
-        text.split_whitespace().count() as u32
-    } else {
-        let mut count = 0u32;
-        for ch in text.chars() {
-            if ch.is_ascii_alphanumeric() || ch.is_ascii_punctuation() {
-            } else if !ch.is_whitespace() {
-                count += 1;
-            }
-        }
-        let ascii_words: u32 = text.split_whitespace()
-            .filter(|w| w.bytes().all(|b| b.is_ascii()))
-            .count() as u32;
-        count + ascii_words
-    }
 }

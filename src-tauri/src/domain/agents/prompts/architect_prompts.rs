@@ -1,5 +1,5 @@
-pub fn build_system_prompt(language: &str) -> String {
-    match language {
+pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+    let task_prompt = match language {
         "en" => {
             r#"You are a story architecture specialist. Given the author's brief and genre, create the foundational story structure.
 
@@ -52,7 +52,12 @@ pub fn build_system_prompt(language: &str) -> String {
 - 书级规则必须具体可执行
 - 主要角色不超过 5 人"#
         }
-    }.to_string()
+    };
+
+    match identity_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
+        _ => task_prompt.to_string(),
+    }
 }
 
 pub fn build_user_prompt(

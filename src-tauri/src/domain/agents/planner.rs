@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::governance::*;
 use super::prompts::planner_prompts;
+use super::agent_identity::AgentIdentity;
 
 pub struct PlannerAgent;
 
@@ -20,9 +22,12 @@ impl PlannerAgent {
         book_dir: &std::path::Path,
         chapter_number: u32,
         external_context: Option<&str>,
+        data_dir: &DataDir,
     ) -> Result<PlanOutput, AppError> {
         let language = read_book_language(book_dir).unwrap_or_else(|| "zh".to_string());
-        let system = planner_prompts::build_system_prompt(&language);
+        let identity = AgentIdentity::load(data_dir, "planner");
+        let identity_prefix = identity.build_system_prefix();
+        let system = planner_prompts::build_system_prompt(&language, Some(&identity_prefix));
         let user = planner_prompts::build_user_message(
             book_dir,
             chapter_number,

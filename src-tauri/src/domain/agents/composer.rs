@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
+use crate::infra::data_dir::DataDir;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::governance::*;
 use super::planner::PlanOutput;
+use super::agent_identity::AgentIdentity;
 use crate::domain::utils::context_assembly::{build_governed_rule_stack, build_governed_trace};
 
 pub struct ComposerAgent;
@@ -15,13 +17,21 @@ impl ComposerAgent {
     pub fn new() -> Self { Self }
 
     /// Compose chapter runtime context from truth files using governance.
+    ///
+    /// The composer is a pure-logic agent (no LLM calls), but it loads its
+    /// identity for consistency with the agent identity system. The identity
+    /// is available if future versions add LLM-based context selection.
     pub async fn compose_chapter(
         &self,
         _ctx: &AgentContext,
         book_dir: &std::path::Path,
         chapter_number: u32,
         plan: &PlanOutput,
+        data_dir: &DataDir,
     ) -> Result<ComposeOutput, AppError> {
+        // Load identity for consistency (pure-logic agent, but maintains the pattern)
+        let _identity = AgentIdentity::load(data_dir, "composer");
+        // TODO: In future versions, identity could influence context selection strategy
         let story_dir = book_dir.join("story");
         let truth_files = read_truth_files(&story_dir);
 

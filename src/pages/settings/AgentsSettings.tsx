@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import {
   Dialog,
@@ -86,43 +86,42 @@ export function AgentsSettings() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <BotIcon className="size-5" />
-          {t.settings.agents}
-        </h2>
+        <h1 className="text-2xl font-bold tracking-tight">{t.settings.agents}</h1>
         <p className="text-sm text-muted-foreground">
           {t.agents.pipelineDesc}
         </p>
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <ShieldCheckIcon className="size-3.5" />
-        <span>{t.agents.systemNote}</span>
+      {/* System Note */}
+      <div className="rounded-lg border bg-card">
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ShieldCheckIcon className="size-3.5" />
+            <span>{t.agents.systemNote}</span>
+          </div>
+        </div>
       </div>
 
       {loading && (
-        <p className="text-sm text-muted-foreground">{t.common.loading}</p>
+        <div className="flex items-center justify-center py-8">
+          <Spinner className="size-6" />
+        </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {agents.map((agent) => (
-          <Card key={agent.id} className="relative">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <CardTitle className="truncate text-base flex items-center gap-2">
-                    {(() => {
-                      const Icon = ROLE_ICONS[agent.id] || BotIcon;
-                      return <Icon className="size-4 shrink-0" />;
-                    })()}
-                    <span>{agent.name}</span>
-                  </CardTitle>
-                  <CardDescription className="mt-1 flex items-center gap-2">
-                    <Badge variant="secondary">{agent.model}</Badge>
-                    <Badge variant={agent.status === "active" ? "default" : "outline"}>
-                      {agent.status === "active" ? t.agents.status.active : t.agents.status.inactive}
-                    </Badge>
-                  </CardDescription>
+      {/* Agent List */}
+      <div className="rounded-lg border bg-card divide-y">
+        {agents.map((agent) => {
+          const Icon = ROLE_ICONS[agent.id] || BotIcon;
+          return (
+            <div key={agent.id} className="px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Icon className="size-4 shrink-0" />
+                  <span className="text-sm font-medium">{agent.name}</span>
+                  <Badge variant="secondary" className="text-xs">{agent.model}</Badge>
+                  <Badge variant={agent.status === "active" ? "default" : "outline"} className="text-xs">
+                    {agent.status === "active" ? t.agents.status.active : t.agents.status.inactive}
+                  </Badge>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -141,16 +140,14 @@ export function AgentsSettings() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="line-clamp-2 text-sm text-muted-foreground">{agent.description}</p>
-              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
+              <p className="line-clamp-2 text-xs text-muted-foreground mb-2">{agent.description}</p>
+              <div className="flex gap-4 text-xs text-muted-foreground">
                 <span>{t.agents.temperature}: {agent.temperature}</span>
                 <span>{t.agents.maxTokens}: {agent.maxTokens}</span>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+          );
+        })}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

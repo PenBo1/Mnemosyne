@@ -57,6 +57,7 @@ mod tests {
             project_root: std::path::PathBuf::from("/tmp"),
             model_overrides: std::collections::HashMap::new(),
             memory_store: None,
+            data_dir: crate::infra::data_dir::DataDir::new(std::path::PathBuf::from("/tmp")),
         });
         let result = route_interaction_request(&req, &pipeline).unwrap();
         assert!(matches!(result, RouteResult::Passthrough));
