@@ -39,6 +39,7 @@ import {
   SparklesIcon,
   WrenchIcon,
   CpuIcon,
+  BarChart3Icon,
 } from "lucide-react";
 import { useAppState, useAppDispatch } from "@/lib/app-context";
 import { useI18n } from "@/lib/i18n";
@@ -204,6 +205,16 @@ export function AppSidebar() {
                     >
                       <TrendingUpIcon />
                       <span>{t.dashboard.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={currentPage === "ai-analytics"}
+                      onClick={() => navigateTo("ai-analytics")}
+                      tooltip="AI Analytics"
+                    >
+                      <BarChart3Icon />
+                      <span>AI Analytics</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>

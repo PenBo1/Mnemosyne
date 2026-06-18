@@ -1,7 +1,7 @@
 export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources";
 
 export type WorkspacePage = "overview" | "characters" | "worldbuilding" | "plot" | "timeline" | "research";
-export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge";
+export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "ai-analytics" | "knowledge";
 
 // ── Workspace ──────────────────────────────────────────────
 
