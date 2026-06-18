@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::infra::security::SecretRedactor;
 
 /// A recorded error event from pipeline execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,8 +68,15 @@ impl FeedbackStore {
         }
     }
 
-    /// Record an error event.
-    pub fn record_event(&mut self, event: ErrorEvent) {
+    /// Record an error event (with secret redaction).
+    pub fn record_event(&mut self, mut event: ErrorEvent) {
+        // Redact secrets from message before storage
+        let redactor = SecretRedactor::new();
+        let (redacted_msg, redactions) = redactor.redact(&event.message);
+        if redactions > 0 {
+            event.message = redacted_msg;
+        }
+        // Also redact any other text fields
         self.events.push(event);
         self.check_and_generate_lessons();
     }

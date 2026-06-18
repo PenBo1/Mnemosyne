@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_chunk_text() {
-        let text = "This is a test document with enough words to create multiple chunks for testing the chunking algorithm.";
+        let text = "This is a test document with enough words to create multiple chunks for testing the chunking algorithm. We need many more words here to exceed the minimum chunk token threshold. Adding more content ensures the chunking function will actually produce output. The quick brown fox jumps over the lazy dog near the riverbank. Artificial intelligence is transforming how we interact with technology and the world around us. Machine learning algorithms can process vast amounts of data to find patterns that humans might miss. Deep learning neural networks have achieved remarkable results in image recognition and natural language processing.";
         let chunks = chunk_text(text, "test.md", &ChunkConfig::default());
         assert!(!chunks.is_empty());
     }
@@ -313,8 +313,11 @@ mod tests {
     #[test]
     fn test_vector_store_index_and_search() {
         let mut store = VectorStore::new();
-        store.index_document("Alice met Bob in the forest", "doc1.md", &ChunkConfig::default());
-        store.index_document("Charlie found treasure in the cave", "doc2.md", &ChunkConfig::default());
+        let doc1 = "Alice met Bob in the forest on a sunny day. They walked together through the trees discussing their plans for the afternoon adventure that awaited them in the nearby village. The birds were singing and the wind was gentle.";
+        let doc2 = "Charlie found treasure in the cave behind the waterfall. The golden coins sparkled in the dim light as he reached for the ancient chest that had been hidden for centuries beneath the mountain.";
+        let config = ChunkConfig { min_chunk_tokens: 10, ..Default::default() };
+        store.index_document(doc1, "doc1.md", &config);
+        store.index_document(doc2, "doc2.md", &config);
 
         let results = store.search_keyword("Alice", 5);
         assert!(!results.is_empty());

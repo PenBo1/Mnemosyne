@@ -66,16 +66,44 @@ impl FileSystemSandbox {
             return false;
         }
 
-        // 检查路径是否在允许的目录内
+        // 检查绝对路径是否在允许的目录内
         if let Ok(canonical) = path.canonicalize() {
             if let Ok(work_canonical) = self.work_dir.canonicalize() {
                 return canonical.starts_with(&work_canonical);
             }
         }
 
-        // 如果无法规范化，检查是否包含危险模式
+        // canonicalize失败时（文件不存在=写入场景），验证父目录
+        if let Some(parent) = path.parent() {
+            if let Ok(parent_canonical) = parent.canonicalize() {
+                if let Ok(work_canonical) = self.work_dir.canonicalize() {
+                    return parent_canonical.starts_with(&work_canonical);
+                }
+            }
+        }
+
+        // 最后防线：严格字符检查
         let path_str = path.to_string_lossy();
-        !path_str.contains("..") && !path_str.contains("~")
+        if path_str.contains("..") || path_str.contains("~") {
+            return false;
+        }
+        // 检查双斜杠（在Unix上等价于/）
+        if path_str.starts_with("//") {
+            return false;
+        }
+        // 检查空字节
+        if path_str.contains('\0') {
+            return false;
+        }
+        // 路径不在work_dir下且canonicalize全部失败 → 拒绝
+        // 但如果路径前缀匹配work_dir字符串，则允许（写入新文件场景）
+        if let Ok(work_canonical) = self.work_dir.canonicalize() {
+            path.starts_with(&work_canonical)
+        } else {
+            // work_dir无法canonicalize，检查字符串前缀
+            let work_str = self.work_dir.to_string_lossy();
+            path.to_string_lossy().starts_with(work_str.as_ref())
+        }
     }
 
     /// 获取沙箱状态信息

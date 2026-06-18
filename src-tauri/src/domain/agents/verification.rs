@@ -273,9 +273,27 @@ impl VerificationPipeline {
         results.iter().map(|r| r.score).sum::<f64>() / results.len() as f64
     }
 
-    /// Add a signed override to bypass a gate.
-    pub fn add_override(&mut self, override_entry: GateOverride) {
+    /// Add a signed override to bypass a gate. Verifies HMAC signature.
+    pub fn add_override(&mut self, override_entry: GateOverride) -> Result<(), String> {
+        // Verify HMAC signature if provided
+        if !override_entry.signature.is_empty() {
+            let verifier = crate::infra::security::HmacVerifier::new(
+                std::env::var("VERIFY_OVERRIDE_SECRET")
+                    .unwrap_or_else(|_| "default-dev-secret-key".to_string())
+                    .as_bytes()
+            );
+            let payload = serde_json::json!({
+                "gate_type": format!("{:?}", override_entry.gate_type),
+                "reason": &override_entry.reason,
+                "timestamp": &override_entry.timestamp,
+            });
+            let payload_str = serde_json::to_string(&payload).unwrap_or_default();
+            if !verifier.verify(payload_str.as_bytes(), &override_entry.signature) {
+                return Err("Override signature verification failed".to_string());
+            }
+        }
         self.overrides.push(override_entry);
+        Ok(())
     }
 
     /// Get word count for content (language-aware).

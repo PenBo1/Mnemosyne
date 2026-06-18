@@ -56,6 +56,7 @@ mod tests {
             model: "test".into(),
             project_root: std::path::PathBuf::from("/tmp"),
             model_overrides: std::collections::HashMap::new(),
+            memory_store: None,
         });
         let result = route_interaction_request(&req, &pipeline).unwrap();
         assert!(matches!(result, RouteResult::Passthrough));

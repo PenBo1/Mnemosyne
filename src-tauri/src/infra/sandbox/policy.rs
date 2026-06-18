@@ -101,6 +101,11 @@ impl SandboxPolicy {
             level: SecurityLevel::Restricted,
             fs_rules: vec![
                 FsRule {
+                    pattern: "/*".into(),
+                    action: FsAction::Deny,
+                    description: Some("默认拒绝所有路径".into()),
+                },
+                FsRule {
                     pattern: "${WORKDIR}/**".into(),
                     action: FsAction::Allow,
                     description: Some("工作目录内读写".into()),
@@ -114,11 +119,6 @@ impl SandboxPolicy {
                     pattern: "${TMPDIR}/**".into(),
                     action: FsAction::Allow,
                     description: Some("临时目录".into()),
-                },
-                FsRule {
-                    pattern: "/*".into(),
-                    action: FsAction::Deny,
-                    description: Some("禁止访问工作目录外的文件系统".into()),
                 },
             ],
             exec_rules: vec![

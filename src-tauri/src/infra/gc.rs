@@ -158,8 +158,9 @@ mod tests {
 
     #[test]
     fn test_count_words() {
-        assert_eq!(utils::count_words("hello world"), 2);
-        assert_eq!(utils::count_words(""), 0);
+        assert_eq!(utils::count_words("hello world", "en"), 2);
+        assert_eq!(utils::count_words("", "en"), 0);
+        assert_eq!(utils::count_words("你好世界", "zh"), 4);
     }
 
     #[test]

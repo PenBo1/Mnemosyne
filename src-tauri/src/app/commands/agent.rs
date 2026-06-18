@@ -109,6 +109,29 @@ fn agent_tool_specs() -> Vec<ToolSpec> {
                 }
             }),
         },
+        ToolSpec {
+            name: "write_file".to_string(),
+            description: "写入内容到文件（经过沙箱验证）".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "文件路径" },
+                    "content": { "type": "string", "description": "文件内容" }
+                },
+                "required": ["path", "content"]
+            }),
+        },
+        ToolSpec {
+            name: "exec_command".to_string(),
+            description: "执行shell命令（经过沙箱验证，有超时限制）".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "要执行的命令" }
+                },
+                "required": ["command"]
+            }),
+        },
     ]
 }
 
@@ -122,22 +145,37 @@ async fn execute_tool(
 ) -> Result<String, AppError> {
     match name {
         "search_memory" => {
+            // Real memory search would go here; for now return empty
             Ok("记忆库搜索结果：（暂无匹配结果）".to_string())
         }
         "read_file" => {
             let path = args["path"].as_str()
                 .ok_or_else(|| AppError::invalid_input("Missing 'path' argument"))?;
             let full_path = project_root.join(path);
-            // Validate through sandbox
             sandbox.validate_file_operation(&full_path, false)
                 .map_err(|v| AppError::forbidden(format!("Sandbox violation: {:?}", v)))?;
             tokio::fs::read_to_string(&full_path).await
                 .map_err(|e| AppError::internal(format!("Failed to read file: {}", e)))
         }
+        "write_file" => {
+            let path = args["path"].as_str()
+                .ok_or_else(|| AppError::invalid_input("Missing 'path' argument"))?;
+            let content = args["content"].as_str()
+                .ok_or_else(|| AppError::invalid_input("Missing 'content' argument"))?;
+            let full_path = project_root.join(path);
+            sandbox.validate_file_operation(&full_path, true)
+                .map_err(|v| AppError::forbidden(format!("Sandbox violation: {:?}", v)))?;
+            // Ensure parent directory exists
+            if let Some(parent) = full_path.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
+            tokio::fs::write(&full_path, content).await
+                .map_err(|e| AppError::internal(format!("Failed to write file: {}", e)))?;
+            Ok(format!("Successfully wrote {} bytes to {}", content.len(), path))
+        }
         "list_files" => {
             let path = args["path"].as_str().unwrap_or(".");
             let full_path = project_root.join(path);
-            // Validate through sandbox
             sandbox.validate_file_operation(&full_path, false)
                 .map_err(|v| AppError::forbidden(format!("Sandbox violation: {:?}", v)))?;
             let mut entries = tokio::fs::read_dir(&full_path).await
@@ -149,6 +187,21 @@ async fn execute_tool(
             }
             names.sort();
             Ok(names.join("\n"))
+        }
+        "exec_command" => {
+            let command = args["command"].as_str()
+                .ok_or_else(|| AppError::invalid_input("Missing 'command' argument"))?;
+            // Execute through sandbox (validates + runs with timeout)
+            match sandbox.execute_command(command) {
+                Ok(result) => {
+                    if result.exit_code == 0 {
+                        Ok(result.stdout)
+                    } else {
+                        Ok(format!("Exit code: {}\nStdout: {}\nStderr: {}", result.exit_code, result.stdout, result.stderr))
+                    }
+                }
+                Err(v) => Err(AppError::forbidden(format!("Sandbox violation: {:?}", v))),
+            }
         }
         _ => Err(AppError::bad_request(format!("Unknown tool: {}", name))),
     }
@@ -193,7 +246,9 @@ pub async fn agent_send_message(
     *cancel_flag.write().await = false;
 
     let tools = agent_tool_specs();
-    let project_root = state.data_dir.root().to_path_buf();
+    // Agent operates on a dedicated workspace directory, NOT the app's data directory
+    let project_root = state.data_dir.root().join("workspace");
+    let _ = std::fs::create_dir_all(&project_root);
 
     // Build system prompt with feedback lessons and skills
     let system_prompt = {
@@ -351,9 +406,20 @@ pub async fn agent_send_message(
 
             // Execute each tool and add results
             let sandbox = state.sandbox.lock().await;
+            let pve_validator = crate::infra::security::InjectionValidator::new();
             for (id, (name, args_str)) in &tool_calls {
                 let args: serde_json::Value = serde_json::from_str(args_str).unwrap_or(serde_json::Value::Null);
-                let result = match execute_tool(name, &args, &project_root, &sandbox).await {
+
+                // PVE: Validate tool arguments for injection before execution
+                let result = match pve_validator.validate_tool_args(name, &args) {
+                    Ok(()) => execute_tool(name, &args, &project_root, &sandbox).await,
+                    Err(e) => {
+                        tracing::warn!(tool = %name, error = %e, "PVE injection detected");
+                        Err(e)
+                    }
+                };
+
+                let result = match result {
                     Ok(r) => r,
                     Err(e) => format!("Error: {}", e),
                 };

@@ -139,6 +139,11 @@ mod tests {
     fn test_host_matching() {
         let sandbox = NetworkSandbox::new(vec![
             NetRule {
+                host: "*".into(),
+                action: NetAction::Deny,
+                description: None,
+            },
+            NetRule {
                 host: "localhost".into(),
                 action: NetAction::Allow,
                 description: None,
@@ -146,11 +151,6 @@ mod tests {
             NetRule {
                 host: "*.github.com".into(),
                 action: NetAction::Allow,
-                description: None,
-            },
-            NetRule {
-                host: "*".into(),
-                action: NetAction::Deny,
                 description: None,
             },
         ]);

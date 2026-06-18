@@ -117,6 +117,19 @@ impl ExecSandbox {
     fn detect_dangerous_patterns(&self, command: &str) -> Result<(), String> {
         let cmd_lower = command.to_lowercase();
 
+        // 检查实际换行字节(0x0A) - 不能只检查字符串"\n"
+        if command.contains('\n') {
+            return Err("检测到实际换行字节，可能被用于命令注入".to_string());
+        }
+        // 检查回车字节(0x0D)
+        if command.contains('\r') {
+            return Err("检测到回车字节，可能被用于命令注入".to_string());
+        }
+        // 检查空字节
+        if command.contains('\0') {
+            return Err("检测到空字节，可能被用于命令注入".to_string());
+        }
+
         // 检测注入攻击
         let dangerous_patterns = [
             ("|", "管道可能被用于命令注入"),
@@ -128,16 +141,30 @@ impl ExecSandbox {
             (">", "重定向可能被用于文件覆盖"),
             (">>", "追加重定向可能被用于文件写入"),
             ("<", "输入重定向可能被用于读取敏感文件"),
-            ("\\n", "换行符可能被用于命令注入"),
+            ("\\n", "转义换行符可能被用于命令注入"),
         ];
 
         for (pattern, reason) in dangerous_patterns {
             if cmd_lower.contains(pattern) {
-                // 特殊情况：某些命令允许管道
+                // 特殊情况：某些命令允许管道（仅限grep/find的第一个管道）
                 if pattern == "|" && (cmd_lower.starts_with("grep") || cmd_lower.starts_with("find")) {
                     continue;
                 }
                 return Err(format!("检测到潜在的命令注入风险: {} ({})", pattern, reason));
+            }
+        }
+
+        // 检查Unicode同形字攻击（常见混淆字符）
+        let homoglyphs = [
+            ('а', 'a'), // Cyrillic а vs Latin a
+            ('е', 'e'), // Cyrillic е vs Latin e
+            ('о', 'o'), // Cyrillic о vs Latin o
+            ('р', 'p'), // Cyrillic р vs Latin p
+            ('с', 'c'), // Cyrillic с vs Latin c
+        ];
+        for (bad, _good) in &homoglyphs {
+            if command.contains(*bad) {
+                return Err(format!("检测到Unicode同形字字符 '{}'，可能被用于绕过安全检查", bad));
             }
         }
 
