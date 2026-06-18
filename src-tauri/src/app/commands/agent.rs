@@ -302,6 +302,15 @@ pub async fn agent_send_message(
             break;
         }
 
+        // Log LLM call start
+        let messages_json = serde_json::to_string(&all_messages).unwrap_or_default();
+        let tools_json = serde_json::to_string(&tools).unwrap_or_default();
+        let llm_call_id = {
+            let db = state.db.lock().await;
+            db.log_llm_call_start(&session_id, "chat", &model, "default", Some(&system_prompt), &messages_json, Some(&tools_json), None, None)?
+        };
+        let llm_start = std::time::Instant::now();
+
         let stream = provider.stream(&model, &system_prompt, &all_messages, &tools).await?;
 
         // Collect the full stream, accumulate tool calls
@@ -380,6 +389,12 @@ pub async fn agent_send_message(
             }
         }
 
+        // Log LLM call completion
+        {
+            let db = state.db.lock().await;
+            let _ = db.log_llm_call_complete(&llm_call_id, Some(&text_buf), None, Some(&format!("{:?}", finish_reason)), total_input, total_output, llm_start.elapsed().as_millis() as u64);
+        }
+
         if !tool_calls.is_empty() && matches!(finish_reason, FinishReason::ToolCalls) {
             // Add assistant message with tool calls
             let tool_call_requests: Vec<crate::infra::llm::types::ToolCallRequest> = tool_calls.iter().map(|(id, (name, args))| {
@@ -410,6 +425,13 @@ pub async fn agent_send_message(
             for (id, (name, args_str)) in &tool_calls {
                 let args: serde_json::Value = serde_json::from_str(args_str).unwrap_or(serde_json::Value::Null);
 
+                // Log tool execution start
+                let tool_exec_id = {
+                    let db = state.db.lock().await;
+                    db.log_tool_execution_start(&session_id, Some(&llm_call_id), name, args_str)?
+                };
+                let tool_start = std::time::Instant::now();
+
                 // PVE: Validate tool arguments for injection before execution
                 let result = match pve_validator.validate_tool_args(name, &args) {
                     Ok(()) => execute_tool(name, &args, &project_root, &sandbox).await,
@@ -419,21 +441,38 @@ pub async fn agent_send_message(
                     }
                 };
 
-                let result = match result {
+                let is_error = result.is_err();
+                let result_str = match result {
                     Ok(r) => r,
                     Err(e) => format!("Error: {}", e),
                 };
+                let tool_duration = tool_start.elapsed().as_millis() as u64;
+
+                // Log tool execution complete
+                {
+                    let db = state.db.lock().await;
+                    let _ = db.log_tool_execution_complete(
+                        &tool_exec_id,
+                        Some(&result_str),
+                        is_error,
+                        if is_error { Some(&result_str) } else { None },
+                        tool_duration,
+                        true, // sandbox_allowed
+                        None, // sandbox_violation
+                        false, // pve_blocked
+                    );
+                }
 
                 let _ = state.app_handle.emit("agent-event", AgentEvent::ToolCallEnd {
                     session_id: session_id.clone(),
                     tool_call_id: id.clone(),
-                    output: result.clone(),
-                    is_error: result.starts_with("Error:"),
+                    output: result_str.clone(),
+                    is_error,
                 });
 
                 all_messages.push(Message {
                     role: "tool".to_string(),
-                    content: result,
+                    content: result_str,
                     tool_calls: None,
                     tool_call_id: Some(id.clone()),
                 });

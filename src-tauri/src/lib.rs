@@ -38,6 +38,10 @@ pub fn run() {
             tracing::info!(path = %db_path.display(), "Opening state database");
             let database = Database::new(db_path.to_str().unwrap())
                 .expect("failed to open state database");
+            // Initialize AI logs schema
+            if let Err(e) = database.init_ai_logs() {
+                tracing::error!(error = %e, "Failed to init AI logs schema");
+            }
             tracing::info!("State database initialized");
 
             let feedback_db_path = data_dir.feedback_db_path();
@@ -169,6 +173,10 @@ pub fn run() {
             app::commands::mcp::mcp_handle_request,
             app::commands::mcp::mcp_server_info,
             app::commands::mcp::mcp_check_tool_safety,
+            app::commands::ai_logs::ai_log_llm_calls,
+            app::commands::ai_logs::ai_log_tool_executions,
+            app::commands::ai_logs::ai_log_token_usage,
+            app::commands::ai_logs::ai_log_sandbox_violations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,3 +17,4 @@ pub mod agent_config;
 pub mod novel_sources;
 pub mod scheduler;
 pub mod mcp;
+pub mod ai_logs;
