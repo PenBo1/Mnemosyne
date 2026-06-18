@@ -34,12 +34,12 @@ impl AnthropicProvider {
         let mut body = serde_json::json!({
             "model": model,
             "max_tokens": 4096,
-            "system": system,
             "messages": msgs,
             "stream": stream,
         });
 
-        if !messages.iter().any(|m| m.role == "system") && !system.is_empty() {
+        // Only set system if not empty AND no system messages in the array
+        if !system.is_empty() && !messages.iter().any(|m| m.role == "system") {
             body["system"] = serde_json::Value::String(system.to_string());
         }
 

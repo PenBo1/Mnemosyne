@@ -88,23 +88,26 @@ impl Provider for AgnesProvider {
         tracing::info!(status = %resp.status(), "Agnes stream response received");
 
         let byte_stream = resp.bytes_stream();
-        let event_stream = byte_stream.map(|chunk| {
+        let event_stream = byte_stream.filter_map(|chunk| async {
             match chunk {
                 Ok(bytes) => {
                     let text = String::from_utf8_lossy(&bytes);
                     let mut events = Vec::new();
-                    let mut finish_emitted = false;
                     for line in text.lines() {
                         let line = line.trim();
                         if line.is_empty() || !line.starts_with("data: ") { continue; }
                         let data = &line[6..];
-                        if data == "[DONE]" {
-                            if !finish_emitted {
-                                events.push(StreamEvent::Finish { reason: FinishReason::Stop, usage: TokenUsage::default() });
-                            }
-                            continue;
-                        }
+                        if data == "[DONE]" { continue; }
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            let mut usage = TokenUsage::default();
+                            if let Some(u) = json.get("usage") {
+                                if let Some(pt) = u.get("prompt_tokens").and_then(|v| v.as_u64()) {
+                                    usage.input_tokens = pt as u32;
+                                }
+                                if let Some(ct) = u.get("completion_tokens").and_then(|v| v.as_u64()) {
+                                    usage.output_tokens = ct as u32;
+                                }
+                            }
                             if let Some(choices) = json["choices"].as_array() {
                                 for choice in choices {
                                     if let Some(delta) = choice.get("delta") {
@@ -126,22 +129,16 @@ impl Provider for AgnesProvider {
                                         }
                                     }
                                     if let Some(finish) = choice["finish_reason"].as_str() {
-                                        if !finish_emitted {
-                                            let reason = match finish { "tool_calls" => FinishReason::ToolCalls, "length" => FinishReason::Length, _ => FinishReason::Stop };
-                                            events.push(StreamEvent::Finish { reason, usage: TokenUsage::default() });
-                                            finish_emitted = true;
-                                        }
+                                        let reason = match finish { "tool_calls" => FinishReason::ToolCalls, "length" => FinishReason::Length, _ => FinishReason::Stop };
+                                        events.push(StreamEvent::Finish { reason, usage });
                                     }
                                 }
                             }
                         }
                     }
-                    futures::stream::iter(events)
+                    if events.is_empty() { None } else { Some(futures::stream::iter(events)) }
                 }
-                Err(e) => {
-                    tracing::error!(error = %e, "Agnes stream chunk error");
-                    futures::stream::iter(vec![StreamEvent::Error(e.to_string())])
-                }
+                Err(e) => Some(futures::stream::iter(vec![StreamEvent::Error(e.to_string())])),
             }
         }).flatten();
         Ok(Box::pin(event_stream))

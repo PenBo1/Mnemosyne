@@ -81,69 +81,62 @@ impl Provider for OpenAiProvider {
         tracing::info!(status = %resp.status(), "OpenAI stream response received");
 
         let byte_stream = resp.bytes_stream();
-        let event_stream = byte_stream.map(|chunk| {
-            match chunk {
-                Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    let mut events = Vec::new();
-                    let mut finish_emitted = false;
-                    let mut usage = TokenUsage::default();
-                    for line in text.lines() {
-                        let line = line.trim();
-                        if line.is_empty() || !line.starts_with("data: ") { continue; }
-                        let data = &line[6..];
-                        if data == "[DONE]" {
-                            if !finish_emitted {
-                                events.push(StreamEvent::Finish { reason: FinishReason::Stop, usage });
-                            }
-                            continue;
-                        }
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                            // Parse usage from the final chunk
-                            if let Some(u) = json.get("usage") {
-                                if let Some(pt) = u.get("prompt_tokens").and_then(|v| v.as_u64()) {
-                                    usage.input_tokens = pt as u32;
-                                }
-                                if let Some(ct) = u.get("completion_tokens").and_then(|v| v.as_u64()) {
-                                    usage.output_tokens = ct as u32;
-                                }
-                            }
-                            if let Some(choices) = json["choices"].as_array() {
-                                for choice in choices {
-                                    if let Some(delta) = choice.get("delta") {
-                                        if let Some(content) = delta["content"].as_str() {
-                                            if !content.is_empty() { events.push(StreamEvent::TextDelta { content: content.to_string() }); }
-                                        }
-                                        if let Some(tool_calls) = delta["tool_calls"].as_array() {
-                                            for tc in tool_calls {
-                                                let id = tc["id"].as_str().unwrap_or("");
-                                                let name = tc["function"]["name"].as_str().unwrap_or("");
-                                                let args = tc["function"]["arguments"].as_str().unwrap_or("");
-                                                if !id.is_empty() && !name.is_empty() {
-                                                    events.push(StreamEvent::ToolCallStart { id: id.to_string(), name: name.to_string() });
-                                                }
-                                                if !args.is_empty() {
-                                                    events.push(StreamEvent::ToolCallDelta { id: id.to_string(), args_delta: args.to_string() });
+        // Collect all events first, then deduplicate finish events
+        let event_stream = byte_stream
+            .filter_map(|chunk| async {
+                match chunk {
+                    Ok(bytes) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        let mut events = Vec::new();
+                        for line in text.lines() {
+                            let line = line.trim();
+                            if line.is_empty() || !line.starts_with("data: ") { continue; }
+                            let data = &line[6..];
+                            if data == "[DONE]" { continue; }
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                                if let Some(choices) = json["choices"].as_array() {
+                                    for choice in choices {
+                                        if let Some(delta) = choice.get("delta") {
+                                            if let Some(content) = delta["content"].as_str() {
+                                                if !content.is_empty() { events.push(StreamEvent::TextDelta { content: content.to_string() }); }
+                                            }
+                                            if let Some(tool_calls) = delta["tool_calls"].as_array() {
+                                                for tc in tool_calls {
+                                                    let id = tc["id"].as_str().unwrap_or("");
+                                                    let name = tc["function"]["name"].as_str().unwrap_or("");
+                                                    let args = tc["function"]["arguments"].as_str().unwrap_or("");
+                                                    if !id.is_empty() && !name.is_empty() {
+                                                        events.push(StreamEvent::ToolCallStart { id: id.to_string(), name: name.to_string() });
+                                                    }
+                                                    if !args.is_empty() {
+                                                        events.push(StreamEvent::ToolCallDelta { id: id.to_string(), args_delta: args.to_string() });
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                    if let Some(finish) = choice["finish_reason"].as_str() {
-                                        if !finish_emitted {
+                                        if let Some(finish) = choice["finish_reason"].as_str() {
                                             let reason = match finish { "tool_calls" => FinishReason::ToolCalls, "length" => FinishReason::Length, _ => FinishReason::Stop };
+                                            let mut usage = TokenUsage::default();
+                                            if let Some(u) = choice.get("usage") {
+                                                if let Some(pt) = u.get("prompt_tokens").and_then(|v| v.as_u64()) {
+                                                    usage.input_tokens = pt as u32;
+                                                }
+                                                if let Some(ct) = u.get("completion_tokens").and_then(|v| v.as_u64()) {
+                                                    usage.output_tokens = ct as u32;
+                                                }
+                                            }
                                             events.push(StreamEvent::Finish { reason, usage });
-                                            finish_emitted = true;
                                         }
                                     }
                                 }
                             }
                         }
+                        if events.is_empty() { None } else { Some(futures::stream::iter(events)) }
                     }
-                    futures::stream::iter(events)
+                    Err(e) => Some(futures::stream::iter(vec![StreamEvent::Error(e.to_string())])),
                 }
-                Err(e) => futures::stream::iter(vec![StreamEvent::Error(e.to_string())]),
-            }
-        }).flatten();
+            })
+            .flatten();
         Ok(Box::pin(event_stream))
     }
 
