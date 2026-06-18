@@ -141,11 +141,5 @@ fn extract_list_items(content: &str, headings: &[&str]) -> Vec<String> {
 }
 
 fn read_book_language(book_dir: &std::path::Path) -> Option<String> {
-    let config_path = book_dir.join("book.json");
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-            return config.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
-        }
-    }
-    Some("zh".to_string())
+    crate::infra::gc::utils::read_book_language_from_dir(book_dir)
 }

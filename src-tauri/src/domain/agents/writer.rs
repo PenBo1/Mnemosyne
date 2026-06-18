@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
+use crate::infra::gc::utils;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::planner::PlanOutput;
@@ -150,7 +151,7 @@ fn parse_creative_output(content: &str, chapter_number: u32, language: &str) -> 
         title
     };
 
-    let word_count = count_words(&content_section, language);
+    let word_count = utils::count_words(&content_section, language);
 
     Ok(CreativeOutput {
         title,
@@ -214,7 +215,7 @@ fn save_settlement_outputs(
 
     // Save chapter file
     std::fs::create_dir_all(&chapters_dir)?;
-    let filename = format!("{:04}_{}.md", chapter_number, sanitize_filename(&creative.title));
+    let filename = format!("{:04}_{}.md", chapter_number, utils::sanitize_filename(&creative.title));
     let heading = if language == "en" {
         format!("# Chapter {}: {}", chapter_number, creative.title)
     } else {
@@ -278,41 +279,6 @@ fn append_chapter_summary(
     Ok(())
 }
 
-fn count_words(text: &str, language: &str) -> u32 {
-    if language == "en" {
-        text.split_whitespace().count() as u32
-    } else {
-        // Chinese: count non-whitespace characters + ASCII words
-        let mut count = 0u32;
-        for ch in text.chars() {
-            if ch.is_ascii_alphanumeric() || ch.is_ascii_punctuation() {
-                // Skip ASCII
-            } else if !ch.is_whitespace() {
-                count += 1;
-            }
-        }
-        let ascii_words: u32 = text.split_whitespace()
-            .filter(|w| w.bytes().all(|b| b.is_ascii()))
-            .count() as u32;
-        count + ascii_words
-    }
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
-        .collect::<String>()
-        .chars()
-        .take(50)
-        .collect()
-}
-
 fn read_book_language(book_dir: &std::path::Path) -> Option<String> {
-    let config_path = book_dir.join("book.json");
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-            return config.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
-        }
-    }
-    Some("zh".to_string())
+    crate::infra::gc::utils::read_book_language_from_dir(book_dir)
 }

@@ -103,18 +103,21 @@ pub mod utils {
         text.split_whitespace().count() as u32
     }
 
-    /// Read book language from config.
+    /// Read book language from config (by project_root + book_id).
     pub fn read_book_language(project_root: &std::path::Path, book_id: &str) -> String {
-        let config_path = project_root.join("books").join(book_id).join("book.json");
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
+        let book_dir = project_root.join("books").join(book_id);
+        read_book_language_from_dir(&book_dir).unwrap_or_else(|| "zh".to_string())
+    }
+
+    /// Read book language from a book directory (by book_dir path).
+    pub fn read_book_language_from_dir(book_dir: &std::path::Path) -> Option<String> {
+        let config_path = book_dir.join("book.json");
+        if let Ok(content) = std::fs::read_to_string(config_path) {
             if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-                return config.get("language")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("zh")
-                    .to_string();
+                return config.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
             }
         }
-        "zh".to_string()
+        Some("zh".to_string())
     }
 
     /// Check if a book is in English.

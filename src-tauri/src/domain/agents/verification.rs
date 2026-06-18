@@ -28,6 +28,7 @@ pub struct GateContext {
     pub min_words: Option<u32>,
     pub max_words: Option<u32>,
     pub forbidden_patterns: Vec<String>,
+    pub language: String,
 }
 
 impl Default for GateContext {
@@ -40,6 +41,7 @@ impl Default for GateContext {
             min_words: Some(2000),
             max_words: Some(5000),
             forbidden_patterns: Vec::new(),
+            language: "zh".to_string(),
         }
     }
 }
@@ -83,11 +85,6 @@ impl VerificationGate {
     pub async fn validate(&self, content: &str, context: &GateContext) -> Result<GateResult, AppError> {
         (self.validator)(content, context)
     }
-}
-
-/// Word count utility
-fn count_words(text: &str) -> u32 {
-    utils::count_words_en(text)
 }
 
 /// Pipeline of verification gates
@@ -201,7 +198,7 @@ impl VerificationPipeline {
             GateType::WordCount,
             Box::new(|content, ctx| {
                 let mut issues = Vec::new();
-                let words = count_words(content);
+                let words = utils::count_words(content, &ctx.language);
 
                 if let Some(min) = ctx.min_words {
                     if words < min {
@@ -281,9 +278,9 @@ impl VerificationPipeline {
         self.overrides.push(override_entry);
     }
 
-    /// Get word count for content.
-    pub fn word_count(content: &str) -> u32 {
-        count_words(content)
+    /// Get word count for content (language-aware).
+    pub fn word_count(content: &str, language: &str) -> u32 {
+        utils::count_words(content, language)
     }
 }
 

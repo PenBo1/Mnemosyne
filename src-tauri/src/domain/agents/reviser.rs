@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use crate::errors::AppError;
 use crate::domain::story::AuditResult;
+use crate::infra::gc::utils;
 use super::base::{AgentContext, BaseAgent};
 use super::types::AgentRole;
 use super::prompts::reviser_prompts;
@@ -53,7 +54,7 @@ impl ReviserAgent {
         Ok(ReviseOutput {
             chapter_number,
             content: revised_content.clone(),
-            word_count: count_words(&revised_content, &language),
+            word_count: utils::count_words(&revised_content, &language),
             fixed_issues: audit.issues.iter()
                 .filter(|i| i.severity == crate::domain::story::AuditSeverity::Critical)
                 .map(|i| i.description.clone())
@@ -94,29 +95,5 @@ fn extract_revised_content(content: &str) -> String {
 }
 
 fn read_book_language(book_dir: &std::path::Path) -> Option<String> {
-    let config_path = book_dir.join("book.json");
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-            return config.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
-        }
-    }
-    Some("zh".to_string())
-}
-
-fn count_words(text: &str, language: &str) -> u32 {
-    if language == "en" {
-        text.split_whitespace().count() as u32
-    } else {
-        let mut count = 0u32;
-        for ch in text.chars() {
-            if ch.is_ascii_alphanumeric() || ch.is_ascii_punctuation() {
-            } else if !ch.is_whitespace() {
-                count += 1;
-            }
-        }
-        let ascii_words: u32 = text.split_whitespace()
-            .filter(|w| w.bytes().all(|b| b.is_ascii()))
-            .count() as u32;
-        count + ascii_words
-    }
+    crate::infra::gc::utils::read_book_language_from_dir(book_dir)
 }

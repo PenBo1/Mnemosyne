@@ -241,6 +241,7 @@ impl PipelineRunner {
                 None
             },
             style_guide: None,
+            language: book.language.clone(),
             ..Default::default()
         };
         let gate_results = verification_pipeline.validate_all(&write_output.content, &gate_context).await?;
