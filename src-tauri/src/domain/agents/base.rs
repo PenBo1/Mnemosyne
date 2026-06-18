@@ -340,16 +340,28 @@ pub trait BaseAgent: Send + Sync {
         for _step in 0..max_steps {
             let content = ctx.provider.complete(&ctx.model, system, &messages).await?;
 
-            // Parse tool calls from response (simplified - in production, parse JSON)
+            // Parse tool calls from response
             if let Some(tool_calls) = parse_tool_calls(&content) {
-                // Execute each tool call
+                // Add assistant message with tool calls
+                messages.push(Message {
+                    role: "assistant".to_string(),
+                    content: content.clone(),
+                    tool_calls: Some(tool_calls.iter().map(|tc| {
+                        crate::infra::llm::types::ToolCallRequest {
+                            id: tc.id.clone(),
+                            name: tc.name.clone(),
+                            arguments: tc.arguments.to_string(),
+                        }
+                    }).collect()),
+                    tool_call_id: None,
+                });
+
+                // Execute each tool call and add results as "tool" role
                 for tc in &tool_calls {
                     let result = self.use_tool(ctx, tc).await?;
-
-                    // Add tool result as observation (P14.01)
                     messages.push(Message {
-                        role: "user".to_string(),
-                        content: format!("[Tool Result] {}: {}", tc.name, result.content),
+                        role: "tool".to_string(),
+                        content: result.content,
                         tool_calls: None,
                         tool_call_id: Some(tc.id.clone()),
                     });
@@ -365,28 +377,47 @@ pub trait BaseAgent: Send + Sync {
     }
 }
 
-/// Parse tool calls from LLM response (simplified parser)
+/// Parse tool calls from LLM response.
+/// Handles JSON tool calls (OpenAI/Anthropic format) and markdown patterns.
 fn parse_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
-    // In production, parse JSON tool calls from the response
-    // This is a simplified version for demonstration
-    if content.contains("```tool_call") {
-        // Extract tool calls from markdown code blocks
+    // Try JSON parsing first (most reliable)
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+        if let Some(calls) = json.get("tool_calls").and_then(|v| v.as_array()) {
+            let parsed: Vec<ToolCall> = calls.iter().filter_map(|tc| {
+                let id = tc.get("id")?.as_str()?.to_string();
+                let name = tc.get("function")?.get("name")?.as_str()?.to_string();
+                let args = tc.get("function")?.get("arguments")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Null);
+                Some(ToolCall { id, name, arguments: args })
+            }).collect();
+            if !parsed.is_empty() { return Some(parsed); }
+        }
+    }
+
+    // Try markdown tool call blocks (```tool_call ... ```)
+    if content.contains("```tool_call") || content.contains("```json") {
         let calls: Vec<ToolCall> = content
             .lines()
-            .filter(|line| line.starts_with("tool_call:"))
+            .filter(|line| line.starts_with("tool_call:") || line.starts_with("\"name\":"))
             .enumerate()
-            .map(|(i, line)| {
-                let parts: Vec<&str> = line.splitn(2, ':').collect();
-                let name = parts.get(1).unwrap_or(&"").trim().to_string();
-                ToolCall {
+            .filter_map(|(i, line)| {
+                let name = if line.starts_with("tool_call:") {
+                    line.splitn(2, ':').nth(1)?.trim().to_string()
+                } else {
+                    line.splitn(2, ':').nth(1)?.trim().trim_matches(|c: char| c == '"' || c == ' ').to_string()
+                };
+                if name.is_empty() { return None; }
+                Some(ToolCall {
                     id: format!("call_{}", i),
                     name,
                     arguments: serde_json::Value::Null,
-                }
+                })
             })
             .collect();
-        if calls.is_empty() { None } else { Some(calls) }
-    } else {
-        None
+        if !calls.is_empty() { return Some(calls); }
     }
+
+    None
 }

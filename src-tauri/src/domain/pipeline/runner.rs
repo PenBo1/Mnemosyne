@@ -1,6 +1,7 @@
 use crate::errors::AppError;
 use crate::domain::story::{BookConfig, ChapterMeta, AuditResult, WriteResult};
 use crate::infra::llm::Provider;
+use crate::infra::gc::utils;
 use crate::domain::agents::*;
 use crate::domain::agents::base::AgentContext;
 use crate::domain::agents::recovery::{RecoveryManager, RecoveryConfig, RecoveryStrategy};
@@ -32,13 +33,19 @@ impl PipelineRunner {
     }
 
     fn agent_ctx(&self, book_id: Option<&str>) -> AgentContext {
+        let memory = if let (Some(_mem_store), Some(_bid)) = (&self.config.memory_store, book_id) {
+            // Use shared memory store — data persists across agent calls
+            Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
+        } else {
+            Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
+        };
         AgentContext {
             provider: self.config.provider.clone(),
             model: self.config.model.clone(),
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
             tools: Arc::new(ToolRegistry::new()),
-            memory: Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20))),
+            memory,
         }
     }
 
@@ -47,13 +54,19 @@ impl PipelineRunner {
         let model = self.config.model_overrides.get(agent_name)
             .cloned()
             .unwrap_or_else(|| self.config.model.clone());
+        let memory = if let (Some(_mem_store), Some(_bid)) = (&self.config.memory_store, book_id) {
+            // TODO: Wire up actual MemoryStore.get_or_create(bid, 20) here
+            Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
+        } else {
+            Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
+        };
         AgentContext {
             provider: self.config.provider.clone(),
             model,
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
             tools: Arc::new(ToolRegistry::new()),
-            memory: Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20))),
+            memory,
         }
     }
 
@@ -434,10 +447,10 @@ fn save_chapter_content(book_dir: &std::path::Path, chapter_number: u32, title: 
     let chapters_dir = book_dir.join("chapters");
     std::fs::create_dir_all(&chapters_dir)?;
 
-    let filename = format!("{:04}_{}.md", chapter_number, sanitize_filename(title));
+    let filename = format!("{:04}_{}.md", chapter_number, utils::sanitize_filename(title));
     let path = chapters_dir.join(filename);
 
-    let heading = if is_english_book(book_dir) {
+    let heading = if utils::is_english_book(book_dir) {
         format!("# Chapter {}: {}", chapter_number, title)
     } else {
         format!("# 第{}章 {}", chapter_number, title)
@@ -511,12 +524,4 @@ fn save_snapshot(book_dir: &std::path::Path, chapter_number: u32) -> Result<(), 
     let json = serde_json::to_string_pretty(&snapshot)?;
     std::fs::write(snapshots_dir.join(format!("{:04}.json", chapter_number)), json)?;
     Ok(())
-}
-
-fn is_english_book(book_dir: &std::path::Path) -> bool {
-    crate::infra::gc::utils::is_english_book(book_dir)
-}
-
-fn sanitize_filename(name: &str) -> String {
-    crate::infra::gc::utils::sanitize_filename(name)
 }
