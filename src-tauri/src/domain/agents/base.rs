@@ -169,6 +169,11 @@ impl MemorySystem {
         self.archival_store.push(entry);
     }
 
+    /// Get all entries (main context + archival) for persistence
+    pub fn get_all_entries(&self) -> Vec<&MemoryEntry> {
+        self.main_context.iter().chain(self.archival_store.iter()).collect()
+    }
+
     /// Get main context as formatted string for prompt injection
     pub fn format_main_context(&self) -> String {
         self.main_context

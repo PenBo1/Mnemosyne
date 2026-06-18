@@ -64,7 +64,7 @@ pub fn run() {
             let feedback_db_arc = Arc::new(tokio::sync::Mutex::new(feedback_db));
             let sandbox_policy = SandboxPolicy::restricted();
             let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
-            let memory_store = crate::infra::memory::MemoryStore::new();
+            let memory_store = crate::infra::memory::MemoryStore::new(app_dir.clone());
             let feedback_store = crate::infra::feedback::FeedbackStore::new();
             let mcp_server = crate::infra::mcp::McpServer::new();
             let app_handle = app.handle().clone();

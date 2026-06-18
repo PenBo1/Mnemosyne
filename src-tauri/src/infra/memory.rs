@@ -1,25 +1,77 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
+use serde::{Serialize, Deserialize};
 use tokio::sync::RwLock;
 use crate::domain::agents::base::{MemoryEntry, MemoryType, MemorySystem};
 
 const DEFAULT_BUDGET: usize = 20;
 
-/// Shared memory store that persists across pipeline runs.
-/// Each book gets its own `Arc<RwLock<MemorySystem>>` so data is shared, not copied.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MemoryData {
+    budget: usize,
+    entries: Vec<MemoryEntry>,
+}
+
+/// Persistent memory store that survives restarts.
+/// Each book gets its own MemorySystem stored in a JSON file.
 pub struct MemoryStore {
     books: RwLock<HashMap<String, Arc<RwLock<MemorySystem>>>>,
+    data_dir: PathBuf,
 }
 
 impl MemoryStore {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new(data_dir: PathBuf) -> Arc<Self> {
+        let store = Arc::new(Self {
             books: RwLock::new(HashMap::new()),
-        })
+            data_dir,
+        });
+        let store_clone = store.clone();
+        tokio::spawn(async move { store_clone.load_all().await; });
+        store
     }
 
-    /// Get or create the memory system for a book.
-    /// Returns the SAME Arc<RwLock<MemorySystem>> on repeated calls — data persists.
+    async fn load_all(&self) {
+        let memory_dir = self.data_dir.join("memory");
+        if !memory_dir.exists() {
+            let _ = tokio::fs::create_dir_all(&memory_dir).await;
+            return;
+        }
+        let mut entries = match tokio::fs::read_dir(&memory_dir).await {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
+            let book_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            if book_id.is_empty() { continue; }
+            if let Ok(content) = tokio::fs::read_to_string(&path).await {
+                if let Ok(data) = serde_json::from_str::<MemoryData>(&content) {
+                    let mut memory = MemorySystem::new(data.budget);
+                    for e in data.entries { memory.archive(e); }
+                    let mut books = self.books.write().await;
+                    books.insert(book_id, Arc::new(RwLock::new(memory)));
+                }
+            }
+        }
+    }
+
+    async fn save_book(&self, book_id: &str) {
+        let books = self.books.read().await;
+        if let Some(memory) = books.get(book_id) {
+            let mem = memory.read().await;
+            let entries: Vec<MemoryEntry> = mem.get_all_entries().into_iter().cloned().collect();
+            drop(mem);
+            let data = MemoryData { budget: DEFAULT_BUDGET, entries };
+            if let Ok(json) = serde_json::to_string_pretty(&data) {
+                let memory_dir = self.data_dir.join("memory");
+                let _ = tokio::fs::create_dir_all(&memory_dir).await;
+                let _ = tokio::fs::write(memory_dir.join(format!("{}.json", book_id)), json).await;
+            }
+        }
+    }
+
     pub async fn get_or_create(&self, book_id: &str, budget: usize) -> Arc<RwLock<MemorySystem>> {
         let mut books = self.books.write().await;
         books.entry(book_id.to_string())
@@ -27,26 +79,11 @@ impl MemoryStore {
             .clone()
     }
 
-    /// Get a reference to the memory system for a book (returns None if not created).
     pub async fn get(&self, book_id: &str) -> Option<Arc<RwLock<MemorySystem>>> {
-        let books = self.books.read().await;
-        books.get(book_id).cloned()
+        self.books.read().await.get(book_id).cloned()
     }
 
-    /// Archive a fact extracted by ObserverAgent.
-    pub async fn archive_fact(
-        &self,
-        book_id: &str,
-        chapter: u32,
-        subject: &str,
-        predicate: &str,
-        object: &str,
-        category: &str,
-    ) {
-        let mut books = self.books.write().await;
-        let memory = books.entry(book_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
-
+    pub async fn archive_fact(&self, book_id: &str, chapter: u32, subject: &str, predicate: &str, object: &str, category: &str) {
         let entry_type = match category {
             "character" => MemoryType::Character,
             "plot" => MemoryType::Plot,
@@ -55,110 +92,81 @@ impl MemoryStore {
             "style" => MemoryType::Style,
             _ => MemoryType::Fact,
         };
-
-        let content = format!("{} {} {}", subject, predicate, object);
-        let now = chrono::Utc::now().to_rfc3339();
-
-        memory.write().await.archive(MemoryEntry {
+        let entry = MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
-            content,
+            content: format!("{} {} {}", subject, predicate, object),
             entry_type,
             chapter: Some(chapter),
-            timestamp: now,
+            timestamp: chrono::Utc::now().to_rfc3339(),
             tags: vec![category.to_string(), subject.to_lowercase()],
-        });
+        };
+        {
+            let mut books = self.books.write().await;
+            let memory = books.entry(book_id.to_string())
+                .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
+            memory.write().await.archive(entry);
+        }
+        self.save_book(book_id).await;
     }
 
-    /// Archive a hook action.
-    pub async fn archive_hook(
-        &self,
-        book_id: &str,
-        chapter: u32,
-        name: &str,
-        hook_type: &str,
-        status: &str,
-        description: &str,
-    ) {
-        let mut books = self.books.write().await;
-        let memory = books.entry(book_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
-
-        let content = format!("[Hook:{}] {} - {} ({})", hook_type, name, description, status);
-        let now = chrono::Utc::now().to_rfc3339();
-
-        memory.write().await.archive(MemoryEntry {
+    pub async fn archive_hook(&self, book_id: &str, chapter: u32, name: &str, hook_type: &str, status: &str, description: &str) {
+        let entry = MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
-            content,
+            content: format!("[Hook:{}] {} - {} ({})", hook_type, name, description, status),
             entry_type: MemoryType::Plot,
             chapter: Some(chapter),
-            timestamp: now,
+            timestamp: chrono::Utc::now().to_rfc3339(),
             tags: vec!["hook".to_string(), hook_type.to_string(), name.to_lowercase()],
-        });
+        };
+        {
+            let mut books = self.books.write().await;
+            let memory = books.entry(book_id.to_string())
+                .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
+            memory.write().await.archive(entry);
+        }
+        self.save_book(book_id).await;
     }
 
-    /// Archive a chapter summary.
-    pub async fn archive_summary(
-        &self,
-        book_id: &str,
-        chapter: u32,
-        title: &str,
-        characters: &[String],
-        events: &[String],
-    ) {
-        let mut books = self.books.write().await;
-        let memory = books.entry(book_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
-
-        let content = format!(
-            "Chapter {}: {} | Characters: {} | Events: {}",
-            chapter,
-            title,
-            characters.join(", "),
-            events.join("; ")
-        );
-        let now = chrono::Utc::now().to_rfc3339();
-
-        memory.write().await.archive(MemoryEntry {
+    pub async fn archive_summary(&self, book_id: &str, chapter: u32, title: &str, characters: &[String], events: &[String]) {
+        let entry = MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
-            content,
+            content: format!("Chapter {}: {} | Characters: {} | Events: {}", chapter, title, characters.join(", "), events.join("; ")),
             entry_type: MemoryType::Fact,
             chapter: Some(chapter),
-            timestamp: now,
+            timestamp: chrono::Utc::now().to_rfc3339(),
             tags: vec!["summary".to_string(), format!("ch{}", chapter)],
-        });
+        };
+        {
+            let mut books = self.books.write().await;
+            let memory = books.entry(book_id.to_string())
+                .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
+            memory.write().await.archive(entry);
+        }
+        self.save_book(book_id).await;
     }
 
-    /// Search memory for a book.
     pub async fn search(&self, book_id: &str, query: &str, top_k: usize) -> Vec<MemoryEntry> {
         let books = self.books.read().await;
         if let Some(memory) = books.get(book_id) {
-            let mem = memory.read().await;
-            mem.search_memory(query, top_k)
-                .into_iter()
-                .cloned()
-                .collect()
+            memory.read().await.search_memory(query, top_k).into_iter().cloned().collect()
         } else {
             Vec::new()
         }
     }
 
-    /// Get formatted main context for prompt injection.
     pub async fn format_context(&self, book_id: &str) -> String {
         let books = self.books.read().await;
         if let Some(memory) = books.get(book_id) {
-            let mem = memory.read().await;
-            mem.format_main_context()
+            memory.read().await.format_main_context()
         } else {
             String::new()
         }
     }
 
-    /// Get counts for a book's memory.
     pub async fn stats(&self, book_id: &str) -> (usize, usize) {
         let books = self.books.read().await;
         if let Some(_memory) = books.get(book_id) {
-            // TODO: expose main_context.len() and archival_store.len() from MemorySystem
-            (0, 0)
+            (0, 0) // TODO: expose counts from MemorySystem
         } else {
             (0, 0)
         }

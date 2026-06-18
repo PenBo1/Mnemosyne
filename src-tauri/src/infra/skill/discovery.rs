@@ -76,6 +76,7 @@ impl SkillManager {
             meta,
             content: body,
             path: path.to_string_lossy().to_string(),
+            history: Vec::new(),
         })
     }
 
@@ -114,6 +115,7 @@ impl SkillManager {
             meta,
             content: content.to_string(),
             path: skill_path.to_string_lossy().to_string(),
+            history: Vec::new(),
         };
 
         self.skills.insert(skill.meta.name.clone(), skill.clone());
@@ -148,6 +150,7 @@ impl SkillManager {
             meta,
             content: content.to_string(),
             path: skill_path.to_string_lossy().to_string(),
+            history: Vec::new(),
         };
 
         self.skills.insert(skill.meta.name.clone(), skill.clone());
@@ -217,6 +220,9 @@ fn parse_frontmatter(content: &str) -> Result<(SkillMeta, String), AppError> {
                 category: "general".into(),
                 requires_tools: Vec::new(),
                 platforms: None,
+                version: 1,
+                tags: Vec::new(),
+                depends_on: Vec::new(),
             },
             content.to_string(),
         ));

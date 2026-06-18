@@ -65,6 +65,9 @@ pub async fn skill_create(
         category: req.category,
         requires_tools: Vec::new(),
         platforms: None,
+        version: 1,
+        tags: Vec::new(),
+        depends_on: Vec::new(),
     };
     let mut manager = state.skill_manager.lock().await;
     let skill = manager.create_skill(meta, &req.content)?;
@@ -84,6 +87,9 @@ pub async fn skill_update(
         category: req.category,
         requires_tools: Vec::new(),
         platforms: None,
+        version: 1,
+        tags: Vec::new(),
+        depends_on: Vec::new(),
     };
     let mut manager = state.skill_manager.lock().await;
     let skill = manager.update_skill(&req.name, meta, &req.content)?;
