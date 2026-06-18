@@ -79,14 +79,33 @@ impl SnapshotGc {
 
 /// Deduplicate common utility functions across agents.
 pub mod utils {
-    /// Count words in text.
-    pub fn count_words(text: &str) -> u32 {
+    /// Count words in text with language awareness.
+    /// English: whitespace-separated words. Chinese: non-ASCII chars + ASCII words.
+    pub fn count_words(text: &str, language: &str) -> u32 {
+        if language == "en" {
+            text.split_whitespace().count() as u32
+        } else {
+            let mut non_ascii = 0u32;
+            for ch in text.chars() {
+                if !ch.is_ascii() && !ch.is_whitespace() {
+                    non_ascii += 1;
+                }
+            }
+            let ascii_words: u32 = text.split_whitespace()
+                .filter(|w| w.bytes().all(|b| b.is_ascii()))
+                .count() as u32;
+            non_ascii + ascii_words
+        }
+    }
+
+    /// Count words (English default).
+    pub fn count_words_en(text: &str) -> u32 {
         text.split_whitespace().count() as u32
     }
 
     /// Read book language from config.
     pub fn read_book_language(project_root: &std::path::Path, book_id: &str) -> String {
-        let config_path = project_root.join("books").join(book_id).join("config.json");
+        let config_path = project_root.join("books").join(book_id).join("book.json");
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
                 return config.get("language")
@@ -96,6 +115,17 @@ pub mod utils {
             }
         }
         "zh".to_string()
+    }
+
+    /// Check if a book is in English.
+    pub fn is_english_book(book_dir: &std::path::Path) -> bool {
+        let config_path = book_dir.join("book.json");
+        if let Ok(content) = std::fs::read_to_string(config_path) {
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                return config.get("language").and_then(|v| v.as_str()) == Some("en");
+            }
+        }
+        false
     }
 
     /// Sanitize filename for safe filesystem usage.

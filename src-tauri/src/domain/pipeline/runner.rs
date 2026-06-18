@@ -514,20 +514,9 @@ fn save_snapshot(book_dir: &std::path::Path, chapter_number: u32) -> Result<(), 
 }
 
 fn is_english_book(book_dir: &std::path::Path) -> bool {
-    let config_path = book_dir.join("book.json");
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-            return config.get("language").and_then(|v| v.as_str()) == Some("en");
-        }
-    }
-    false
+    crate::infra::gc::utils::is_english_book(book_dir)
 }
 
 fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
-        .collect::<String>()
-        .chars()
-        .take(50)
-        .collect()
+    crate::infra::gc::utils::sanitize_filename(name)
 }

@@ -3,10 +3,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::domain::agents::base::{MemoryEntry, MemoryType, MemorySystem};
 
+const DEFAULT_BUDGET: usize = 20;
+
 /// Shared memory store that persists across pipeline runs.
-/// Holds a MemorySystem per book, keyed by book_id.
+/// Each book gets its own `Arc<RwLock<MemorySystem>>` so data is shared, not copied.
 pub struct MemoryStore {
-    books: RwLock<HashMap<String, MemorySystem>>,
+    books: RwLock<HashMap<String, Arc<RwLock<MemorySystem>>>>,
 }
 
 impl MemoryStore {
@@ -16,25 +18,22 @@ impl MemoryStore {
         })
     }
 
-    /// Get or create the memory system for a book
+    /// Get or create the memory system for a book.
+    /// Returns the SAME Arc<RwLock<MemorySystem>> on repeated calls — data persists.
     pub async fn get_or_create(&self, book_id: &str, budget: usize) -> Arc<RwLock<MemorySystem>> {
         let mut books = self.books.write().await;
         books.entry(book_id.to_string())
-            .or_insert_with(|| MemorySystem::new(budget));
-        Arc::new(RwLock::new(MemorySystem::new(budget)))
+            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(budget))))
+            .clone()
     }
 
-    /// Get a reference to the memory system for a book
+    /// Get a reference to the memory system for a book (returns None if not created).
     pub async fn get(&self, book_id: &str) -> Option<Arc<RwLock<MemorySystem>>> {
         let books = self.books.read().await;
-        if books.contains_key(book_id) {
-            Some(Arc::new(RwLock::new(MemorySystem::new(20))))
-        } else {
-            None
-        }
+        books.get(book_id).cloned()
     }
 
-    /// Archive a fact extracted by ObserverAgent
+    /// Archive a fact extracted by ObserverAgent.
     pub async fn archive_fact(
         &self,
         book_id: &str,
@@ -46,7 +45,7 @@ impl MemoryStore {
     ) {
         let mut books = self.books.write().await;
         let memory = books.entry(book_id.to_string())
-            .or_insert_with(|| MemorySystem::new(20));
+            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
 
         let entry_type = match category {
             "character" => MemoryType::Character,
@@ -60,7 +59,7 @@ impl MemoryStore {
         let content = format!("{} {} {}", subject, predicate, object);
         let now = chrono::Utc::now().to_rfc3339();
 
-        memory.archive(MemoryEntry {
+        memory.write().await.archive(MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
             content,
             entry_type,
@@ -70,7 +69,7 @@ impl MemoryStore {
         });
     }
 
-    /// Archive a hook action
+    /// Archive a hook action.
     pub async fn archive_hook(
         &self,
         book_id: &str,
@@ -82,12 +81,12 @@ impl MemoryStore {
     ) {
         let mut books = self.books.write().await;
         let memory = books.entry(book_id.to_string())
-            .or_insert_with(|| MemorySystem::new(20));
+            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
 
         let content = format!("[Hook:{}] {} - {} ({})", hook_type, name, description, status);
         let now = chrono::Utc::now().to_rfc3339();
 
-        memory.archive(MemoryEntry {
+        memory.write().await.archive(MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
             content,
             entry_type: MemoryType::Plot,
@@ -97,7 +96,7 @@ impl MemoryStore {
         });
     }
 
-    /// Archive a chapter summary
+    /// Archive a chapter summary.
     pub async fn archive_summary(
         &self,
         book_id: &str,
@@ -108,7 +107,7 @@ impl MemoryStore {
     ) {
         let mut books = self.books.write().await;
         let memory = books.entry(book_id.to_string())
-            .or_insert_with(|| MemorySystem::new(20));
+            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(DEFAULT_BUDGET))));
 
         let content = format!(
             "Chapter {}: {} | Characters: {} | Events: {}",
@@ -119,7 +118,7 @@ impl MemoryStore {
         );
         let now = chrono::Utc::now().to_rfc3339();
 
-        memory.archive(MemoryEntry {
+        memory.write().await.archive(MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
             content,
             entry_type: MemoryType::Fact,
@@ -129,11 +128,12 @@ impl MemoryStore {
         });
     }
 
-    /// Search memory for a book
+    /// Search memory for a book.
     pub async fn search(&self, book_id: &str, query: &str, top_k: usize) -> Vec<MemoryEntry> {
         let books = self.books.read().await;
         if let Some(memory) = books.get(book_id) {
-            memory.search_memory(query, top_k)
+            let mem = memory.read().await;
+            mem.search_memory(query, top_k)
                 .into_iter()
                 .cloned()
                 .collect()
@@ -142,22 +142,23 @@ impl MemoryStore {
         }
     }
 
-    /// Get formatted main context for prompt injection
+    /// Get formatted main context for prompt injection.
     pub async fn format_context(&self, book_id: &str) -> String {
         let books = self.books.read().await;
         if let Some(memory) = books.get(book_id) {
-            memory.format_main_context()
+            let mem = memory.read().await;
+            mem.format_main_context()
         } else {
             String::new()
         }
     }
 
-    /// Get stats for a book's memory
+    /// Get counts for a book's memory.
     pub async fn stats(&self, book_id: &str) -> (usize, usize) {
         let books = self.books.read().await;
         if let Some(_memory) = books.get(book_id) {
-            // Return (main_count, archival_count)
-            (0, 0) // MemorySystem doesn't expose counts directly
+            // TODO: expose main_context.len() and archival_store.len() from MemorySystem
+            (0, 0)
         } else {
             (0, 0)
         }

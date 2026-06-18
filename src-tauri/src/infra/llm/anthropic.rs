@@ -90,6 +90,7 @@ impl Provider for AnthropicProvider {
                 Ok(bytes) => {
                     let text = String::from_utf8_lossy(&bytes);
                     let mut events = Vec::new();
+                    let mut usage = TokenUsage::default();
                     for line in text.lines() {
                         let line = line.trim();
                         if line.is_empty() || !line.starts_with("data: ") { continue; }
@@ -103,10 +104,27 @@ impl Provider for AnthropicProvider {
                                         }
                                     }
                                 }
+                                Some("message_delta") => {
+                                    // Parse usage from message_delta
+                                    if let Some(u) = json.get("usage") {
+                                        if let Some(output) = u.get("output_tokens").and_then(|v| v.as_u64()) {
+                                            usage.output_tokens = output as u32;
+                                        }
+                                    }
+                                }
+                                Some("message_start") => {
+                                    if let Some(msg) = json.get("message") {
+                                        if let Some(u) = msg.get("usage") {
+                                            if let Some(input) = u.get("input_tokens").and_then(|v| v.as_u64()) {
+                                                usage.input_tokens = input as u32;
+                                            }
+                                        }
+                                    }
+                                }
                                 Some("message_stop") => {
                                     events.push(StreamEvent::Finish {
                                         reason: FinishReason::Stop,
-                                        usage: TokenUsage::default(),
+                                        usage,
                                     });
                                 }
                                 _ => {}

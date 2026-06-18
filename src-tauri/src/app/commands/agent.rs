@@ -112,11 +112,13 @@ fn agent_tool_specs() -> Vec<ToolSpec> {
     ]
 }
 
-/// Execute a tool call and return the result as a string
+/// Execute a tool call and return the result as a string.
+/// Validates file operations through the sandbox enforcer.
 async fn execute_tool(
     name: &str,
     args: &serde_json::Value,
     project_root: &std::path::Path,
+    sandbox: &crate::infra::sandbox::enforce::SandboxEnforcer,
 ) -> Result<String, AppError> {
     match name {
         "search_memory" => {
@@ -126,18 +128,18 @@ async fn execute_tool(
             let path = args["path"].as_str()
                 .ok_or_else(|| AppError::invalid_input("Missing 'path' argument"))?;
             let full_path = project_root.join(path);
-            if !full_path.starts_with(project_root) {
-                return Err(AppError::forbidden("Path traversal not allowed"));
-            }
+            // Validate through sandbox
+            sandbox.validate_file_operation(&full_path, false)
+                .map_err(|v| AppError::forbidden(format!("Sandbox violation: {:?}", v)))?;
             tokio::fs::read_to_string(&full_path).await
                 .map_err(|e| AppError::internal(format!("Failed to read file: {}", e)))
         }
         "list_files" => {
             let path = args["path"].as_str().unwrap_or(".");
             let full_path = project_root.join(path);
-            if !full_path.starts_with(project_root) {
-                return Err(AppError::forbidden("Path traversal not allowed"));
-            }
+            // Validate through sandbox
+            sandbox.validate_file_operation(&full_path, false)
+                .map_err(|v| AppError::forbidden(format!("Sandbox violation: {:?}", v)))?;
             let mut entries = tokio::fs::read_dir(&full_path).await
                 .map_err(|e| AppError::internal(format!("Failed to read dir: {}", e)))?;
             let mut names = Vec::new();
@@ -193,15 +195,22 @@ pub async fn agent_send_message(
     let tools = agent_tool_specs();
     let project_root = state.data_dir.root().to_path_buf();
 
-    // Build system prompt with feedback lessons
+    // Build system prompt with feedback lessons and skills
     let system_prompt = {
         let feedback = state.feedback_store.lock().await;
         let lessons = feedback.format_lessons_for_prompt();
-        if lessons.is_empty() {
-            DEFAULT_SYSTEM_PROMPT.to_string()
-        } else {
-            format!("{}\n\n{}", DEFAULT_SYSTEM_PROMPT, lessons)
+        let skill_index = {
+            let skills = state.skill_manager.lock().await;
+            skills.build_index()
+        };
+        let mut prompt = DEFAULT_SYSTEM_PROMPT.to_string();
+        if !lessons.is_empty() {
+            prompt = format!("{}\n\n{}", prompt, lessons);
         }
+        if !skill_index.is_empty() {
+            prompt = format!("{}\n\n{}", prompt, skill_index);
+        }
+        prompt
     };
 
     // ReAct loop: stream → accumulate tool calls → execute → repeat
@@ -271,13 +280,34 @@ pub async fn agent_send_message(
                 }
                 StreamEvent::ToolCallEnd { id } => {
                     if let Some((name, args)) = tool_calls.get(&id) {
+                        let name = name.clone();
+                        let args_len = args.len();
+                        // Validate accumulated JSON, attempt repair if incomplete
+                        let args_clone = args.clone();
+                        let valid_args = match serde_json::from_str::<serde_json::Value>(&args_clone) {
+                            Ok(_) => args_clone,
+                            Err(_) => {
+                                let repaired = format!("{}\"}}", args_clone.trim_end_matches(|c: char| c == ',' || c == ' '));
+                                match serde_json::from_str::<serde_json::Value>(&repaired) {
+                                    Ok(_) => repaired,
+                                    Err(_) => {
+                                        tracing::warn!(tool = %name, args = %args_clone, "Tool call args JSON invalid");
+                                        args_clone
+                                    }
+                                }
+                            }
+                        };
+                        // Update args with validated version
+                        if let Some(entry) = tool_calls.get_mut(&id) {
+                            entry.1 = valid_args;
+                        }
                         let _ = state.app_handle.emit("agent-event", AgentEvent::ToolCallEnd {
                             session_id: session_id.clone(),
                             tool_call_id: id.clone(),
                             output: String::new(),
                             is_error: false,
                         });
-                        tracing::info!(tool = %name, args_len = args.len(), "Tool call collected");
+                        tracing::info!(tool = %name, args_len, "Tool call collected");
                     }
                 }
                 StreamEvent::Finish { reason, usage } => {
@@ -320,9 +350,10 @@ pub async fn agent_send_message(
             }
 
             // Execute each tool and add results
+            let sandbox = state.sandbox.lock().await;
             for (id, (name, args_str)) in &tool_calls {
                 let args: serde_json::Value = serde_json::from_str(args_str).unwrap_or(serde_json::Value::Null);
-                let result = match execute_tool(name, &args, &project_root).await {
+                let result = match execute_tool(name, &args, &project_root, &sandbox).await {
                     Ok(r) => r,
                     Err(e) => format!("Error: {}", e),
                 };

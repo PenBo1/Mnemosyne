@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
+use crate::infra::gc::utils;
 
 /// Verification gate types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,7 +87,7 @@ impl VerificationGate {
 
 /// Word count utility
 fn count_words(text: &str) -> u32 {
-    text.split_whitespace().count() as u32
+    utils::count_words_en(text)
 }
 
 /// Pipeline of verification gates
@@ -156,11 +157,42 @@ impl VerificationPipeline {
             }),
         ));
 
-        // Consistency gate
+        // Consistency gate: check with previous chapters
         gates.push(VerificationGate::new(
             GateType::Consistency,
-            Box::new(|_content, _ctx| {
-                Ok(GateResult { passed: true, issues: Vec::new(), score: 1.0 })
+            Box::new(|content, ctx| {
+                let mut issues = Vec::new();
+
+                if let Some(ref prev) = ctx.previous_content {
+                    let prev_names = extract_character_names(prev);
+                    let curr_names = extract_character_names(content);
+
+                    // Warn if a character from previous chapter disappears
+                    for name in &prev_names {
+                        if !curr_names.iter().any(|n| n == name) {
+                            issues.push(GateIssue {
+                                severity: IssueSeverity::Warning,
+                                dimension: "consistency".to_string(),
+                                description: format!("Character '{}' not present in current chapter", name),
+                                suggestion: Some(format!("Ensure '{}' is mentioned", name)),
+                            });
+                        }
+                    }
+                }
+
+                let score = if issues.iter().any(|i| i.severity == IssueSeverity::Critical) {
+                    0.5
+                } else if issues.iter().any(|i| i.severity == IssueSeverity::Warning) {
+                    0.8
+                } else {
+                    1.0
+                };
+
+                Ok(GateResult {
+                    passed: issues.iter().all(|i| i.severity != IssueSeverity::Critical),
+                    issues,
+                    score,
+                })
             }),
         ));
 
@@ -253,4 +285,26 @@ impl VerificationPipeline {
     pub fn word_count(content: &str) -> u32 {
         count_words(content)
     }
+}
+
+/// Extract character names from text (simple heuristic: 2-4 char Chinese names or capitalized English names).
+fn extract_character_names(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    // Look for patterns like: "张三说" "李四道" "Alice said" "Bob replied"
+    for word in text.split(|c: char| c.is_whitespace() || c == '，' || c == '。' || c == ',' || c == '.') {
+        let w = word.trim();
+        // Chinese name pattern: 2-4 chars, all CJK
+        if w.chars().all(|c| c >= '\u{4e00}' && c <= '\u{9fff}') && w.len() >= 2 && w.len() <= 8 {
+            // Skip common non-name words
+            let skip = ["我们", "他们", "她们", "自己", "什么", "怎么", "这里", "那里", "这个", "那个", "可以", "没有", "已经", "但是", "因为", "所以", "如果", "就是", "不是", "还有", "一个", "这个", "那个", "什么", "怎么", "很", "都", "也", "就", "又", "还", "很", "了", "的", "地", "得", "着", "过"];
+            if !skip.contains(&w) {
+                names.push(w.to_string());
+            }
+        }
+    }
+    // Deduplicate
+    names.sort();
+    names.dedup();
+    // Return at most 10 names
+    names.into_iter().take(10).collect()
 }

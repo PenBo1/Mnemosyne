@@ -66,6 +66,7 @@ pub fn run() {
             let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
             let memory_store = crate::infra::memory::MemoryStore::new();
             let feedback_store = crate::infra::feedback::FeedbackStore::new();
+            let mcp_server = crate::infra::mcp::McpServer::new();
             let app_handle = app.handle().clone();
 
             // Scheduler is initialized lazily when a workspace is opened
@@ -80,6 +81,7 @@ pub fn run() {
                 sandbox: tokio::sync::Mutex::new(sandbox_enforcer),
                 memory_store,
                 feedback_store: tokio::sync::Mutex::new(feedback_store),
+                mcp_server: tokio::sync::Mutex::new(mcp_server),
                 scheduler,
                 app_handle,
             });
@@ -164,6 +166,9 @@ pub fn run() {
             app::commands::scheduler::scheduler_search_memory,
             app::commands::scheduler::scheduler_get_lessons,
             app::commands::scheduler::scheduler_restore_checkpoint,
+            app::commands::mcp::mcp_handle_request,
+            app::commands::mcp::mcp_server_info,
+            app::commands::mcp::mcp_check_tool_safety,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

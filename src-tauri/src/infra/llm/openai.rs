@@ -87,17 +87,27 @@ impl Provider for OpenAiProvider {
                     let text = String::from_utf8_lossy(&bytes);
                     let mut events = Vec::new();
                     let mut finish_emitted = false;
+                    let mut usage = TokenUsage::default();
                     for line in text.lines() {
                         let line = line.trim();
                         if line.is_empty() || !line.starts_with("data: ") { continue; }
                         let data = &line[6..];
                         if data == "[DONE]" {
                             if !finish_emitted {
-                                events.push(StreamEvent::Finish { reason: FinishReason::Stop, usage: TokenUsage::default() });
+                                events.push(StreamEvent::Finish { reason: FinishReason::Stop, usage });
                             }
                             continue;
                         }
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            // Parse usage from the final chunk
+                            if let Some(u) = json.get("usage") {
+                                if let Some(pt) = u.get("prompt_tokens").and_then(|v| v.as_u64()) {
+                                    usage.input_tokens = pt as u32;
+                                }
+                                if let Some(ct) = u.get("completion_tokens").and_then(|v| v.as_u64()) {
+                                    usage.output_tokens = ct as u32;
+                                }
+                            }
                             if let Some(choices) = json["choices"].as_array() {
                                 for choice in choices {
                                     if let Some(delta) = choice.get("delta") {
@@ -121,7 +131,7 @@ impl Provider for OpenAiProvider {
                                     if let Some(finish) = choice["finish_reason"].as_str() {
                                         if !finish_emitted {
                                             let reason = match finish { "tool_calls" => FinishReason::ToolCalls, "length" => FinishReason::Length, _ => FinishReason::Stop };
-                                            events.push(StreamEvent::Finish { reason, usage: TokenUsage::default() });
+                                            events.push(StreamEvent::Finish { reason, usage });
                                             finish_emitted = true;
                                         }
                                     }
