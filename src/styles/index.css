@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark*));
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -48,86 +48,389 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.511 0.096 186.391);
-    --primary-foreground: oklch(0.984 0.014 180.72);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.855 0.138 181.071);
-    --chart-2: oklch(0.704 0.14 182.503);
-    --chart-3: oklch(0.6 0.118 184.704);
-    --chart-4: oklch(0.511 0.096 186.391);
-    --chart-5: oklch(0.437 0.078 188.216);
+/* Light theme */
+:root, [data-theme="light"] {
+    color-scheme: light;
+    
+    /* Design config tokens */
+    --config-spacing-unit: 4px;
+    --config-spacing-0: 0;
+    --config-spacing-px: 1px;
+    --config-spacing-0\.5: 2px;
+    --config-spacing-1: 4px;
+    --config-spacing-1\.5: 6px;
+    --config-spacing-2: 8px;
+    --config-spacing-2\.5: 10px;
+    --config-spacing-3: 12px;
+    --config-spacing-3\.5: 14px;
+    --config-spacing-4: 16px;
+    --config-spacing-5: 20px;
+    --config-spacing-6: 24px;
+    --config-spacing-7: 28px;
+    --config-spacing-8: 32px;
+    --config-spacing-9: 36px;
+    --config-spacing-10: 40px;
+    --config-spacing-11: 44px;
+    --config-spacing-12: 48px;
+    --config-spacing-14: 56px;
+    --config-spacing-16: 64px;
+    --config-spacing-20: 80px;
+    --config-spacing-24: 96px;
+    --config-spacing-28: 112px;
+    --config-spacing-32: 128px;
+    --config-spacing-36: 144px;
+    --config-spacing-40: 160px;
+    --config-spacing-44: 176px;
+    --config-spacing-48: 192px;
+    --config-spacing-52: 208px;
+    --config-spacing-56: 224px;
+    --config-spacing-60: 240px;
+    --config-spacing-64: 256px;
+    --config-spacing-72: 288px;
+    --config-spacing-80: 320px;
+    --config-spacing-96: 384px;
+    
+    --config-radius-none: 0;
+    --config-radius-sm: 4px;
+    --config-radius-default: 6px;
+    --config-radius-md: 6px;
+    --config-radius-lg: 8px;
+    --config-radius-xl: 12px;
+    --config-radius-2xl: 16px;
+    --config-radius-3xl: 24px;
+    --config-radius-full: 9999px;
+    
+    --config-font-size-xs: 12px;
+    --config-font-size-xs-lh: 16px;
+    --config-font-size-sm: 14px;
+    --config-font-size-sm-lh: 20px;
+    --config-font-size-base: 14px;
+    --config-font-size-base-lh: 20px;
+    --config-font-size-lg: 16px;
+    --config-font-size-lg-lh: 24px;
+    --config-font-size-xl: 18px;
+    --config-font-size-xl-lh: 24px;
+    --config-font-size-2xl: 20px;
+    --config-font-size-2xl-lh: 24px;
+    --config-font-size-3xl: 24px;
+    --config-font-size-3xl-lh: 28px;
+    --config-font-size-4xl: 30px;
+    --config-font-size-4xl-lh: 32px;
+    --config-font-size-5xl: 36px;
+    --config-font-size-5xl-lh: 36px;
+    --config-font-size-6xl: 48px;
+    --config-font-size-6xl-lh: 1;
+    --config-font-size-7xl: 60px;
+    --config-font-size-7xl-lh: 1;
+    --config-font-size-8xl: 72px;
+    --config-font-size-8xl-lh: 1;
+    --config-font-size-9xl: 96px;
+    --config-font-size-9xl-lh: 1;
+    
+    --config-motion-duration-fast: 150ms;
+    --config-motion-duration-base: 200ms;
+    --config-motion-duration-slow: 300ms;
+    --config-motion-ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+    --config-motion-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --config-motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+    
+    --config-font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --config-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    
+    /* Z-index layers */
+    --z-index-notebook-progress-bar: 5;
+    --z-index-notebook-list-insertion-indicator: 10;
+    --z-index-notebook-cell-editor-outline: 20;
+    --z-index-notebook-scrollbar: 25;
+    --z-index-notebook-cell-status: 26;
+    --z-index-notebook-folding-indicator: 26;
+    --z-index-notebook-output: 27;
+    --z-index-notebook-cell-bottom-toolbar-container: 28;
+    --z-index-notebook-run-button-container: 29;
+    --z-index-notebook-input-collapse-condicon: 29;
+    --z-index-notebook-cell-output-toolbar: 30;
+    --z-index-notebook-cell-expand-part-button: 36;
+    --z-index-notebook-cell-toolbar: 37;
+    --z-index-notebook-cell-toolbar-dropdown-active: 38;
+    --z-index-notebook-diff-view-viewport-slider: 10;
+    
+    /* VSCode sash */
+    --vscode-sash-size: 4px;
+    --vscode-sash-hover-size: 4px;
+    
+    /* Primary colors */
+    --color-primary: #67C96C;
+    --color-primary-hover: #5BB960;
+    --color-primary-active: #4CAF50;
+    --color-primary-bg: #E7F8E6;
+    --color-primary-bg-hover: #D8F2D6;
+    --color-primary-border: #B8E6B8;
+    --color-primary-border-hover: #9DD99D;
+    --color-primary-text: #67C96C;
+    --color-primary-text-hover: #5BB960;
+    --color-primary-text-active: #4CAF50;
+    --color-text-on-primary: #FFFFFF;
+    
+    /* Text colors */
+    --color-text: #141414;
+    --color-text-secondary: #636261;
+    --color-text-tertiary: #838280;
+    --color-text-quaternary: #8E8C8B;
+    --color-text-base: #141414;
+    
+    /* Border colors */
+    --color-border: #DDDDDD;
+    --color-border-secondary: #BCBBBA;
+    --color-border-tertiary: #E6E6E6;
+    
+    /* Fill colors */
+    --color-fill: #DFDFDF;
+    --color-fill-secondary: #E3E3E3;
+    --color-fill-tertiary: #F3F3F3;
+    --color-fill-quaternary: #F8F8F8;
+    --color-fill-disable: #CECECE;
+    
+    /* Background colors */
+    --color-bg-container: #F3F3F3;
+    --color-bg-elevated: #F3F3F3;
+    --color-bg-layout: #FFFFFF;
+    --color-bg-spotlight: #F3F3F3;
+    --color-bg-mask: rgba(0, 0, 0, 0.5);
+    --color-bg-base: #FFFFFF;
+    --color-bg-highlight: #141414;
+    --color-bg-highlight-hover: #2B2B2B;
+    
+    /* Semantic colors */
+    --color-link: #67C96C;
+    --color-error: #EC5B56;
+    --color-error-hover: #E04944;
+    --color-error-bg: #F5D7D7;
+    --color-error-bg-hover: #F0C5C5;
+    --color-error-border: #E8A5A5;
+    --color-info: #61AFEF;
+    --color-info-hover: #4A9FE5;
+    --color-info-bg: #E8F4FE;
+    --color-info-bg-hover: #D8ECFD;
+    --color-info-border: #9CCDF6;
+    --color-success: #73B78E;
+    --color-success-hover: #67C96C;
+    --color-success-bg: #E7F8E6;
+    --color-success-bg-hover: #D8F2D6;
+    --color-success-border: #B8E6B8;
+    --color-warning: #EFB041;
+    --color-warning-hover: #E5A030;
+    --color-warning-bg: #F5E6D3;
+    --color-warning-bg-hover: #F0DCC5;
+    --color-warning-border: #E5C090;
+    
+    /* Diff colors */
+    --color-diff-insert: #A6DCBA;
+    --color-diff-insert-bg: #D9EBE0;
+    --color-diff-remove: #FC6B83;
+    --color-diff-remove-bg: #E3D1D5;
+    
+    /* Accent colors */
+    --color-pink: #EC4899;
+    --color-pink-bg: #F9E3F3;
+    --color-purple: #615CED;
+    --color-purple-bg: #EBE9FF;
+    --color-yellow: #FAC414;
+    --color-yellow-bg: #FFF3CF;
+    --color-orange: #FA8125;
+    --color-orange-bg: #FFEFDE;
+    --color-teal: #14B8A6;
+    --color-teal-bg: #DEF7F1;
+    --color-blue: #0090FF;
+    --color-blue-bg: #DEEDFF;
+    --color-mauve: #8E8C99;
+    --color-mauve-bg: #F1F2F3;
+    --color-slate: #404040;
+    --color-slate-bg: #FAFAFA;
+    --color-lavender: #B99DFF;
+    --color-lavender-bg: #ECE4FF;
+    --color-sage: #6BB394;
+    --color-sage-bg: #EFF3F2;
+    
+    /* Shimmer masks */
+    --color-mask-shimmer-weak: rgba(0, 0, 0, 0.3);
+    --color-mask-shimmer-strong: rgba(0, 0, 0, 0.8);
+    --color-mask-shimmer-full: rgba(0, 0, 0, 1);
+    
+    /* Component mappings for shadcn */
+    --background: var(--color-bg-base);
+    --foreground: var(--color-text);
+    --card: var(--color-bg-container);
+    --card-foreground: var(--color-text);
+    --popover: var(--color-bg-container);
+    --popover-foreground: var(--color-text);
+    --primary: var(--color-primary);
+    --primary-foreground: var(--color-text-on-primary);
+    --secondary: var(--color-fill-secondary);
+    --secondary-foreground: var(--color-text);
+    --muted: var(--color-fill-tertiary);
+    --muted-foreground: var(--color-text-secondary);
+    --accent: var(--color-fill-secondary);
+    --accent-foreground: var(--color-text);
+    --destructive: var(--color-error);
+    --border: var(--color-border);
+    --input: var(--color-border-tertiary);
+    --ring: var(--color-primary-border);
+    
     --radius: 0.45rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.6 0.118 184.704);
-    --sidebar-primary-foreground: oklch(0.984 0.014 180.72);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar: var(--color-bg-container);
+    --sidebar-foreground: var(--color-text);
+    --sidebar-primary: var(--color-primary);
+    --sidebar-primary-foreground: var(--color-text-on-primary);
+    --sidebar-accent: var(--color-fill-secondary);
+    --sidebar-accent-foreground: var(--color-text);
+    --sidebar-border: var(--color-border);
+    --sidebar-ring: var(--color-primary-border);
 }
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.437 0.078 188.216);
-    --primary-foreground: oklch(0.984 0.014 180.72);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.855 0.138 181.071);
-    --chart-2: oklch(0.704 0.14 182.503);
-    --chart-3: oklch(0.6 0.118 184.704);
-    --chart-4: oklch(0.511 0.096 186.391);
-    --chart-5: oklch(0.437 0.078 188.216);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.704 0.14 182.503);
-    --sidebar-primary-foreground: oklch(0.277 0.046 192.524);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+/* Dark theme */
+[data-theme="dark"], .dark {
+    color-scheme: dark;
+    
+    /* Primary colors */
+    --color-primary: #2ADB5C;
+    --color-primary-hover: #3DE06D;
+    --color-primary-active: #25C653;
+    --color-primary-bg: #174A21;
+    --color-primary-bg-hover: #1D5A28;
+    --color-primary-border: #2A7A38;
+    --color-primary-border-hover: #359A45;
+    --color-primary-text: #2ADB5C;
+    --color-primary-text-hover: #3DE06D;
+    --color-primary-text-active: #25C653;
+    --color-text-on-primary: #171716;
+    
+    /* Text colors */
+    --color-text: #D6D6D3;
+    --color-text-secondary: #95958F;
+    --color-text-tertiary: #7B7B75;
+    --color-text-quaternary: #636261;
+    --color-text-base: #D6D6D3;
+    
+    /* Border colors */
+    --color-border: #2A2926;
+    --color-border-secondary: #484843;
+    --color-border-tertiary: #363633;
+    
+    /* Fill colors */
+    --color-fill: #31312D;
+    --color-fill-secondary: #2A2926;
+    --color-fill-tertiary: #1D1D1A;
+    --color-fill-quaternary: #171716;
+    --color-fill-disable: #484843;
+    
+    /* Background colors */
+    --color-bg-container: #1D1D1A;
+    --color-bg-elevated: #171716;
+    --color-bg-layout: #171716;
+    --color-bg-spotlight: #292926;
+    --color-bg-mask: rgba(0, 0, 0, 0.7);
+    --color-bg-base: #171716;
+    --color-bg-highlight: #E7E9ED;
+    --color-bg-highlight-hover: #CFD1D5;
+    
+    /* Semantic colors */
+    --color-link: #6AD86C;
+    --color-error: #EC5B56;
+    --color-error-hover: #F06B66;
+    --color-error-bg: #270D09;
+    --color-error-bg-hover: #3A1410;
+    --color-error-border: #662220;
+    --color-info: #61AFEF;
+    --color-info-hover: #7BBFF3;
+    --color-info-bg: #152232;
+    --color-info-bg-hover: #1D2C40;
+    --color-info-border: #3B81E9;
+    --color-success: #73B78E;
+    --color-success-hover: #2ADB5C;
+    --color-success-bg: #174A21;
+    --color-success-bg-hover: #1D5A28;
+    --color-success-border: #2A7A38;
+    --color-warning: #EFB041;
+    --color-warning-hover: #F3C060;
+    --color-warning-bg: #2B231B;
+    --color-warning-bg-hover: #3A3025;
+    --color-warning-border: #EFB041;
+    
+    /* Diff colors */
+    --color-diff-insert: #73CD94;
+    --color-diff-insert-bg: #14261C;
+    --color-diff-remove: #FC6B83;
+    --color-diff-remove-bg: #1C2E2A;
+    
+    /* Accent colors */
+    --color-pink: #EC4899;
+    --color-pink-bg: #4A1C31;
+    --color-purple: #615CED;
+    --color-purple-bg: #14160E;
+    --color-yellow: #FAC414;
+    --color-yellow-bg: #4A4030;
+    --color-orange: #FA8125;
+    --color-orange-bg: #4A1021;
+    --color-teal: #14B8A6;
+    --color-teal-bg: #21080E;
+    --color-blue: #0090FF;
+    --color-blue-bg: #21120E;
+    --color-mauve: #8E8C99;
+    --color-mauve-bg: #0E0D0C;
+    --color-slate: #363636;
+    --color-slate-bg: #1a1a1a;
+    --color-lavender: #B99DFF;
+    --color-lavender-bg: #131B0E;
+    --color-sage: #6BB394;
+    --color-sage-bg: #100C0D;
+    
+    /* Shimmer masks */
+    --color-mask-shimmer-weak: rgba(0, 0, 0, 0.3);
+    --color-mask-shimmer-strong: rgba(0, 0, 0, 0.8);
+    --color-mask-shimmer-full: rgba(0, 0, 0, 1);
+    
+    /* Component mappings for shadcn */
+    --background: var(--color-bg-base);
+    --foreground: var(--color-text);
+    --card: var(--color-bg-container);
+    --card-foreground: var(--color-text);
+    --popover: var(--color-bg-container);
+    --popover-foreground: var(--color-text);
+    --primary: var(--color-primary);
+    --primary-foreground: var(--color-text-on-primary);
+    --secondary: var(--color-fill-secondary);
+    --secondary-foreground: var(--color-text);
+    --muted: var(--color-fill-tertiary);
+    --muted-foreground: var(--color-text-secondary);
+    --accent: var(--color-fill-secondary);
+    --accent-foreground: var(--color-text);
+    --destructive: var(--color-error);
+    --border: var(--color-border);
+    --input: var(--color-border-tertiary);
+    --ring: var(--color-primary-border);
+    
+    --radius: 0.45rem;
+    --sidebar: var(--color-bg-container);
+    --sidebar-foreground: var(--color-text);
+    --sidebar-primary: var(--color-primary);
+    --sidebar-primary-foreground: var(--color-text-on-primary);
+    --sidebar-accent: var(--color-fill-secondary);
+    --sidebar-accent-foreground: var(--color-text);
+    --sidebar-border: var(--color-border);
+    --sidebar-ring: var(--color-primary-border);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+    * {
+        @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
+    body {
+        @apply bg-background text-foreground;
     }
-  button:not(:disabled), [role="button"]:not(:disabled) {
-    cursor: pointer;
+    button:not(:disabled), [role="button"]:not(:disabled) {
+        cursor: pointer;
     }
-  html {
-    @apply font-sans;
+    html {
+        @apply font-sans;
     }
 }
