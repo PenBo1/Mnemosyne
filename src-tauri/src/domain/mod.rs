@@ -1,5 +1,7 @@
 pub mod agents;
+pub mod harness;
 pub mod pipeline;
+pub mod session;
 pub mod story;
 pub mod state;
 pub mod radar;
