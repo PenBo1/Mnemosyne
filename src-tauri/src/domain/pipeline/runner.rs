@@ -600,6 +600,30 @@ impl PipelineRunner {
         })
     }
 
+    /// Write a chapter with goal-oriented decomposition
+    pub async fn write_chapter_with_goal(
+        &self,
+        book_id: &str,
+        goal: &str,
+    ) -> Result<WriteResult, AppError> {
+        // Decompose goal into subtasks
+        let ctx = self.agent_ctx(Some(book_id)).await;
+        let task_ids = {
+            let mut tm = self.task_manager.lock().map_err(|_| AppError::internal("Lock poisoned"))?;
+            GoalDecomposer::decompose(&ctx, goal, &mut *tm).await?
+        };
+
+        tracing::info!(
+            book_id,
+            goal,
+            tasks = ?task_ids,
+            "Goal decomposed into subtasks"
+        );
+
+        // Execute the standard pipeline
+        self.write_next_chapter(book_id, None).await
+    }
+
     // ── Individual operations ──────────────────────────────────
 
     pub async fn plan_chapter(
