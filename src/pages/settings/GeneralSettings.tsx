@@ -84,7 +84,7 @@ export function GeneralSettings() {
             </span>
           </div>
           <Switch
-            size="sm"
+            size="default"
             checked={notifications}
             onCheckedChange={toggleNotifications}
           />
