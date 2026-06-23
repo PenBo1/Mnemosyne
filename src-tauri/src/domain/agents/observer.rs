@@ -27,7 +27,7 @@ impl ObserverAgent {
         let identity = AgentIdentity::load(data_dir, "observer");
         let task_query = format!("observe chapter {} and extract facts", chapter_number);
         let identity_prefix = identity.build_system_prompt_with_memory(
-            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(), ctx.user_profile.as_deref(),
         ).await;
         let system = observer_prompts::build_system_prompt(language, Some(&identity_prefix));
         let user = observer_prompts::build_user_prompt(chapter_number, title, content, language);

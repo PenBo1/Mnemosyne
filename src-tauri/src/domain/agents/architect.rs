@@ -26,7 +26,7 @@ impl ArchitectAgent {
         let identity = AgentIdentity::load(data_dir, "architect");
         let task_query = format!("generate foundation for book: {}", book.title);
         let identity_prefix = identity.build_system_prompt_with_memory(
-            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(), ctx.user_profile.as_deref(),
         ).await;
         let system = architect_prompts::build_system_prompt(&book.language, Some(&identity_prefix));
         let user = architect_prompts::build_user_prompt(

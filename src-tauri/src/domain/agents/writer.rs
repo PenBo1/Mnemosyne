@@ -44,7 +44,7 @@ impl WriterAgent {
         let identity = AgentIdentity::load(data_dir, "writer");
         let task_query = format!("write chapter {} of a novel", chapter_number);
         let identity_prefix = identity.build_system_prompt_with_memory(
-            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(), ctx.user_profile.as_deref(),
         ).await;
 
         // ── Phase 1: Creative writing ──

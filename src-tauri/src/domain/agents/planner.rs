@@ -28,7 +28,7 @@ impl PlannerAgent {
         let identity = AgentIdentity::load(data_dir, "planner");
         let task_query = format!("plan chapter {} of a novel", chapter_number);
         let identity_prefix = identity.build_system_prompt_with_memory(
-            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(), ctx.user_profile.as_deref(),
         ).await;
         let system = planner_prompts::build_system_prompt(&language, Some(&identity_prefix));
         let user = planner_prompts::build_user_message(

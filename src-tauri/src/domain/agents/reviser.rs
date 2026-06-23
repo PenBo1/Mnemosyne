@@ -46,7 +46,7 @@ impl ReviserAgent {
         let identity = AgentIdentity::load(data_dir, "reviser");
         let task_query = format!("revise chapter {} based on audit feedback", chapter_number);
         let identity_prefix = identity.build_system_prompt_with_memory(
-            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(), ctx.user_profile.as_deref(),
         ).await;
         let system = reviser_prompts::build_system_prompt(&mode, &language, Some(&identity_prefix));
         let user = reviser_prompts::build_user_message(

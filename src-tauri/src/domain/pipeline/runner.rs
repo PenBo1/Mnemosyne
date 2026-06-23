@@ -31,6 +31,8 @@ pub struct PipelineConfig {
     pub data_dir: crate::infra::data_dir::DataDir,
     /// Harness configuration for per-agent tool/sandbox policy
     pub harness_config: Option<HarnessConfig>,
+    /// User profile for tailoring agent output
+    pub user_profile: Option<Arc<tokio::sync::Mutex<crate::domain::user_profile::UserProfileStore>>>,
 }
 
 pub struct PipelineRunner {
@@ -84,6 +86,7 @@ impl PipelineRunner {
                 ContextCompressor::new(CompressorConfig::default())
             )),
             skill_manager: None,
+            user_profile: self.config.user_profile.clone(),
         }
     }
 
@@ -165,6 +168,7 @@ impl PipelineRunner {
                 ContextCompressor::new(CompressorConfig::default())
             )),
             skill_manager: None,
+            user_profile: self.config.user_profile.clone(),
         }
     }
 

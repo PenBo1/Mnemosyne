@@ -55,12 +55,13 @@ impl AgentIdentity {
         parts.join("\n\n")
     }
 
-    /// Build system prompt with memory and skill injection.
+    /// Build system prompt with memory, skill, and user profile injection.
     pub async fn build_system_prompt_with_memory(
         &self,
         memory: &tokio::sync::RwLock<crate::domain::agents::base::MemorySystem>,
         context_query: &str,
         skill_manager: Option<&crate::infra::skill::discovery::SkillManager>,
+        user_profile: Option<&tokio::sync::Mutex<crate::domain::user_profile::UserProfileStore>>,
     ) -> String {
         let mut prompt = self.build_system_prefix();
 
@@ -94,6 +95,14 @@ impl AgentIdentity {
                     "\n\n## Available Skills\n{}\n",
                     skill_section.join("\n")
                 ));
+            }
+        }
+
+        if let Some(up) = user_profile {
+            let profile = up.lock().await;
+            let profile_section = profile.format_for_prompt();
+            if !profile_section.is_empty() {
+                prompt.push_str(&format!("\n\n{}", profile_section));
             }
         }
 

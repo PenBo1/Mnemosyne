@@ -37,6 +37,8 @@ pub async fn scheduler_init(
         model_overrides: std::collections::HashMap::new(),
         memory_store: Some(memory_store.clone()),
         data_dir: state.data_dir.clone(),
+        harness_config: None,
+        user_profile: None,
     });
 
     let config = SchedulerConfig::default();

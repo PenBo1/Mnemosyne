@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::infra::skill::discovery::SkillManager;
 use super::types::{AgentRole, LlmResponse};
+use crate::domain::user_profile::UserProfileStore;
 
 // ── Tool System (P14.06 Tool Use) ──────────────────────────────────────────
 
@@ -220,6 +221,8 @@ pub struct AgentContext {
     pub context_compressor: Arc<tokio::sync::Mutex<ContextCompressor>>,
     /// Skill manager for dynamic skill injection
     pub skill_manager: Option<Arc<SkillManager>>,
+    /// User profile for tailoring output
+    pub user_profile: Option<std::sync::Arc<tokio::sync::Mutex<UserProfileStore>>>,
 }
 
 // ── Base Agent Trait ────────────────────────────────────────────────────────
