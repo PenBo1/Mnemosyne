@@ -1,7 +1,7 @@
 export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources";
 
 export type WorkspacePage = "overview" | "characters" | "worldbuilding" | "plot" | "timeline" | "research";
-export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge";
+export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version";
 
 // ── Workspace ──────────────────────────────────────────────
 
@@ -498,4 +498,114 @@ export interface StoryFact {
   valid_until_chapter: number | null;
   source_chapter: number;
   created_at: string;
+}
+
+// ── Wiki Entry ─────────────────────────────────────────────
+
+export type WikiCategory = "character" | "location" | "event" | "concept" | "item" | "other";
+
+export interface WikiEntry {
+  id: string;
+  novel_id: string;
+  title: string;
+  content: string;
+  category: WikiCategory;
+  tags: string[];
+  importance: number;
+  source_chapter: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWikiEntryRequest {
+  title: string;
+  content: string;
+  category: WikiCategory;
+  tags?: string[];
+  importance?: number;
+  source_chapter?: number;
+}
+
+export interface UpdateWikiEntryRequest {
+  title?: string;
+  content?: string;
+  category?: WikiCategory;
+  tags?: string[];
+  importance?: number;
+  source_chapter?: number;
+}
+
+export interface WikiEntityLink {
+  id: string;
+  novel_id: string;
+  source_entry_id: string;
+  target_entry_id: string;
+  link_type: string;
+  description: string;
+  created_at: string;
+}
+
+export interface WikiGraphNode {
+  id: string;
+  title: string;
+  category: WikiCategory;
+  importance: number;
+}
+
+export interface WikiGraphLink {
+  source: string;
+  target: string;
+  type: string;
+}
+
+export interface WikiGraphView {
+  nodes: WikiGraphNode[];
+  links: WikiGraphLink[];
+}
+
+// ── Chapter Version ────────────────────────────────────────
+
+export type RevisionMode = "auto" | "polish" | "rewrite" | "rework" | "spot_fix" | "manual";
+
+export interface ChapterVersion {
+  id: string;
+  novel_id: string;
+  chapter_number: number;
+  version_number: number;
+  content: string;
+  content_hash: string;
+  word_count: number;
+  revision_reason: string;
+  revision_mode: RevisionMode;
+  created_at: string;
+}
+
+export type DiffLineType = "added" | "removed" | "context";
+
+export interface DiffLine {
+  line_type: DiffLineType;
+  content: string;
+  old_number: number | null;
+  new_number: number | null;
+}
+
+export interface DiffHunk {
+  old_start: number;
+  old_lines: number;
+  new_start: number;
+  new_lines: number;
+  lines: DiffLine[];
+}
+
+export interface DiffStats {
+  lines_added: number;
+  lines_removed: number;
+  lines_modified: number;
+  chars_added: number;
+  chars_removed: number;
+}
+
+export interface LineDiffResult {
+  hunks: DiffHunk[];
+  stats: DiffStats;
 }

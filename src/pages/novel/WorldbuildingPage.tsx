@@ -26,7 +26,6 @@ import {
   LayoutGridIcon,
 } from "lucide-react";
 import { useWorldSettings } from "@/hooks/useWorldSettings";
-import { WorldNetwork } from "@/components/visualizations";
 import type { WorldSetting, WorldCategory } from "@/types";
 
 const CATEGORIES: WorldCategory[] = [
@@ -141,10 +140,6 @@ export function WorldbuildingPage() {
 
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
-      ) : view === "network" ? (
-        <div className="h-[600px]">
-          <WorldNetwork items={items} onNodeClick={openEdit} />
-        </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <GlobeIcon className="size-12 mx-auto mb-4 opacity-50" />

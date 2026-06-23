@@ -6,11 +6,14 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { TrendsPage } from "@/pages/TrendsPage";
 import { NovelDownloadPage } from "@/pages/NovelDownloadPage";
 import { SkillsPage } from "@/pages/SkillsPage";
-import { AgentChat } from "@/components/AgentChat";
+import { ChatContainer } from "@/components/chat";
 import { ChapterReader } from "@/pages/ChapterReader";
 import { MemoryPage } from "@/pages/MemoryPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { KnowledgePage } from "@/pages/KnowledgePage";
+import { WikiPage } from "@/pages/WikiPage";
+import { VersionPage } from "@/pages/VersionPage";
+import MainAgentPage from "@/pages/MainAgentPage";
 import { OverviewPage } from "@/pages/novel/OverviewPage";
 import { CharactersPage } from "@/pages/novel/CharactersPage";
 import { WorldbuildingPage } from "@/pages/novel/WorldbuildingPage";
@@ -29,7 +32,11 @@ export function Router() {
   const hasActiveWorkspace = activeWorkspaceId !== null;
 
   if (currentPage === "chat") {
-    return <AgentChat />;
+    return <ChatContainer />;
+  }
+
+  if (currentPage === "main-agent") {
+    return <MainAgentPage />;
   }
 
   if (currentPage === "memory") {
@@ -75,6 +82,8 @@ export function Router() {
         {currentPage === "skills" && <SkillsPage />}
         {currentPage === "dashboard" && <DashboardPage />}
         {currentPage === "knowledge" && <KnowledgePage />}
+        {currentPage === "wiki" && <WikiPage novelId="default" />}
+        {currentPage === "version" && <VersionPage novelId="default" />}
       </div>
     </ScrollArea>
   );

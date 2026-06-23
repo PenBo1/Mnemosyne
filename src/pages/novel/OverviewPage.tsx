@@ -16,15 +16,11 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BookOpenIcon,
   EditIcon,
-  BarChart3Icon,
-  SettingsIcon,
 } from "lucide-react";
 import { useOverview } from "@/hooks/useOverview";
-import { WritingDashboard } from "@/components/visualizations";
 
 export function OverviewPage() {
   const { t } = useI18n();
@@ -33,7 +29,6 @@ export function OverviewPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editGenre, setEditGenre] = useState("");
-  const [view, setView] = useState<"overview" | "dashboard">("overview");
 
   const handleSave = async () => {
     if (!novel) return;
@@ -69,12 +64,6 @@ export function OverviewPage() {
           <p className="text-sm text-muted-foreground">{t.overview.description}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={view} onValueChange={(v) => setView(v as "overview" | "dashboard")}>
-            <TabsList>
-              <TabsTrigger value="overview"><SettingsIcon className="size-3" /> {t.overview.overviewView}</TabsTrigger>
-              <TabsTrigger value="dashboard"><BarChart3Icon className="size-3" /> {t.overview.dashboardView}</TabsTrigger>
-            </TabsList>
-          </Tabs>
           <Button
             variant="outline"
             size="sm"
@@ -90,15 +79,7 @@ export function OverviewPage() {
         </div>
       </div>
 
-      {view === "dashboard" && storyState ? (
-        <WritingDashboard
-          novel={novel}
-          summaries={storyState.summaries}
-          hooks={storyState.hooks}
-          totalWords={storyState.total_words}
-          chapterCount={novel.chapter_count}
-        />
-      ) : (
+      {storyState && (
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-lg border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.title_label}</div>

@@ -16,28 +16,23 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   UsersIcon,
   PlusIcon,
   Trash2Icon,
   SearchIcon,
-  NetworkIcon,
-  LayoutGridIcon,
 } from "lucide-react";
 import { useCharacters } from "@/hooks/useCharacters";
-import { CharacterGraph } from "@/components/visualizations";
 import type { Character } from "@/types";
 
 export function CharactersPage() {
   const { t } = useI18n();
   const { activeWorkspaceId } = useWorkspaceStore();
-  const { characters, relationships, loading, create, update, remove } = useCharacters(activeWorkspaceId);
+  const { characters, loading, create, update, remove } = useCharacters(activeWorkspaceId);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Character | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [view, setView] = useState<"grid" | "graph">("grid");
 
   const [formName, setFormName] = useState("");
   const [formRole, setFormRole] = useState("");
@@ -134,27 +129,12 @@ export function CharactersPage() {
         />
       </div>
 
-      <Tabs value={view} onValueChange={(v) => setView(v as "grid" | "graph")}>
-        <TabsList>
-          <TabsTrigger value="grid"><LayoutGridIcon className="size-3" /> {t.characters.gridView}</TabsTrigger>
-          <TabsTrigger value="graph"><NetworkIcon className="size-3" /> {t.characters.graphView}</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <UsersIcon className="size-12 mx-auto mb-4 opacity-50" />
           <p>{t.characters.empty}</p>
-        </div>
-      ) : view === "graph" ? (
-        <div className="h-[600px]">
-          <CharacterGraph
-            characters={filtered}
-            relationships={relationships}
-            onNodeClick={openEdit}
-          />
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

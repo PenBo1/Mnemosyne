@@ -32,7 +32,6 @@ import {
   ListIcon,
 } from "lucide-react";
 import { useTimelineEvents } from "@/hooks/useTimelineEvents";
-import { TimelineChart } from "@/components/visualizations";
 import type { TimelineEvent, TimelineEventType } from "@/types";
 
 export function TimelinePage() {
@@ -124,10 +123,6 @@ export function TimelinePage() {
         <div className="text-center py-12 text-muted-foreground">
           <ClockIcon className="size-12 mx-auto mb-4 opacity-50" />
           <p>{t.timeline.empty}</p>
-        </div>
-      ) : view === "chart" ? (
-        <div className="h-[600px]">
-          <TimelineChart events={events} onNodeClick={openEdit} />
         </div>
       ) : (
         <div className="relative">

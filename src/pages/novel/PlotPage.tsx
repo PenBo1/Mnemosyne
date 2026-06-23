@@ -33,7 +33,6 @@ import {
   TreePineIcon,
 } from "lucide-react";
 import { usePlotPoints } from "@/hooks/usePlotPoints";
-import { PlotTree } from "@/components/visualizations";
 import type { PlotPoint, PlotPointType } from "@/types";
 
 export function PlotPage() {
@@ -130,10 +129,6 @@ export function PlotPage() {
         <div className="text-center py-12 text-muted-foreground">
           <GitBranchIcon className="size-12 mx-auto mb-4 opacity-50" />
           <p>{t.plot.empty}</p>
-        </div>
-      ) : view === "tree" ? (
-        <div className="h-[600px]">
-          <PlotTree points={points} onNodeClick={openEdit} />
         </div>
       ) : view === "outline" ? (
         <div className="space-y-2">

@@ -156,6 +156,16 @@ export function AppSidebar() {
                       <span>{t.sidebar.newChat}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={currentPage === "main-agent"}
+                      onClick={() => navigateTo("main-agent")}
+                      tooltip="Main Agent"
+                    >
+                      <BotIcon />
+                      <span>Main Agent</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   <SidebarMenuItem className="group/tools">
                     <SidebarMenuButton
                       isActive={TOOLS_SUB_ITEMS.some((item) => item.id === currentPage)}
