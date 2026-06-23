@@ -33,6 +33,7 @@ pub struct DataDir {
 pub const AGENT_ROLES: &[&str] = &[
     "architect", "planner", "composer", "writer",
     "auditor", "reviser", "observer", "reflector",
+    "foundation-reviewer", "length-normalizer", "radar", "detector",
 ];
 
 impl DataDir {
