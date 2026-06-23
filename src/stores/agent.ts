@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 import type { Session, Message } from "@/types";
-import type { InputHistoryEntry } from "@/types/chat";
 import * as sessionService from "@/services/session";
 
 // Optimistic update helper (P2 from AI Engineering curriculum)
@@ -17,11 +16,6 @@ interface AgentState {
   streamingContent: string;
   error: string | null;
   loading: boolean;
-  // Input history state
-  inputHistory: InputHistoryEntry[];
-  historyIndex: number;
-  isAtBottom: boolean;
-
   loadSessions: (novelId?: string) => Promise<void>;
   createSession: (novelId?: string, title?: string) => Promise<Session>;
   switchSession: (sessionId: string) => Promise<void>;
@@ -34,16 +28,7 @@ interface AgentState {
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
   reset: () => void;
-  // Input history methods
-  addToHistory: (content: string) => void;
-  browseHistoryBack: () => string | null;
-  browseHistoryForward: () => string | null;
-  resetHistoryNavigation: () => void;
-  // Scroll state methods
-  setIsAtBottom: (isAtBottom: boolean) => void;
 }
-
-const MAX_HISTORY_SIZE = 50;
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   sessions: [],
@@ -53,9 +38,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   streamingContent: "",
   error: null,
   loading: false,
-  inputHistory: [],
-  historyIndex: -1,
-  isAtBottom: true,
 
   loadSessions: async (novelId?: string) => {
     set({ loading: true, error: null });
@@ -201,53 +183,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       streaming: false,
       streamingContent: "",
       error: null,
-      historyIndex: -1,
     });
-  },
-
-  // Input history methods
-  addToHistory: (content: string) => {
-    if (!content.trim()) return;
-    set((state) => {
-      const newEntry: InputHistoryEntry = {
-        content,
-        timestamp: Date.now(),
-      };
-      // Remove duplicates and add new entry
-      const filtered = state.inputHistory.filter((e) => e.content !== content);
-      const updated = [newEntry, ...filtered].slice(0, MAX_HISTORY_SIZE);
-      return {
-        inputHistory: updated,
-        historyIndex: -1,
-      };
-    });
-  },
-
-  browseHistoryBack: () => {
-    const state = get();
-    if (state.inputHistory.length === 0) return null;
-    const newIndex = state.historyIndex + 1;
-    if (newIndex >= state.inputHistory.length) return null;
-    set({ historyIndex: newIndex });
-    return state.inputHistory[newIndex].content;
-  },
-
-  browseHistoryForward: () => {
-    const state = get();
-    if (state.historyIndex <= 0) {
-      set({ historyIndex: -1 });
-      return null;
-    }
-    const newIndex = state.historyIndex - 1;
-    set({ historyIndex: newIndex });
-    return newIndex >= 0 ? state.inputHistory[newIndex].content : null;
-  },
-
-  resetHistoryNavigation: () => {
-    set({ historyIndex: -1 });
-  },
-
-  setIsAtBottom: (isAtBottom: boolean) => {
-    set({ isAtBottom });
   },
 }));
