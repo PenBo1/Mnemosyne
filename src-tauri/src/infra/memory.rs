@@ -59,7 +59,7 @@ impl MemoryStore {
         }
     }
 
-    async fn save_book(&self, book_id: &str) {
+    pub async fn save_book(&self, book_id: &str) {
         let books = self.books.read().await;
         if let Some(memory) = books.get(book_id) {
             let mem = memory.read().await;

@@ -27,10 +27,22 @@ pub struct ContextSource {
     pub excerpt: Option<String>,
 }
 
+/// Wiki entry reference for AI context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WikiContextEntry {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub importance: u32,
+    pub excerpt: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPackage {
     pub chapter: u32,
     pub selected_context: Vec<ContextSource>,
+    /// Wiki knowledge entries relevant to this chapter
+    pub wiki_entries: Vec<WikiContextEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

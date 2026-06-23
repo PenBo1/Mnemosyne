@@ -163,7 +163,7 @@ impl MemorySystem {
             .collect();
 
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored.into_iter().take(top_k).map(|(e, _)| e).collect()
+        scored.into_iter().filter(|(_, score)| *score > 0.0).take(top_k).map(|(e, _)| e).collect()
     }
 
     /// Archive a new memory entry

@@ -1,5 +1,6 @@
 use crate::errors::{AppError, IpcResponse};
 use crate::domain::pipeline::{PipelineConfig, PipelineRunner};
+use crate::domain::version::{VersionService, RevisionMode};
 use crate::infra::db::models::CreateNovelRequest;
 use crate::AppState;
 use tauri::State;
@@ -146,12 +147,54 @@ pub async fn novel_revise(
         std::path::PathBuf::from(ws.path)
     };
 
+    // Read chapter content before revision for version saving
+    let book_dir = workspace_path.join("books").join(&book_id);
+    let chapters_dir = book_dir.join("chapters");
+    let prefix = format!("{:04}_", chapter_number);
+    
+    let content_before = {
+        let mut chapter_content = String::new();
+        if let Ok(entries) = std::fs::read_dir(&chapters_dir) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                    chapter_content = std::fs::read_to_string(entry.path())
+                        .map_err(|e| AppError::internal(format!("Failed to read chapter: {}", e)))?;
+                    break;
+                }
+            }
+        }
+        chapter_content
+    };
+
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
+    let runner = build_runner(&registry, workspace_path.clone(), memory_store, state.data_dir.clone())?;
     drop(registry);
 
+    // Save version before revision (if content exists)
+    if !content_before.is_empty() {
+        let version_service = VersionService::new(state.db.clone());
+        let _ = version_service.save_version(
+            &book_id,
+            chapter_number,
+            &content_before,
+            RevisionMode::Manual,
+            "Pre-revision snapshot",
+        ).await;
+    }
+
     let result = runner.revise_chapter(&book_id, chapter_number, Default::default()).await?;
+
+    // Save version after revision
+    let version_service = VersionService::new(state.db.clone());
+    let _ = version_service.save_version(
+        &book_id,
+        chapter_number,
+        &result,
+        RevisionMode::Auto,
+        "AI revision",
+    ).await;
+
     Ok(IpcResponse::ok(result))
 }
 

@@ -9,3 +9,5 @@ pub mod utils;
 pub mod interaction;
 pub mod novel;
 pub mod user_profile;
+pub mod wiki;
+pub mod version;

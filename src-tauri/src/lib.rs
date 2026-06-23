@@ -84,10 +84,11 @@ pub fn run() {
                 skill_manager: tokio::sync::Mutex::new(skill_manager),
                 sandbox: tokio::sync::Mutex::new(sandbox_enforcer),
                 memory_store,
-                feedback_store: tokio::sync::Mutex::new(feedback_store),
+                feedback_store: Arc::new(tokio::sync::Mutex::new(feedback_store)),
                 mcp_server: tokio::sync::Mutex::new(mcp_server),
                 scheduler,
                 app_handle,
+                sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             });
 
             Ok(())
@@ -150,6 +151,14 @@ pub fn run() {
             app::commands::agent::agent_cancel,
             app::commands::agent::agent_compact,
             app::commands::agent::agent_restart,
+            app::commands::agent_session::session_send_message,
+            app::commands::agent_session::session_cancel,
+            app::commands::agent_session::session_get_status,
+            app::commands::agent_session::session_shutdown,
+            app::commands::agent_session::session_write_next_chapter,
+            app::commands::agent_session::session_create_book,
+            app::commands::agent_session::session_approve_tool,
+            app::commands::agent_session::session_reject_tool,
             app::commands::agent_config::list_agents,
             app::commands::agent_config::update_agent,
             app::commands::agent_config::toggle_agent_status,
@@ -177,6 +186,28 @@ pub fn run() {
             app::commands::ai_logs::ai_log_tool_executions,
             app::commands::ai_logs::ai_log_token_usage,
             app::commands::ai_logs::ai_log_sandbox_violations,
+            app::commands::main_agent::main_agent_execute,
+            app::commands::main_agent::main_agent_respond,
+            app::commands::main_agent::main_agent_list_sessions,
+            app::commands::main_agent::main_agent_cancel,
+            // Wiki commands
+            app::commands::wiki::wiki_list_entries,
+            app::commands::wiki::wiki_get_entry,
+            app::commands::wiki::wiki_create_entry,
+            app::commands::wiki::wiki_update_entry,
+            app::commands::wiki::wiki_delete_entry,
+            app::commands::wiki::wiki_get_graph,
+            app::commands::wiki::wiki_create_link,
+            app::commands::wiki::wiki_delete_link,
+            app::commands::wiki::wiki_search,
+            // Version commands
+            app::commands::version::version_list,
+            app::commands::version::version_get,
+            app::commands::version::version_get_latest,
+            app::commands::version::version_diff,
+            app::commands::version::version_diff_latest,
+            app::commands::version::version_restore,
+            app::commands::version::version_save,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

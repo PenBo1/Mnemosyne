@@ -41,6 +41,7 @@ impl ComposerAgent {
         let context_package = ContextPackage {
             chapter: chapter_number,
             selected_context,
+            wiki_entries: Vec::new(), // TODO: Load wiki entries from database
         };
 
         // Build rule stack
