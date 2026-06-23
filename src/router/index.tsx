@@ -6,7 +6,6 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { TrendsPage } from "@/pages/TrendsPage";
 import { NovelDownloadPage } from "@/pages/NovelDownloadPage";
 import { SkillsPage } from "@/pages/SkillsPage";
-import { ChatContainer } from "@/components/chat";
 import { ChapterReader } from "@/pages/ChapterReader";
 import { MemoryPage } from "@/pages/MemoryPage";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -31,11 +30,7 @@ export function Router() {
   const isWorkspacePage = ["overview", "characters", "worldbuilding", "plot", "timeline", "research"].includes(currentPage);
   const hasActiveWorkspace = activeWorkspaceId !== null;
 
-  if (currentPage === "chat") {
-    return <ChatContainer />;
-  }
-
-  if (currentPage === "main-agent") {
+  if (currentPage === "chat" || currentPage === "main-agent") {
     return <MainAgentPage />;
   }
 

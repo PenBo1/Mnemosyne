@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { ChatContainer } from "@/components/chat";
+import MainAgentPage from "@/pages/MainAgentPage";
 
 interface Chapter {
   id: string;
@@ -25,6 +25,8 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
   const { t } = useI18n();
   const [chapters] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
+  // novelId preserved for future chapter loading functionality
+  void novelId;
 
   return (
     <div className="flex h-full">
@@ -96,7 +98,7 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
             </ScrollArea>
           </>
         ) : (
-          <ChatContainer novelId={novelId} />
+          <MainAgentPage />
         )}
       </div>
     </div>

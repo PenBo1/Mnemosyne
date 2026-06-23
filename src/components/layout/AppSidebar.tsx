@@ -36,7 +36,6 @@ import {
   BookMarkedIcon,
   PuzzleIcon,
   BotIcon,
-  SparklesIcon,
   WrenchIcon,
   CpuIcon,
 } from "lucide-react";
@@ -148,22 +147,12 @@ export function AppSidebar() {
                 <SidebarMenu className="gap-1">
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      isActive={currentPage === "chat"}
-                      onClick={() => navigateTo("chat")}
-                      tooltip={t.chat.title}
-                    >
-                      <SparklesIcon />
-                      <span>{t.sidebar.newChat}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={currentPage === "main-agent"}
+                      isActive={currentPage === "chat" || currentPage === "main-agent"}
                       onClick={() => navigateTo("main-agent")}
-                      tooltip="Main Agent"
+                      tooltip="AI Agent"
                     >
                       <BotIcon />
-                      <span>Main Agent</span>
+                      <span>AI Agent</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem className="group/tools">
