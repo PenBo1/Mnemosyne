@@ -28,6 +28,7 @@ pub mod retry_utils;
 pub mod message_sanitization;
 pub mod tools;
 pub mod task_lifecycle;
+pub mod goal_decomposer;
 
 pub use types::*;
 pub use base::{AgentContext, BaseAgent, ToolCall, ToolResult, ToolRegistry, ToolExecutor, MemoryEntry, MemoryType, MemorySystem};
@@ -52,3 +53,4 @@ pub use continuous_learning::{SkillCurator, CuratorConfig, SkillUsage, SkillStat
 pub use retry_utils::{jittered_backoff, RetryConfig, RetryState};
 pub use message_sanitization::{sanitize_message_sequence, validate_message_sequence, fill_missing_tool_results, SanitizeResult};
 pub use lesson_tracker::{LessonTracker, ConstraintLesson, append_lessons_to_memory, load_lessons_from_memory};
+pub use goal_decomposer::GoalDecomposer;
