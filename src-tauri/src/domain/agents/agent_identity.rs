@@ -55,6 +55,37 @@ impl AgentIdentity {
         parts.join("\n\n")
     }
 
+    /// Build system prompt with memory injection.
+    pub async fn build_system_prompt_with_memory(
+        &self,
+        memory: &tokio::sync::RwLock<crate::domain::agents::base::MemorySystem>,
+        context_query: &str,
+    ) -> String {
+        let mut prompt = self.build_system_prefix();
+
+        let mem = memory.read().await;
+        let relevant = mem.search_memory(context_query, 10);
+        if !relevant.is_empty() {
+            let memory_section: Vec<String> = relevant.iter().map(|e| {
+                format!("- [{}] {}", e.entry_type as u8, e.content)
+            }).collect();
+            prompt.push_str(&format!(
+                "\n\n## Relevant Memories\n{}\n",
+                memory_section.join("\n")
+            ));
+        }
+
+        let main_ctx = mem.format_main_context();
+        if !main_ctx.is_empty() {
+            prompt.push_str(&format!(
+                "\n\n## Active Context\n{}\n",
+                main_ctx
+            ));
+        }
+
+        prompt
+    }
+
     /// Save updated MEMORY.md back to disk.
     pub fn save_memory(&self, data_dir: &DataDir, role: &str, content: &str) -> Result<(), std::io::Error> {
         std::fs::write(data_dir.agent_memory_path(role), content)
