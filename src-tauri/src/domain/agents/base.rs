@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::infra::skill::discovery::SkillManager;
 use super::types::{AgentRole, LlmResponse};
 
 // ── Tool System (P14.06 Tool Use) ──────────────────────────────────────────
@@ -217,6 +218,8 @@ pub struct AgentContext {
     pub tool_guardrails: Arc<tokio::sync::Mutex<ToolCallGuardrailController>>,
     /// 上下文压缩器 — 自动压缩长对话
     pub context_compressor: Arc<tokio::sync::Mutex<ContextCompressor>>,
+    /// Skill manager for dynamic skill injection
+    pub skill_manager: Option<Arc<SkillManager>>,
 }
 
 // ── Base Agent Trait ────────────────────────────────────────────────────────
