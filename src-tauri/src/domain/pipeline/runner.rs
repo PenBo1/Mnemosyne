@@ -12,6 +12,9 @@ use crate::domain::agents::tool_guardrails::{ToolCallGuardrailController, ToolGu
 use crate::domain::agents::context_compressor::{ContextCompressor, CompressorConfig};
 use crate::domain::agents::error_classifier::classify_api_error;
 use crate::domain::agents::lesson_tracker::{LessonTracker, append_lessons_to_memory, load_lessons_from_memory};
+use crate::domain::agents::tools::{ReadFileTool, WriteFileTool, ListFilesTool, BashTool, SearchMemoryTool, ArchiveMemoryTool};
+use crate::infra::sandbox::SandboxEnforcer;
+use crate::infra::sandbox::policy::SandboxPolicy;
 use std::sync::Arc;
 
 pub struct PipelineConfig {
@@ -45,12 +48,25 @@ impl PipelineRunner {
         } else {
             Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
         };
+        let mut tools = ToolRegistry::new();
+        let work_dir = self.config.project_root.clone();
+
+        tools.register("read_file", Box::new(ReadFileTool::new(work_dir.clone())));
+        tools.register("write_file", Box::new(WriteFileTool::new(work_dir.clone())));
+        tools.register("list_files", Box::new(ListFilesTool::new(work_dir.clone())));
+
+        tools.register("search_memory", Box::new(SearchMemoryTool::new(memory.clone())));
+        tools.register("archive_memory", Box::new(ArchiveMemoryTool::new(memory.clone())));
+
+        let sandbox = Arc::new(SandboxEnforcer::new(SandboxPolicy::restricted(), work_dir.clone()));
+        tools.register("bash", Box::new(BashTool::new(work_dir.clone(), Some(sandbox))));
+
         AgentContext {
             provider: self.config.provider.clone(),
             model: self.config.model.clone(),
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
-            tools: Arc::new(ToolRegistry::new()),
+            tools: Arc::new(tools),
             memory,
             iteration_budget: Arc::new(IterationBudget::new(90)),
             tool_guardrails: Arc::new(tokio::sync::Mutex::new(
@@ -72,12 +88,26 @@ impl PipelineRunner {
         } else {
             Arc::new(tokio::sync::RwLock::new(MemorySystem::new(20)))
         };
+
+        let mut tools = ToolRegistry::new();
+        let work_dir = self.config.project_root.clone();
+
+        tools.register("read_file", Box::new(ReadFileTool::new(work_dir.clone())));
+        tools.register("write_file", Box::new(WriteFileTool::new(work_dir.clone())));
+        tools.register("list_files", Box::new(ListFilesTool::new(work_dir.clone())));
+
+        tools.register("search_memory", Box::new(SearchMemoryTool::new(memory.clone())));
+        tools.register("archive_memory", Box::new(ArchiveMemoryTool::new(memory.clone())));
+
+        let sandbox = Arc::new(SandboxEnforcer::new(SandboxPolicy::restricted(), work_dir.clone()));
+        tools.register("bash", Box::new(BashTool::new(work_dir.clone(), Some(sandbox))));
+
         AgentContext {
             provider: self.config.provider.clone(),
             model,
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
-            tools: Arc::new(ToolRegistry::new()),
+            tools: Arc::new(tools),
             memory,
             iteration_budget: Arc::new(IterationBudget::new(50)),
             tool_guardrails: Arc::new(tokio::sync::Mutex::new(
