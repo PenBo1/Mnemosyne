@@ -28,6 +28,9 @@ pub struct ConstraintLesson {
     pub generated_at: String,
     /// Whether this lesson is currently active (injected into prompts)
     pub active: bool,
+    /// ISO 8601 timestamp of when this lesson was last triggered
+    #[serde(default)]
+    pub last_triggered: String,
 }
 
 /// Tracks audit issues across chapters and generates constraint lessons
@@ -78,6 +81,7 @@ impl LessonTracker {
 
             if let Some(lesson) = existing {
                 lesson.occurrence_count += 1;
+                lesson.last_triggered = now.clone();
                 if lesson.occurrence_count >= self.threshold && !lesson.active {
                     lesson.active = true;
                     lesson.lesson = if suggestion.is_empty() { description } else { suggestion };
@@ -92,6 +96,7 @@ impl LessonTracker {
                     occurrence_count: 1,
                     generated_at: now.clone(),
                     active: false,
+                    last_triggered: now.clone(),
                 };
                 // If threshold is 1, activate immediately
                 if self.threshold <= 1 {
@@ -135,11 +140,30 @@ impl LessonTracker {
         block
     }
 
-    /// Deactivate lessons that haven't been triggered in a while.
-    pub fn deactivate_stale_lessons(&mut self, stale_after_chapters: u32) {
-        // In a real implementation, this would track per-lesson chapter counts.
-        // For now, we keep lessons active once generated.
-        let _ = stale_after_chapters;
+    /// Deactivate lessons that haven't been triggered within `stale_days`.
+    ///
+    /// Returns the number of lessons deactivated.
+    pub fn deactivate_stale_lessons(&mut self, stale_days: u64) -> usize {
+        let now = chrono::Utc::now();
+        let mut count = 0;
+        for lesson in &mut self.lessons {
+            if !lesson.active {
+                continue;
+            }
+            let ts = if lesson.last_triggered.is_empty() {
+                &lesson.generated_at
+            } else {
+                &lesson.last_triggered
+            };
+            if let Ok(last) = chrono::DateTime::parse_from_rfc3339(ts) {
+                let elapsed = now.signed_duration_since(last);
+                if elapsed.num_days() > stale_days as i64 {
+                    lesson.active = false;
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
     /// Get all lessons (for persistence/serialization).
@@ -240,6 +264,7 @@ pub fn load_lessons_from_memory(
                         occurrence_count: count,
                         generated_at: String::new(),
                         active: true,
+                        last_triggered: String::new(),
                     });
                 }
             }
@@ -302,5 +327,20 @@ mod tests {
         let cleaned = remove_lessons_section(content);
         assert!(!cleaned.contains("Constraint Lessons"));
         assert!(cleaned.contains("Some notes here"));
+    }
+
+    #[test]
+    fn test_deactivate_stale_lessons() {
+        let mut tracker = LessonTracker::new(1, 10);
+        let audit = make_audit("OOC", "Character acts out of character", "Stay consistent");
+
+        tracker.record_audit("writer", &audit);
+        assert_eq!(tracker.active_lessons_for("writer").len(), 1);
+
+        // With 0 stale_days, the lesson (just created) should NOT be deactivated
+        // because 0 days have passed.
+        let deactivated = tracker.deactivate_stale_lessons(0);
+        assert_eq!(deactivated, 0);
+        assert_eq!(tracker.active_lessons_for("writer").len(), 1);
     }
 }

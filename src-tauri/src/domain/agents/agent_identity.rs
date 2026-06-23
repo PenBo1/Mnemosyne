@@ -46,7 +46,7 @@ impl AgentIdentity {
             parts.push(format!(
                 "## Agent Memory\n\n{}",
                 self.memory.trim().lines()
-                    .filter(|l| !l.starts_with('#') && !l.starts_with("<!--"))
+                    .filter(|l| !is_memory_header(l))
                     .collect::<Vec<_>>()
                     .join("\n")
             ));
@@ -108,6 +108,16 @@ impl AgentIdentity {
 
 fn read_file_or_empty(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+fn is_memory_header(line: &str) -> bool {
+    // Markdown header lines: # through ######
+    if line.starts_with("# ") {
+        return true;
+    }
+    // Complete HTML comment lines only
+    let trimmed = line.trim();
+    trimmed.starts_with("<!--") && trimmed.ends_with("-->")
 }
 
 #[cfg(test)]
