@@ -27,6 +27,7 @@ pub mod continuous_learning;
 pub mod retry_utils;
 pub mod message_sanitization;
 pub mod tools;
+pub mod task_lifecycle;
 
 pub use types::*;
 pub use base::{AgentContext, BaseAgent, ToolCall, ToolResult, ToolRegistry, ToolExecutor, MemoryEntry, MemoryType, MemorySystem};
