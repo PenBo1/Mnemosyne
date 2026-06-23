@@ -311,6 +311,25 @@ impl SkillCurator {
         &self.usage
     }
 
+    /// Import constraint lessons from LessonTracker as skill updates
+    pub fn import_lessons(&mut self, lessons: Vec<crate::domain::agents::lesson_tracker::ConstraintLesson>) {
+        for lesson in lessons {
+            let skill_name = format!("lesson_{}", lesson.agent_role);
+            let existing = self.usage.entry(skill_name.clone())
+                .or_insert_with(|| SkillUsage::new(&skill_name, "system"));
+
+            existing.use_count += 1;
+            existing.last_activity_at = Some(chrono::Utc::now().to_rfc3339());
+            existing.state = SkillState::Active;
+
+            tracing::info!(
+                skill = %skill_name,
+                lesson = %lesson.lesson,
+                "Imported constraint lesson as skill update"
+            );
+        }
+    }
+
     /// 获取配置
     pub fn config(&self) -> &CuratorConfig {
         &self.config
