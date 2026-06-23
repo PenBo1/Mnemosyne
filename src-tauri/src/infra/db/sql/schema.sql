@@ -139,3 +139,71 @@ CREATE TABLE IF NOT EXISTS radar_scans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_radar_scans_created ON radar_scans(created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════
+-- Wiki Entries (Novel-specific Knowledge Base)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS wiki_entries (
+    id TEXT PRIMARY KEY,
+    novel_id TEXT NOT NULL,
+    title TEXT NOT NULL CHECK(length(title) > 0 AND length(title) <= 500),
+    content TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('general', 'character', 'location', 'event', 'concept', 'reference')),
+    source_type TEXT NOT NULL DEFAULT 'manual' CHECK(source_type IN ('manual', 'ai_extracted', 'imported')),
+    source_chapter INTEGER CHECK(source_chapter IS NULL OR source_chapter > 0),
+    tags TEXT NOT NULL DEFAULT '[]',
+    importance INTEGER NOT NULL DEFAULT 0 CHECK(importance >= 0 AND importance <= 10),
+    word_count INTEGER NOT NULL DEFAULT 0 CHECK(word_count >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_novel ON wiki_entries(novel_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_category ON wiki_entries(novel_id, category);
+CREATE INDEX IF NOT EXISTS idx_wiki_source_chapter ON wiki_entries(novel_id, source_chapter);
+
+-- ═══════════════════════════════════════════════════════════
+-- Wiki Entity Links (Knowledge Graph)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS wiki_entity_links (
+    id TEXT PRIMARY KEY,
+    novel_id TEXT NOT NULL,
+    source_entry_id TEXT NOT NULL,
+    target_entry_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL CHECK(length(relation_type) > 0 AND length(relation_type) <= 100),
+    relation_desc TEXT NOT NULL DEFAULT '',
+    weight INTEGER NOT NULL DEFAULT 1 CHECK(weight >= 1 AND weight <= 10),
+    source_chapter INTEGER CHECK(source_chapter IS NULL OR source_chapter > 0),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_entry_id) REFERENCES wiki_entries(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_entry_id) REFERENCES wiki_entries(id) ON DELETE CASCADE,
+    UNIQUE(source_entry_id, target_entry_id, relation_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_links_novel ON wiki_entity_links(novel_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_links_source ON wiki_entity_links(source_entry_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_links_target ON wiki_entity_links(target_entry_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- Chapter Versions (Diff History)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS chapter_versions (
+    id TEXT PRIMARY KEY,
+    novel_id TEXT NOT NULL,
+    chapter_number INTEGER NOT NULL CHECK(chapter_number > 0),
+    version_number INTEGER NOT NULL CHECK(version_number > 0),
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    word_count INTEGER NOT NULL DEFAULT 0 CHECK(word_count >= 0),
+    revision_reason TEXT NOT NULL DEFAULT '',
+    revision_mode TEXT NOT NULL DEFAULT 'auto' CHECK(revision_mode IN ('auto', 'polish', 'rewrite', 'rework', 'spot_fix', 'manual')),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+    UNIQUE(novel_id, chapter_number, version_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_versions_novel_chapter ON chapter_versions(novel_id, chapter_number);
+CREATE INDEX IF NOT EXISTS idx_versions_created ON chapter_versions(novel_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_versions_hash ON chapter_versions(content_hash);

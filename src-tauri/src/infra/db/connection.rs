@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params, Row};
+use rusqlite::{Connection, params, Row, OptionalExtension};
 use std::path::Path;
 use uuid::Uuid;
 use chrono::Utc;
@@ -553,4 +553,335 @@ impl Database {
             "novelActivity": []
         }))
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // Wiki Entries
+    // ═══════════════════════════════════════════════════════════
+
+    fn row_to_wiki_entry(row: &Row) -> rusqlite::Result<crate::domain::wiki::WikiEntry> {
+        let category_str: String = row.get(4)?;
+        let source_type_str: String = row.get(5)?;
+        let tags_json: String = row.get(7)?;
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        Ok(crate::domain::wiki::WikiEntry {
+            id: row.get(0)?,
+            novel_id: row.get(1)?,
+            title: row.get(2)?,
+            content: row.get(3)?,
+            category: category_str.parse().unwrap_or(crate::domain::wiki::WikiCategory::General),
+            source_type: source_type_str.parse().unwrap_or(crate::domain::wiki::WikiSourceType::Manual),
+            source_chapter: row.get::<_, Option<i64>>(6)?.map(|n| n as u32),
+            tags,
+            importance: row.get::<_, i64>(8)? as u32,
+            word_count: row.get::<_, i64>(9)? as u32,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
+        })
+    }
+
+    pub fn list_wiki_entries(
+        &self,
+        novel_id: &str,
+        category: Option<&crate::domain::wiki::WikiCategory>,
+    ) -> Result<Vec<crate::domain::wiki::WikiEntry>, AppError> {
+        let sql = if category.is_some() {
+            "SELECT * FROM wiki_entries WHERE novel_id = ?1 AND category = ?2 ORDER BY importance DESC, updated_at DESC"
+        } else {
+            "SELECT * FROM wiki_entries WHERE novel_id = ?1 ORDER BY importance DESC, updated_at DESC"
+        };        
+        let mut stmt = self.conn.prepare(sql)
+            .map_err(|e| AppError::internal(format!("Failed to prepare wiki list query: {}", e)))?;
+        
+        let rows = if let Some(cat) = category {
+            stmt.query_map(params![novel_id, cat.to_string()], Self::row_to_wiki_entry)
+        } else {
+            stmt.query_map(params![novel_id], Self::row_to_wiki_entry)
+        }
+        .map_err(|e| AppError::internal(format!("Failed to query wiki entries: {}", e)))?;
+        
+        let entries = rows.filter_map(|r| r.ok()).collect::<Vec<_>>();
+        Ok(entries)
+    }
+
+    pub fn get_wiki_entry(&self, entry_id: &str) -> Result<Option<crate::domain::wiki::WikiEntry>, AppError> {
+        let result = self.conn.query_row(
+            "SELECT * FROM wiki_entries WHERE id = ?1",
+            params![entry_id],
+            Self::row_to_wiki_entry,
+        ).optional()
+        .map_err(|e| AppError::internal(format!("Failed to get wiki entry: {}", e)))?;
+        Ok(result)
+    }
+
+    pub fn create_wiki_entry(&self, req: &crate::domain::wiki::CreateWikiEntryRequest) -> Result<crate::domain::wiki::WikiEntry, AppError> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let tags_json = serde_json::to_string(&req.tags).unwrap_or_else(|_| "[]".to_string());
+        let importance = req.importance.unwrap_or(0);
+        let word_count = count_words(&req.content);
+        
+        self.conn.execute(
+            "INSERT INTO wiki_entries (id, novel_id, title, content, category, source_type, source_chapter, tags, importance, word_count, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 'manual', ?6, ?7, ?8, ?9, ?10, ?10)",
+            params![id, req.novel_id, req.title, req.content, req.category.to_string(), req.source_chapter.map(|n| n as i64), tags_json, importance as i64, word_count as i64, now],
+        ).map_err(|e| AppError::internal(format!("Failed to create wiki entry: {}", e)))?;
+        
+        Ok(crate::domain::wiki::WikiEntry {
+            id, novel_id: req.novel_id.clone(), title: req.title.clone(), content: req.content.clone(),
+            category: req.category.clone(), source_type: crate::domain::wiki::WikiSourceType::Manual,
+            source_chapter: req.source_chapter, tags: req.tags.clone(), importance,
+            word_count, created_at: now.clone(), updated_at: now,
+        })
+    }
+
+    pub fn update_wiki_entry(
+        &self,
+        entry_id: &str,
+        req: &crate::domain::wiki::UpdateWikiEntryRequest,
+    ) -> Result<crate::domain::wiki::WikiEntry, AppError> {
+        let existing = self.get_wiki_entry(entry_id)?.ok_or_else(|| AppError::not_found("Wiki entry not found"))?;
+        let now = Utc::now().to_rfc3339();
+        
+        let title = req.title.clone().unwrap_or(existing.title);
+        let content = req.content.clone().unwrap_or(existing.content);
+        let category = req.category.clone().unwrap_or(existing.category);
+        let tags = req.tags.clone().unwrap_or(existing.tags);
+        let importance = req.importance.unwrap_or(existing.importance);
+        let word_count = count_words(&content);
+        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
+        
+        self.conn.execute(
+            "UPDATE wiki_entries SET title = ?1, content = ?2, category = ?3, tags = ?4, importance = ?5, word_count = ?6, updated_at = ?7 WHERE id = ?8",
+            params![title, content, category.to_string(), tags_json, importance as i64, word_count as i64, now, entry_id],
+        ).map_err(|e| AppError::internal(format!("Failed to update wiki entry: {}", e)))?;
+        
+        Ok(crate::domain::wiki::WikiEntry {
+            id: existing.id, novel_id: existing.novel_id, title, content, category,
+            source_type: existing.source_type, source_chapter: existing.source_chapter,
+            tags, importance, word_count, created_at: existing.created_at, updated_at: now,
+        })
+    }
+
+    pub fn delete_wiki_entry(&self, entry_id: &str) -> Result<bool, AppError> {
+        let rows = self.conn.execute("DELETE FROM wiki_entries WHERE id = ?1", params![entry_id])
+            .map_err(|e| AppError::internal(format!("Failed to delete wiki entry: {}", e)))?;
+        Ok(rows > 0)
+    }
+
+    pub fn search_wiki_entries(
+        &self,
+        novel_id: &str,
+        query: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<crate::domain::wiki::WikiEntry>, AppError> {
+        let limit_val = limit.unwrap_or(20);
+        let sql = "SELECT * FROM wiki_entries WHERE novel_id = ?1 AND (title LIKE ?2 OR content LIKE ?2) ORDER BY importance DESC, updated_at DESC LIMIT ?3";
+        let search_pattern = format!("%{}%", query);
+        
+        let mut stmt = self.conn.prepare(sql)
+            .map_err(|e| AppError::internal(format!("Failed to prepare wiki search: {}", e)))?;
+        let rows = stmt.query_map(params![novel_id, search_pattern, limit_val as i64], Self::row_to_wiki_entry)
+            .map_err(|e| AppError::internal(format!("Failed to search wiki entries: {}", e)))?;
+        
+        let entries = rows.filter_map(|r| r.ok()).collect::<Vec<_>>();
+        Ok(entries)
+    }
+
+    pub fn get_wiki_context_for_chapter(
+        &self,
+        novel_id: &str,
+        chapter_number: u32,
+    ) -> Result<Vec<crate::domain::wiki::WikiEntry>, AppError> {
+        // Get entries with: source_chapter matches, or high importance
+        let sql = "SELECT * FROM wiki_entries WHERE novel_id = ?1 AND (source_chapter = ?2 OR importance >= 5) ORDER BY importance DESC, updated_at DESC";
+        
+        let mut stmt = self.conn.prepare(sql)
+            .map_err(|e| AppError::internal(format!("Failed to prepare wiki context query: {}", e)))?;
+        let rows = stmt.query_map(params![novel_id, chapter_number as i64], Self::row_to_wiki_entry)
+            .map_err(|e| AppError::internal(format!("Failed to query wiki context: {}", e)))?;
+        
+        let entries = rows.filter_map(|r| r.ok()).collect::<Vec<_>>();
+        Ok(entries)
+    }
+
+    pub fn get_wiki_graph_view(
+        &self,
+        novel_id: &str,
+        filter_category: Option<&crate::domain::wiki::WikiCategory>,
+        min_importance: Option<u32>,
+    ) -> Result<crate::domain::wiki::WikiGraphView, AppError> {
+        // Get nodes (entries)
+        let min_imp = min_importance.unwrap_or(0);
+        
+        // Build SQL and params based on filter
+        let (node_sql, params_vec): (&str, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(cat) = filter_category {
+            ("SELECT id, title, category, importance FROM wiki_entries WHERE novel_id = ?1 AND category = ?2 AND importance >= ?3",
+             vec![Box::new(novel_id.to_string()), Box::new(cat.to_string()), Box::new(min_imp as i64)])
+        } else {
+            ("SELECT id, title, category, importance FROM wiki_entries WHERE novel_id = ?1 AND importance >= ?2",
+             vec![Box::new(novel_id.to_string()), Box::new(min_imp as i64)])
+        };        
+        
+        let mut stmt = self.conn.prepare(node_sql)
+            .map_err(|e| AppError::internal(format!("Failed to prepare wiki graph nodes: {}", e)))?;
+        
+        let node_rows = stmt.query_map(rusqlite::params_from_iter(params_vec), |row| Ok(crate::domain::wiki::WikiGraphNode {
+            id: row.get(0)?, title: row.get(1)?, category: row.get(2)?, importance: row.get::<_, i64>(3)? as u32,
+        })).map_err(|e| AppError::internal(format!("Failed to query wiki nodes: {}", e)))?;
+        
+        let nodes: Vec<_> = node_rows.filter_map(|r| r.ok()).collect();
+        let node_ids: Vec<_> = nodes.iter().map(|n| n.id.clone()).collect();
+        
+        // Get edges (links between nodes in our filtered set)
+        let edge_sql = "SELECT source_entry_id, target_entry_id, relation_type, weight FROM wiki_entity_links WHERE novel_id = ?1";
+        let mut stmt = self.conn.prepare(edge_sql)
+            .map_err(|e| AppError::internal(format!("Failed to prepare wiki graph edges: {}", e)))?;
+        let edge_rows = stmt.query_map(params![novel_id], |row| Ok(crate::domain::wiki::WikiGraphEdge {
+            source: row.get(0)?, target: row.get(1)?, relation: row.get(2)?, weight: row.get::<_, i64>(3)? as u32,
+        })).map_err(|e| AppError::internal(format!("Failed to query wiki edges: {}", e)))?;
+        
+        // Filter edges to only those connecting our nodes
+        let edges: Vec<_> = edge_rows.filter_map(|r| r.ok())
+            .filter(|e| node_ids.contains(&e.source) && node_ids.contains(&e.target))
+            .collect();
+        
+        Ok(crate::domain::wiki::WikiGraphView { nodes, edges })
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Wiki Entity Links
+    // ═══════════════════════════════════════════════════════════
+
+    fn row_to_wiki_link(row: &Row) -> rusqlite::Result<crate::domain::wiki::WikiEntityLink> {
+        Ok(crate::domain::wiki::WikiEntityLink {
+            id: row.get(0)?,
+            novel_id: row.get(1)?,
+            source_entry_id: row.get(2)?,
+            target_entry_id: row.get(3)?,
+            relation_type: row.get(4)?,
+            relation_desc: row.get(5)?,
+            weight: row.get::<_, i64>(6)? as u32,
+            source_chapter: row.get::<_, Option<i64>>(7)?.map(|n| n as u32),
+            created_at: row.get(8)?,
+        })
+    }
+
+    pub fn create_wiki_link(&self, req: &crate::domain::wiki::CreateWikiLinkRequest) -> Result<crate::domain::wiki::WikiEntityLink, AppError> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let weight = req.weight.unwrap_or(1);
+        
+        self.conn.execute(
+            "INSERT INTO wiki_entity_links (id, novel_id, source_entry_id, target_entry_id, relation_type, relation_desc, weight, source_chapter, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, req.novel_id, req.source_entry_id, req.target_entry_id, req.relation_type, req.relation_desc, weight as i64, req.source_chapter.map(|n| n as i64), now],
+        ).map_err(|e| AppError::internal(format!("Failed to create wiki link: {}", e)))?;
+        
+        Ok(crate::domain::wiki::WikiEntityLink {
+            id, novel_id: req.novel_id.clone(), source_entry_id: req.source_entry_id.clone(),
+            target_entry_id: req.target_entry_id.clone(), relation_type: req.relation_type.clone(),
+            relation_desc: req.relation_desc.clone(), weight, source_chapter: req.source_chapter,
+            created_at: now,
+        })
+    }
+
+    pub fn delete_wiki_link(&self, link_id: &str) -> Result<bool, AppError> {
+        let rows = self.conn.execute("DELETE FROM wiki_entity_links WHERE id = ?1", params![link_id])
+            .map_err(|e| AppError::internal(format!("Failed to delete wiki link: {}", e)))?;
+        Ok(rows > 0)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Chapter Versions
+    // ═══════════════════════════════════════════════════════════
+
+    fn row_to_chapter_version(row: &Row) -> rusqlite::Result<crate::domain::version::ChapterVersion> {
+        let mode_str: String = row.get(8)?;
+        Ok(crate::domain::version::ChapterVersion {
+            id: row.get(0)?,
+            novel_id: row.get(1)?,
+            chapter_number: row.get::<_, i64>(2)? as u32,
+            version_number: row.get::<_, i64>(3)? as u32,
+            content: row.get(4)?,
+            content_hash: row.get(5)?,
+            word_count: row.get::<_, i64>(6)? as u32,
+            revision_reason: row.get(7)?,
+            revision_mode: mode_str.parse().unwrap_or(crate::domain::version::RevisionMode::Auto),
+            created_at: row.get(9)?,
+        })
+    }
+
+    pub fn list_chapter_versions(
+        &self,
+        novel_id: &str,
+        chapter_number: u32,
+    ) -> Result<Vec<crate::domain::version::ChapterVersion>, AppError> {
+        let sql = "SELECT * FROM chapter_versions WHERE novel_id = ?1 AND chapter_number = ?2 ORDER BY version_number DESC";
+        let mut stmt = self.conn.prepare(sql)
+            .map_err(|e| AppError::internal(format!("Failed to prepare version list: {}", e)))?;
+        let rows = stmt.query_map(params![novel_id, chapter_number as i64], Self::row_to_chapter_version)
+            .map_err(|e| AppError::internal(format!("Failed to query versions: {}", e)))?;
+        let versions = rows.filter_map(|r| r.ok()).collect::<Vec<_>>();
+        Ok(versions)
+    }
+
+    pub fn get_chapter_version(&self, version_id: &str) -> Result<Option<crate::domain::version::ChapterVersion>, AppError> {
+        let result = self.conn.query_row(
+            "SELECT * FROM chapter_versions WHERE id = ?1",
+            params![version_id],
+            Self::row_to_chapter_version,
+        ).optional()
+        .map_err(|e| AppError::internal(format!("Failed to get version: {}", e)))?;
+        Ok(result)
+    }
+
+    pub fn get_latest_chapter_version(
+        &self,
+        novel_id: &str,
+        chapter_number: u32,
+    ) -> Result<Option<crate::domain::version::ChapterVersion>, AppError> {
+        let sql = "SELECT * FROM chapter_versions WHERE novel_id = ?1 AND chapter_number = ?2 ORDER BY version_number DESC LIMIT 1";
+        let result = self.conn.query_row(sql, params![novel_id, chapter_number as i64], Self::row_to_chapter_version)
+            .optional()
+        .map_err(|e| AppError::internal(format!("Failed to get latest version: {}", e)))?;
+        Ok(result)
+    }
+
+    pub fn get_next_version_number(&self, novel_id: &str, chapter_number: u32) -> Result<u32, AppError> {
+        let max: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(version_number), 0) FROM chapter_versions WHERE novel_id = ?1 AND chapter_number = ?2",
+            params![novel_id, chapter_number as i64],
+            |row| row.get(0),
+        ).map_err(|e| AppError::internal(format!("Failed to get max version number: {}", e)))?;
+        Ok((max + 1) as u32)
+    }
+
+    pub fn create_chapter_version(
+        &self,
+        req: &crate::domain::version::CreateVersionRequest,
+        version_number: u32,
+        content_hash: &str,
+        word_count: u32,
+    ) -> Result<crate::domain::version::ChapterVersion, AppError> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        
+        self.conn.execute(
+            "INSERT INTO chapter_versions (id, novel_id, chapter_number, version_number, content, content_hash, word_count, revision_reason, revision_mode, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id, req.novel_id, req.chapter_number as i64, version_number as i64, req.content, content_hash, word_count as i64, req.revision_reason, req.revision_mode.to_string(), now],
+        ).map_err(|e| AppError::internal(format!("Failed to create version: {}", e)))?;
+        
+        Ok(crate::domain::version::ChapterVersion {
+            id, novel_id: req.novel_id.clone(), chapter_number: req.chapter_number,
+            version_number, content: req.content.clone(), content_hash: content_hash.to_string(),
+            word_count, revision_reason: req.revision_reason.clone(), revision_mode: req.revision_mode.clone(),
+            created_at: now,
+        })
+    }
+}
+
+/// Count words in content (approximation)
+fn count_words(content: &str) -> u32 {
+    // Simplified word counting: Chinese chars + English words
+    let chinese_chars = content.chars().filter(|c| !c.is_ascii()).count() as u32;
+    let english_words = content.split_whitespace().count() as u32;
+    chinese_chars + english_words
 }
