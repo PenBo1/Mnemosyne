@@ -17,6 +17,16 @@ impl Default for WriterAgent {
 impl WriterAgent {
     pub fn new() -> Self { Self }
 
+    fn tool_defs(&self, ctx: &AgentContext) -> Vec<crate::infra::llm::types::ToolSpec> {
+        ctx.tools.definitions().iter().map(|d| {
+            crate::infra::llm::types::ToolSpec {
+                name: d.name.clone(),
+                description: d.description.clone(),
+                parameters: d.parameters.clone(),
+            }
+        }).collect()
+    }
+
     /// Write a chapter using two-phase approach: creative writing + state settlement
     pub async fn write_chapter(
         &self,
