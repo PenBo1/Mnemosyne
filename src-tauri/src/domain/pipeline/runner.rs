@@ -13,6 +13,7 @@ use crate::domain::agents::tool_guardrails::{ToolCallGuardrailController, ToolGu
 use crate::domain::agents::context_compressor::{ContextCompressor, CompressorConfig};
 use crate::domain::agents::error_classifier::classify_api_error;
 use crate::domain::agents::lesson_tracker::{LessonTracker, append_lessons_to_memory, load_lessons_from_memory};
+use crate::domain::agents::task_lifecycle::TaskManager;
 use crate::domain::agents::tools::{ReadFileTool, WriteFileTool, ListFilesTool, BashTool, SearchMemoryTool, ArchiveMemoryTool};
 use crate::infra::sandbox::SandboxEnforcer;
 use crate::infra::sandbox::policy::SandboxPolicy;
@@ -34,11 +35,15 @@ pub struct PipelineConfig {
 
 pub struct PipelineRunner {
     pub config: PipelineConfig,
+    pub task_manager: std::sync::Mutex<TaskManager>,
 }
 
 impl PipelineRunner {
     pub fn new(config: PipelineConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            task_manager: std::sync::Mutex::new(TaskManager::new()),
+        }
     }
 
     fn book_dir(&self, book_id: &str) -> std::path::PathBuf {
