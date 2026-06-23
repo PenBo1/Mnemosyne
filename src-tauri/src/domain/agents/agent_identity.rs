@@ -55,11 +55,12 @@ impl AgentIdentity {
         parts.join("\n\n")
     }
 
-    /// Build system prompt with memory injection.
+    /// Build system prompt with memory and skill injection.
     pub async fn build_system_prompt_with_memory(
         &self,
         memory: &tokio::sync::RwLock<crate::domain::agents::base::MemorySystem>,
         context_query: &str,
+        skill_manager: Option<&crate::infra::skill::discovery::SkillManager>,
     ) -> String {
         let mut prompt = self.build_system_prefix();
 
@@ -81,6 +82,19 @@ impl AgentIdentity {
                 "\n\n## Active Context\n{}\n",
                 main_ctx
             ));
+        }
+
+        if let Some(sm) = skill_manager {
+            let skills = sm.find_relevant(context_query, 3);
+            if !skills.is_empty() {
+                let skill_section: Vec<String> = skills.iter().map(|(s, score)| {
+                    format!("- **{}** (relevance: {:.0}%): {}", s.meta.name, score * 100.0, s.meta.description)
+                }).collect();
+                prompt.push_str(&format!(
+                    "\n\n## Available Skills\n{}\n",
+                    skill_section.join("\n")
+                ));
+            }
         }
 
         prompt
