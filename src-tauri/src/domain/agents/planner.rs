@@ -26,7 +26,10 @@ impl PlannerAgent {
     ) -> Result<PlanOutput, AppError> {
         let language = read_book_language(book_dir).unwrap_or_else(|| "zh".to_string());
         let identity = AgentIdentity::load(data_dir, "planner");
-        let identity_prefix = identity.build_system_prefix();
+        let task_query = format!("plan chapter {} of a novel", chapter_number);
+        let identity_prefix = identity.build_system_prompt_with_memory(
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+        ).await;
         let system = planner_prompts::build_system_prompt(&language, Some(&identity_prefix));
         let user = planner_prompts::build_user_message(
             book_dir,

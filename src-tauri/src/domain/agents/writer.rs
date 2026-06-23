@@ -42,7 +42,10 @@ impl WriterAgent {
 
         // Load agent identity from data directory
         let identity = AgentIdentity::load(data_dir, "writer");
-        let identity_prefix = identity.build_system_prefix();
+        let task_query = format!("write chapter {} of a novel", chapter_number);
+        let identity_prefix = identity.build_system_prompt_with_memory(
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+        ).await;
 
         // ── Phase 1: Creative writing ──
         tracing::info!(chapter = chapter_number, "Phase 1: creative writing");

@@ -27,7 +27,10 @@ impl ContinuityAuditor {
         let chapter_content = read_chapter_content(book_dir, chapter_number)?;
 
         let identity = AgentIdentity::load(data_dir, "auditor");
-        let identity_prefix = identity.build_system_prefix();
+        let task_query = format!("audit chapter {} for continuity issues", chapter_number);
+        let identity_prefix = identity.build_system_prompt_with_memory(
+            &ctx.memory, &task_query, ctx.skill_manager.as_deref(),
+        ).await;
         let system = auditor_prompts::build_system_prompt(&language, Some(&identity_prefix));
         let user = auditor_prompts::build_user_message(
             chapter_number,
