@@ -174,6 +174,16 @@ impl MemorySystem {
         self.main_context.iter().chain(self.archival_store.iter()).collect()
     }
 
+    /// Get the count of entries in main context
+    pub fn main_context_len(&self) -> usize {
+        self.main_context.len()
+    }
+
+    /// Get the count of entries in archival store
+    pub fn archival_store_len(&self) -> usize {
+        self.archival_store.len()
+    }
+
     /// Get main context as formatted string for prompt injection
     pub fn format_main_context(&self) -> String {
         self.main_context

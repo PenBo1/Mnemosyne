@@ -167,8 +167,11 @@ impl MemoryStore {
 
     pub async fn stats(&self, book_id: &str) -> (usize, usize) {
         let books = self.books.read().await;
-        if let Some(_memory) = books.get(book_id) {
-            (0, 0) // TODO: expose counts from MemorySystem
+        if let Some(memory) = books.get(book_id) {
+            let mem = memory.read().await;
+            let main = mem.main_context_len();
+            let archival = mem.archival_store_len();
+            (main, archival)
         } else {
             (0, 0)
         }
