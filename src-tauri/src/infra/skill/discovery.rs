@@ -174,6 +174,42 @@ impl SkillManager {
         Ok(())
     }
 
+    pub fn score_relevance(&self, task_description: &str, skill: &Skill) -> f64 {
+        let task_lower = task_description.to_lowercase();
+        let mut score = 0.0;
+
+        if task_lower.contains(&skill.meta.name.to_lowercase()) {
+            score += 0.4;
+        }
+
+        let desc_words: Vec<&str> = skill.meta.description.split_whitespace().collect();
+        let task_words: Vec<&str> = task_lower.split_whitespace().collect();
+        let overlap = desc_words.iter().filter(|w| task_words.contains(w)).count();
+        score += (overlap as f64 / desc_words.len().max(1) as f64) * 0.3;
+
+        for tag in &skill.meta.tags {
+            if task_lower.contains(&tag.to_lowercase()) {
+                score += 0.1;
+            }
+        }
+
+        if task_lower.contains(&skill.meta.category.to_lowercase()) {
+            score += 0.2;
+        }
+
+        score
+    }
+
+    pub fn find_relevant(&self, task_description: &str, top_k: usize) -> Vec<(&Skill, f64)> {
+        let mut scored: Vec<(&Skill, f64)> = self.skills.values()
+            .map(|s| (s, self.score_relevance(task_description, s)))
+            .filter(|(_, score)| *score > 0.1)
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.into_iter().take(top_k).collect()
+    }
+
     pub fn build_index(&self) -> String {
         if self.skills.is_empty() {
             return String::new();
