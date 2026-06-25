@@ -54,9 +54,11 @@ const WORKSPACE_SUB_ITEMS: { id: WorkspacePage; labelKey: string; icon: typeof F
   { id: "research", labelKey: "research", icon: BookmarkIcon },
 ];
 
-const TOOLS_SUB_ITEMS: { id: "novels" | "trends"; labelKey: string; icon: typeof BookOpenIcon }[] = [
+const TOOLS_SUB_ITEMS: { id: "novels" | "trends" | "kanban" | "loops"; labelKey: string; icon: typeof BookOpenIcon }[] = [
   { id: "novels", labelKey: "novels", icon: BookOpenIcon },
   { id: "trends", labelKey: "scanTrends", icon: TrendingUpIcon },
+  { id: "kanban", labelKey: "kanban", icon: LayersIcon },
+  { id: "loops", labelKey: "loops", icon: CpuIcon },
 ];
 
 const SETTINGS_NAV_ITEMS: { id: SettingsTab; labelKey: string; icon: typeof GlobeIcon }[] = [

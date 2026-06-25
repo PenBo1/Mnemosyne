@@ -13,6 +13,8 @@ import { KnowledgePage } from "@/pages/KnowledgePage";
 import { WikiPage } from "@/pages/WikiPage";
 import { VersionPage } from "@/pages/VersionPage";
 import MainAgentPage from "@/pages/MainAgentPage";
+import KanbanPage from "@/pages/KanbanPage";
+import LoopPage from "@/pages/LoopPage";
 import { OverviewPage } from "@/pages/novel/OverviewPage";
 import { CharactersPage } from "@/pages/novel/CharactersPage";
 import { WorldbuildingPage } from "@/pages/novel/WorldbuildingPage";
@@ -79,6 +81,8 @@ export function Router() {
         {currentPage === "knowledge" && <KnowledgePage />}
         {currentPage === "wiki" && <WikiPage novelId="default" />}
         {currentPage === "version" && <VersionPage novelId="default" />}
+        {currentPage === "kanban" && <KanbanPage />}
+        {currentPage === "loops" && <LoopPage />}
       </div>
     </ScrollArea>
   );
