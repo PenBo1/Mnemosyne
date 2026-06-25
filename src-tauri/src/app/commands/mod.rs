@@ -22,3 +22,5 @@ pub mod ai_logs;
 pub mod wiki;
 pub mod version;
 pub mod main_agent;
+pub mod kanban;
+pub mod loop_engine;

@@ -1,7 +1,7 @@
 export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources";
 
 export type WorkspacePage = "overview" | "characters" | "worldbuilding" | "plot" | "timeline" | "research";
-export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version";
+export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version" | "kanban" | "loops";
 
 // ── Workspace ──────────────────────────────────────────────
 
@@ -608,4 +608,223 @@ export interface DiffStats {
 export interface LineDiffResult {
   hunks: DiffHunk[];
   stats: DiffStats;
+}
+
+// ── Kanban ─────────────────────────────────────────────────
+
+export type KanbanTaskStatus = "plan" | "compose" | "write" | "audit" | "revise" | "done" | "cancelled";
+export type KanbanPriority = "low" | "medium" | "high" | "urgent";
+
+export interface KanbanTask {
+  id: string;
+  novel_id: string;
+  title: string;
+  description: string;
+  status: KanbanTaskStatus;
+  priority: KanbanPriority;
+  assigned_agent: string | null;
+  chapter_id: string | null;
+  parent_task_id: string | null;
+  tags: string[];
+  sort_order: number;
+  due_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateKanbanTaskRequest {
+  title: string;
+  description?: string;
+  status?: KanbanTaskStatus;
+  priority?: KanbanPriority;
+  assigned_agent?: string;
+  chapter_id?: string;
+  parent_task_id?: string;
+  tags?: string[];
+  due_date?: string;
+}
+
+export interface UpdateKanbanTaskRequest {
+  title?: string;
+  description?: string;
+  status?: KanbanTaskStatus;
+  priority?: KanbanPriority;
+  assigned_agent?: string;
+  chapter_id?: string;
+  parent_task_id?: string;
+  sort_order?: number;
+  due_date?: string;
+  tags?: string[];
+}
+
+export interface KanbanColumn {
+  id: string;
+  novel_id: string;
+  name: string;
+  status_key: string;
+  color: string;
+  sort_order: number;
+  wip_limit: number | null;
+  created_at: string;
+}
+
+export interface CreateKanbanColumnRequest {
+  name: string;
+  status_key: string;
+  color?: string;
+  sort_order?: number;
+  wip_limit?: number;
+}
+
+export interface UpdateKanbanColumnRequest {
+  name?: string;
+  color?: string;
+  sort_order?: number;
+  wip_limit?: number;
+}
+
+export interface KanbanState {
+  tasks: KanbanTask[];
+  columns: KanbanColumn[];
+  loading: boolean;
+  error: string | null;
+  loadTasks: (novelId: string) => Promise<void>;
+  loadColumns: (novelId: string) => Promise<void>;
+  createTask: (novelId: string, req: CreateKanbanTaskRequest) => Promise<KanbanTask>;
+  updateTask: (taskId: string, req: UpdateKanbanTaskRequest) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  moveTask: (taskId: string, newStatus: KanbanTaskStatus) => Promise<void>;
+  reorderTasks: (taskIds: string[]) => Promise<void>;
+}
+
+// ── Loop Engineering ───────────────────────────────────────
+
+export type LoopStatus = "idle" | "running" | "paused" | "error";
+export type ReadinessLevel = "L0" | "L1" | "L2" | "L3";
+export type LoopRunStatus = "success" | "partial" | "failed" | "escalated";
+export type RiskLevel = "low" | "medium" | "high";
+
+export interface LoopState {
+  id: string;
+  novel_id: string;
+  pattern_id: string;
+  status: LoopStatus;
+  readiness_level: ReadinessLevel;
+  state_payload: Record<string, unknown>;
+  config: LoopConfig;
+  token_usage_today: number;
+  token_cap_daily: number;
+  last_run_at: string | null;
+  last_run_result: LoopRunResult | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoopConfig {
+  cadence: string;
+  denylist: string[];
+  human_gates: string[];
+  max_retries: number;
+}
+
+export interface LoopRunResult {
+  findings: string[];
+  actions: string[];
+  escalations: string[];
+}
+
+export interface CreateLoopStateRequest {
+  pattern_id: string;
+  readiness_level?: ReadinessLevel;
+  config?: Partial<LoopConfig>;
+  token_cap_daily?: number;
+}
+
+export interface UpdateLoopStateRequest {
+  status?: LoopStatus;
+  readiness_level?: ReadinessLevel;
+  config?: Partial<LoopConfig>;
+  token_cap_daily?: number;
+}
+
+export interface LoopRunLog {
+  id: string;
+  loop_state_id: string;
+  pattern_id: string;
+  status: LoopRunStatus;
+  phase_results: PhaseResult[];
+  tokens_used: number;
+  duration_ms: number;
+  findings: string[];
+  actions_taken: string[];
+  escalations: string[];
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface PhaseResult {
+  phase: string;
+  status: string;
+  output: string;
+  duration_ms: number;
+}
+
+export interface LoopPattern {
+  id: string;
+  name: string;
+  description: string;
+  goal: string;
+  cadence: string;
+  risk_level: RiskLevel;
+  phases: PhaseDef[];
+  human_gates: string[];
+  cost_config: CostConfig;
+  skills_required: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PhaseDef {
+  name: string;
+  description: string;
+  type: "discover" | "deliver" | "verify" | "persist" | "schedule";
+}
+
+export interface CostConfig {
+  tokens_noop: number;
+  tokens_report: number;
+  tokens_action: number;
+  daily_cap: number;
+  early_exit_required: boolean;
+}
+
+export interface UpsertLoopPatternRequest {
+  name: string;
+  description?: string;
+  goal?: string;
+  cadence?: string;
+  risk_level?: RiskLevel;
+  phases?: PhaseDef[];
+  human_gates?: string[];
+  cost_config?: Partial<CostConfig>;
+  skills_required?: string[];
+  state_schema?: Record<string, unknown>;
+  is_active?: boolean;
+}
+
+export interface LoopEngineState {
+  states: LoopState[];
+  patterns: LoopPattern[];
+  runLogs: LoopRunLog[];
+  loading: boolean;
+  error: string | null;
+  loadStates: (novelId: string) => Promise<void>;
+  loadPatterns: () => Promise<void>;
+  createState: (novelId: string, req: CreateLoopStateRequest) => Promise<LoopState>;
+  deleteState: (stateId: string) => Promise<void>;
+  runCycle: (stateId: string) => Promise<LoopRunLog>;
+  pauseLoop: (stateId: string) => Promise<void>;
+  resumeLoop: (stateId: string) => Promise<void>;
+  loadRunLogs: (stateId: string) => Promise<void>;
 }
