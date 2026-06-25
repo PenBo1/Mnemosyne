@@ -1,6 +1,7 @@
 use tauri::State;
 use crate::errors::{AppError, IpcResponse};
 use crate::domain::wiki::{WikiEntry, WikiCategory, WikiGraphView, WikiEntityLink, CreateWikiEntryRequest, UpdateWikiEntryRequest, CreateWikiLinkRequest};
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 
 /// List all wiki entries for a novel
@@ -10,11 +11,11 @@ pub async fn wiki_list_entries(
     novel_id: String,
     category: Option<String>,
 ) -> Result<IpcResponse<Vec<WikiEntry>>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
     tracing::debug!(novel_id = %novel_id, category = ?category, "wiki_list_entries");
-    let db = state.db.lock().await;
     
     let cat = category.and_then(|c| c.parse::<WikiCategory>().ok());
-    let entries = db.list_wiki_entries(&novel_id, cat.as_ref())?;
+    let entries = state.db.list_wiki_entries(&novel_id, cat.as_ref()).await?;
     
     tracing::debug!(count = entries.len(), "Wiki entries listed");
     Ok(IpcResponse::ok(entries))
@@ -26,10 +27,10 @@ pub async fn wiki_get_entry(
     state: State<'_, AppState>,
     entry_id: String,
 ) -> Result<IpcResponse<WikiEntry>, AppError> {
+    validate_id_component(&entry_id, "entry_id")?;
     tracing::debug!(entry_id = %entry_id, "wiki_get_entry");
-    let db = state.db.lock().await;
     
-    let entry = db.get_wiki_entry(&entry_id)?
+    let entry = state.db.get_wiki_entry(&entry_id).await?
         .ok_or_else(|| AppError::not_found("Wiki entry not found"))?;
     
     Ok(IpcResponse::ok(entry))
@@ -47,6 +48,7 @@ pub async fn wiki_create_entry(
     source_chapter: Option<u32>,
     importance: Option<u32>,
 ) -> Result<IpcResponse<WikiEntry>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
     tracing::info!(novel_id = %novel_id, title = %title, "wiki_create_entry");
     
     // Validate
@@ -60,7 +62,6 @@ pub async fn wiki_create_entry(
     let category_parsed = category.parse::<WikiCategory>()
         .map_err(|e| AppError::invalid_input(e))?;
     
-    let db = state.db.lock().await;
     let request = CreateWikiEntryRequest {
         novel_id,
         title,
@@ -71,7 +72,7 @@ pub async fn wiki_create_entry(
         importance,
     };
     
-    let entry = db.create_wiki_entry(&request)?;
+    let entry = state.db.create_wiki_entry(&request).await?;
     tracing::info!(entry_id = %entry.id, "Wiki entry created");
     Ok(IpcResponse::created(entry))
 }
@@ -87,6 +88,7 @@ pub async fn wiki_update_entry(
     tags: Option<Vec<String>>,
     importance: Option<u32>,
 ) -> Result<IpcResponse<WikiEntry>, AppError> {
+    validate_id_component(&entry_id, "entry_id")?;
     tracing::info!(entry_id = %entry_id, "wiki_update_entry");
     
     // Validate title if provided
@@ -101,7 +103,6 @@ pub async fn wiki_update_entry(
     
     let category_parsed = category.and_then(|c| c.parse::<WikiCategory>().ok());
     
-    let db = state.db.lock().await;
     let request = UpdateWikiEntryRequest {
         title,
         content,
@@ -110,7 +111,7 @@ pub async fn wiki_update_entry(
         importance,
     };
     
-    let entry = db.update_wiki_entry(&entry_id, &request)?;
+    let entry = state.db.update_wiki_entry(&entry_id, &request).await?;
     Ok(IpcResponse::ok(entry))
 }
 
@@ -120,10 +121,10 @@ pub async fn wiki_delete_entry(
     state: State<'_, AppState>,
     entry_id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    validate_id_component(&entry_id, "entry_id")?;
     tracing::info!(entry_id = %entry_id, "wiki_delete_entry");
-    let db = state.db.lock().await;
     
-    let deleted = db.delete_wiki_entry(&entry_id)?;
+    let deleted = state.db.delete_wiki_entry(&entry_id).await?;
     tracing::info!(entry_id = %entry_id, deleted, "Wiki entry deleted");
     Ok(IpcResponse::ok(deleted))
 }
@@ -136,11 +137,11 @@ pub async fn wiki_get_graph(
     filter_category: Option<String>,
     min_importance: Option<u32>,
 ) -> Result<IpcResponse<WikiGraphView>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
     tracing::debug!(novel_id = %novel_id, "wiki_get_graph");
-    let db = state.db.lock().await;
     
     let cat = filter_category.and_then(|c| c.parse::<WikiCategory>().ok());
-    let view = db.get_wiki_graph_view(&novel_id, cat.as_ref(), min_importance)?;
+    let view = state.db.get_wiki_graph_view(&novel_id, cat.as_ref(), min_importance).await?;
     
     tracing::debug!(nodes = view.nodes.len(), edges = view.edges.len(), "Wiki graph view generated");
     Ok(IpcResponse::ok(view))
@@ -158,6 +159,9 @@ pub async fn wiki_create_link(
     weight: Option<u32>,
     source_chapter: Option<u32>,
 ) -> Result<IpcResponse<WikiEntityLink>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
+    validate_id_component(&source_entry_id, "source_entry_id")?;
+    validate_id_component(&target_entry_id, "target_entry_id")?;
     tracing::info!(novel_id = %novel_id, source = %source_entry_id, target = %target_entry_id, "wiki_create_link");
     
     // Validate
@@ -168,7 +172,6 @@ pub async fn wiki_create_link(
         return Err(AppError::invalid_input("Relation type too long (max 100 chars)"));
     }
     
-    let db = state.db.lock().await;
     let request = CreateWikiLinkRequest {
         novel_id,
         source_entry_id,
@@ -179,7 +182,7 @@ pub async fn wiki_create_link(
         source_chapter,
     };
     
-    let link = db.create_wiki_link(&request)?;
+    let link = state.db.create_wiki_link(&request).await?;
     tracing::info!(link_id = %link.id, "Wiki link created");
     Ok(IpcResponse::created(link))
 }
@@ -190,10 +193,10 @@ pub async fn wiki_delete_link(
     state: State<'_, AppState>,
     link_id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    validate_id_component(&link_id, "link_id")?;
     tracing::info!(link_id = %link_id, "wiki_delete_link");
-    let db = state.db.lock().await;
     
-    let deleted = db.delete_wiki_link(&link_id)?;
+    let deleted = state.db.delete_wiki_link(&link_id).await?;
     tracing::info!(link_id = %link_id, deleted, "Wiki link deleted");
     Ok(IpcResponse::ok(deleted))
 }
@@ -206,14 +209,14 @@ pub async fn wiki_search(
     query: String,
     limit: Option<u32>,
 ) -> Result<IpcResponse<Vec<WikiEntry>>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
     tracing::debug!(novel_id = %novel_id, query = %query, "wiki_search");
     
     if query.trim().is_empty() {
         return Ok(IpcResponse::ok(Vec::new()));
     }
     
-    let db = state.db.lock().await;
-    let entries = db.search_wiki_entries(&novel_id, &query, limit)?;
+    let entries = state.db.search_wiki_entries(&novel_id, &query, limit).await?;
     
     tracing::debug!(count = entries.len(), "Wiki search results");
     Ok(IpcResponse::ok(entries))

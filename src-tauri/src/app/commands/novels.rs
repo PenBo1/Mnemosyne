@@ -1,6 +1,7 @@
 use tauri::State;
 use crate::errors::{IpcResponse, AppError};
 use crate::infra::db::models::{CreateNovelRequest, UpdateNovelRequest};
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 
 #[tauri::command]
@@ -10,9 +11,19 @@ pub async fn create_novel(
     title: String,
     genre: String,
 ) -> Result<IpcResponse<crate::infra::db::models::Novel>, AppError> {
+    validate_id_component(&workspace_id, "workspace_id")?;
+    if title.trim().is_empty() {
+        return Err(AppError::invalid_input("Novel title cannot be empty"));
+    }
+    if title.len() > 500 {
+        return Err(AppError::invalid_input("Novel title too long (max 500 chars)"));
+    }
+    if genre.len() > 100 {
+        return Err(AppError::invalid_input("Genre too long (max 100 chars)"));
+    }
+
     tracing::info!(workspace_id = %workspace_id, title = %title, genre = %genre, "create_novel");
-    let db = state.db.lock().await;
-    let novel = db.create_novel(&CreateNovelRequest {
+    let novel = state.db.create_novel(&CreateNovelRequest {
         workspace_id,
         title,
         genre,
@@ -20,7 +31,7 @@ pub async fn create_novel(
         language: "zh".to_string(),
         target_chapters: 100,
         chapter_words: 3000,
-    })?;
+    }).await?;
     tracing::info!(novel_id = %novel.id, "Novel created");
     Ok(IpcResponse::created(novel))
 }
@@ -32,15 +43,25 @@ pub async fn update_novel(
     title: String,
     genre: String,
 ) -> Result<IpcResponse<crate::infra::db::models::Novel>, AppError> {
-    let db = state.db.lock().await;
-    let novel = db.update_novel(&id, &UpdateNovelRequest {
+    validate_id_component(&id, "novel_id")?;
+    if title.trim().is_empty() {
+        return Err(AppError::invalid_input("Novel title cannot be empty"));
+    }
+    if title.len() > 500 {
+        return Err(AppError::invalid_input("Novel title too long (max 500 chars)"));
+    }
+    if genre.len() > 100 {
+        return Err(AppError::invalid_input("Genre too long (max 100 chars)"));
+    }
+
+    let novel = state.db.update_novel(&id, &UpdateNovelRequest {
         title: Some(title),
         genre: Some(genre),
         platform: None,
         language: None,
         target_chapters: None,
         chapter_words: None,
-    })?;
+    }).await?;
     Ok(IpcResponse::ok(novel))
 }
 
@@ -49,8 +70,7 @@ pub async fn list_novels(
     state: State<'_, AppState>,
 ) -> Result<IpcResponse<Vec<crate::infra::db::models::Novel>>, AppError> {
     tracing::debug!("list_novels");
-    let db = state.db.lock().await;
-    let novels = db.list_novels()?;
+    let novels = state.db.list_novels().await?;
     tracing::debug!(count = novels.len(), "Novels listed");
     Ok(IpcResponse::ok(novels))
 }
@@ -60,9 +80,9 @@ pub async fn delete_novel(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    validate_id_component(&id, "novel_id")?;
     tracing::info!(novel_id = %id, "delete_novel");
-    let db = state.db.lock().await;
-    let deleted = db.delete_novel(&id)?;
+    let deleted = state.db.delete_novel(&id).await?;
     tracing::info!(novel_id = %id, deleted, "Novel deleted");
     Ok(IpcResponse::ok(deleted))
 }

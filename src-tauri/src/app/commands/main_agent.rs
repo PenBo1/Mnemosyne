@@ -1,12 +1,13 @@
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use crate::errors::{AppError, IpcResponse};
+use crate::app::state::MainAgentSessionState;
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 use tauri::State;
 use tauri::Emitter;
-use crate::domain::agents::main_agent::{AgentStatus, ProgressUpdate, ConfirmationRequest, ConfirmationResponse};
+use crate::domain::agents::main_agent::{AgentStatus, ConfirmationRequest, ConfirmationResponse};
 
-/// Agent progress event emitted to frontend
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum MainAgentEvent {
@@ -34,29 +35,20 @@ pub enum MainAgentEvent {
     },
 }
 
-/// Per-session main agent state
-struct MainAgentSessionState {
-    progress_rx: mpsc::UnboundedReceiver<ProgressUpdate>,
-    confirmation_tx: mpsc::UnboundedSender<ConfirmationResponse>,
-    cancelled: Arc<tokio::sync::RwLock<bool>>,
-}
-
-static MAIN_AGENT_STATES: std::sync::OnceLock<Mutex<std::collections::HashMap<String, MainAgentSessionState>>> =
-    std::sync::OnceLock::new();
-
-fn main_agent_states() -> &'static Mutex<std::collections::HashMap<String, MainAgentSessionState>> {
-    MAIN_AGENT_STATES.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-/// Start autonomous execution of a user goal
 #[tauri::command]
 pub async fn main_agent_execute(
     session_id: String,
     goal: String,
-    state: State<'_, Arc<AppState>>,
+    state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<IpcResponse<String>, AppError> {
-    // Get provider and model from registry
+    validate_id_component(&session_id, "session_id")?;
+    if goal.trim().is_empty() {
+        return Err(AppError::invalid_input("Goal cannot be empty"));
+    }
+    if goal.len() > 50_000 {
+        return Err(AppError::invalid_input("Goal too long (max 50000 chars)"));
+    }
     let (provider, model) = {
         let registry = state.provider_registry.lock().await;
         let provider = registry.default()?;
@@ -64,14 +56,13 @@ pub async fn main_agent_execute(
         (provider, model)
     };
 
-    // Create channels
     let (progress_tx, progress_rx) = mpsc::unbounded_channel();
     let (confirmation_req_tx, confirmation_req_rx) = mpsc::unbounded_channel::<ConfirmationRequest>();
     let (confirmation_resp_tx, confirmation_resp_rx) = mpsc::unbounded_channel::<ConfirmationResponse>();
 
-    // Store session state
+    // Store session state with the real progress_rx
     {
-        let mut states = main_agent_states().lock().await;
+        let mut states = state.main_agent_states.lock().await;
         states.insert(session_id.clone(), MainAgentSessionState {
             progress_rx,
             confirmation_tx: confirmation_resp_tx,
@@ -79,7 +70,17 @@ pub async fn main_agent_execute(
         });
     }
 
-    // Build AgentContext
+    // Extract the progress_rx back out for the spawned listener task
+    let progress_rx = {
+        let mut states = state.main_agent_states.lock().await;
+        states.get_mut(&session_id).map(|s| {
+            std::mem::replace(&mut s.progress_rx, mpsc::unbounded_channel().1)
+        })
+    }.unwrap_or_else(|| {
+        let (_, rx) = mpsc::unbounded_channel();
+        rx
+    });
+
     let work_dir = state.data_dir.root().to_path_buf();
 
     let memory = Arc::new(tokio::sync::RwLock::new(
@@ -118,46 +119,38 @@ pub async fn main_agent_execute(
         user_profile: None,
     };
 
-    // Spawn progress listener — forward updates to frontend
+    // Spawn progress listener
     let app_clone = app.clone();
     let sid_clone = session_id.clone();
-    let states_ref = main_agent_states();
     tokio::spawn(async move {
-        let progress_rx = {
-            let mut states = states_ref.lock().await;
-            states.remove(&sid_clone).map(|s| s.progress_rx)
-        };
-
-        if let Some(mut rx) = progress_rx {
-            while let Some(update) = rx.recv().await {
-                match update.status {
-                    AgentStatus::Completed => {
-                        let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Completed {
-                            session_id: sid_clone.clone(),
-                            result: update.message,
-                        });
-                    }
-                    AgentStatus::Failed => {
-                        let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Failed {
-                            session_id: sid_clone.clone(),
-                            error: update.message,
-                        });
-                    }
-                    _ => {
-                        let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Progress {
-                            session_id: sid_clone.clone(),
-                            status: update.status,
-                            current_step: update.current_step,
-                            total_steps: update.total_steps,
-                            message: update.message,
-                        });
-                    }
+        let mut rx = progress_rx;
+        while let Some(update) = rx.recv().await {
+            match update.status {
+                AgentStatus::Completed => {
+                    let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Completed {
+                        session_id: sid_clone.clone(),
+                        result: update.message,
+                    });
+                }
+                AgentStatus::Failed => {
+                    let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Failed {
+                        session_id: sid_clone.clone(),
+                        error: update.message,
+                    });
+                }
+                _ => {
+                    let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Progress {
+                        session_id: sid_clone.clone(),
+                        status: update.status,
+                        current_step: update.current_step,
+                        total_steps: update.total_steps,
+                        message: update.message,
+                    });
                 }
             }
         }
     });
 
-    // Create and run agent loop
     let agent = crate::domain::agents::main_agent::AgentLoop::new(
         ctx,
         progress_tx,
@@ -165,7 +158,7 @@ pub async fn main_agent_execute(
         confirmation_resp_rx,
     );
 
-    // Spawn confirmation listener — forward requests to frontend
+    // Spawn confirmation listener
     let app_clone2 = app.clone();
     let sid_clone2 = session_id.clone();
     tokio::spawn(async move {
@@ -204,15 +197,15 @@ pub async fn main_agent_execute(
     Ok(IpcResponse::ok("Execution started".to_string()))
 }
 
-/// Respond to a confirmation request
 #[tauri::command]
 pub async fn main_agent_respond(
     session_id: String,
     approved: bool,
     modified_args: Option<String>,
-    state: State<'_, Arc<AppState>>,
+    state: State<'_, AppState>,
 ) -> Result<IpcResponse<String>, AppError> {
-    let states = main_agent_states().lock().await;
+    validate_id_component(&session_id, "session_id")?;
+    let states = state.main_agent_states.lock().await;
     let session = states.get(&session_id)
         .ok_or_else(|| AppError::not_found("Session not found"))?;
 
@@ -230,22 +223,21 @@ pub async fn main_agent_respond(
     Ok(IpcResponse::ok("Response sent".to_string()))
 }
 
-/// Get active main agent sessions
 #[tauri::command]
 pub async fn main_agent_list_sessions(
-    _state: State<'_, Arc<AppState>>,
+    state: State<'_, AppState>,
 ) -> Result<IpcResponse<Vec<String>>, AppError> {
-    let states = main_agent_states().lock().await;
+    let states = state.main_agent_states.lock().await;
     Ok(IpcResponse::ok(states.keys().cloned().collect()))
 }
 
-/// Cancel a running main agent execution
 #[tauri::command]
 pub async fn main_agent_cancel(
     session_id: String,
-    _state: State<'_, Arc<AppState>>,
+    state: State<'_, AppState>,
 ) -> Result<IpcResponse<String>, AppError> {
-    let states = main_agent_states().lock().await;
+    validate_id_component(&session_id, "session_id")?;
+    let states = state.main_agent_states.lock().await;
     if let Some(session) = states.get(&session_id) {
         let mut cancelled = session.cancelled.write().await;
         *cancelled = true;

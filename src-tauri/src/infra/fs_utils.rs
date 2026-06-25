@@ -55,6 +55,37 @@ pub fn ensure_dir(path: &Path) -> Result<(), AppError> {
         .map_err(|e| AppError::internal(format!("Failed to create directory {}: {}", path.display(), e)))
 }
 
+/// Validate that a user-supplied component (book_id, chapter file prefix, etc.)
+/// contains no path separators or traversal sequences.
+pub fn validate_id_component(component: &str, field_name: &str) -> Result<(), AppError> {
+    if component.is_empty() {
+        return Err(AppError::invalid_input(format!("{} cannot be empty", field_name)));
+    }
+    if component.len() > 255 {
+        return Err(AppError::invalid_input(format!("{} too long (max 255 chars)", field_name)));
+    }
+    if component.contains('/') || component.contains('\\') || component.contains("..") {
+        return Err(AppError::path_traversal());
+    }
+    Ok(())
+}
+
+/// Validate that a resolved path is within an allowed root directory.
+/// Returns the canonicalized path on success.
+pub fn validate_path_within_root(
+    path: &Path,
+    root: &Path,
+    _field_name: &str,
+) -> Result<std::path::PathBuf, AppError> {
+    let canonical_root = root.canonicalize()
+        .map_err(|e| AppError::internal(format!("Failed to canonicalize root: {}", e)))?;
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(AppError::path_traversal());
+    }
+    Ok(canonical_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,10 +101,68 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "hello world");
 
-        // Overwrite
         atomic_write(&path, b"updated").unwrap();
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "updated");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_validate_id_component_ok() {
+        assert!(validate_id_component("abc-123", "test").is_ok());
+        assert!(validate_id_component("uuid-v4-format", "test").is_ok());
+        assert!(validate_id_component("a", "test").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_component_empty() {
+        assert!(validate_id_component("", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_component_too_long() {
+        let long = "a".repeat(256);
+        assert!(validate_id_component(&long, "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_component_slash() {
+        assert!(validate_id_component("a/b", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_component_backslash() {
+        assert!(validate_id_component("a\\b", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_component_dotdot() {
+        assert!(validate_id_component("a..b", "test").is_err());
+        assert!(validate_id_component("../etc/passwd", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_path_within_root_ok() {
+        let dir = std::env::temp_dir().join("mnemosyne_test_pathval");
+        let _ = fs::create_dir_all(&dir);
+        let sub = dir.join("subdir");
+        let _ = fs::create_dir_all(&sub);
+
+        let result = validate_path_within_root(&sub, &dir, "test");
+        assert!(result.is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_validate_path_within_root_traversal() {
+        let dir = std::env::temp_dir().join("mnemosyne_test_pathval2");
+        let _ = fs::create_dir_all(&dir);
+        let outside = dir.join("..").join("other");
+
+        let result = validate_path_within_root(&outside, &dir, "test");
+        assert!(result.is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

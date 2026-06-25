@@ -150,3 +150,165 @@ pub struct UpdateNovelRequest {
     pub target_chapters: Option<i64>,
     pub chapter_words: Option<i64>,
 }
+
+// ── Kanban ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KanbanTask {
+    pub id: String,
+    pub novel_id: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    pub assigned_agent: Option<String>,
+    pub chapter_id: Option<String>,
+    pub parent_task_id: Option<String>,
+    pub tags: Vec<String>,
+    pub sort_order: i32,
+    pub due_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateKanbanTaskRequest {
+    pub title: String,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub assigned_agent: Option<String>,
+    pub chapter_id: Option<String>,
+    pub parent_task_id: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub due_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateKanbanTaskRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub assigned_agent: Option<String>,
+    pub chapter_id: Option<String>,
+    pub parent_task_id: Option<String>,
+    pub sort_order: Option<i32>,
+    pub due_date: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KanbanColumn {
+    pub id: String,
+    pub novel_id: String,
+    pub name: String,
+    pub status_key: String,
+    pub color: String,
+    pub sort_order: i32,
+    pub wip_limit: Option<i32>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateKanbanColumnRequest {
+    pub name: String,
+    pub status_key: String,
+    pub color: Option<String>,
+    pub sort_order: Option<i32>,
+    pub wip_limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateKanbanColumnRequest {
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub sort_order: Option<i32>,
+    pub wip_limit: Option<i32>,
+}
+
+// ── Loop Engineering ──────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopState {
+    pub id: String,
+    pub novel_id: String,
+    pub pattern_id: String,
+    pub status: String,
+    pub readiness_level: String,
+    pub state_payload: serde_json::Value,
+    pub config: serde_json::Value,
+    pub token_usage_today: i64,
+    pub token_cap_daily: i64,
+    pub last_run_at: Option<String>,
+    pub last_run_result: Option<serde_json::Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLoopStateRequest {
+    pub pattern_id: String,
+    pub readiness_level: Option<String>,
+    pub config: Option<serde_json::Value>,
+    pub token_cap_daily: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateLoopStateRequest {
+    pub status: Option<String>,
+    pub readiness_level: Option<String>,
+    pub config: Option<serde_json::Value>,
+    pub token_cap_daily: Option<i64>,
+    pub last_run_at: Option<String>,
+    pub last_run_result: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopRunLog {
+    pub id: String,
+    pub loop_state_id: String,
+    pub pattern_id: String,
+    pub status: String,
+    pub phase_results: Vec<serde_json::Value>,
+    pub tokens_used: i64,
+    pub duration_ms: i64,
+    pub findings: Vec<String>,
+    pub actions_taken: Vec<String>,
+    pub escalations: Vec<String>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopPattern {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub goal: String,
+    pub cadence: String,
+    pub risk_level: String,
+    pub phases: Vec<serde_json::Value>,
+    pub human_gates: Vec<String>,
+    pub cost_config: serde_json::Value,
+    pub skills_required: Vec<String>,
+    pub state_schema: serde_json::Value,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLoopPatternRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub goal: Option<String>,
+    pub cadence: Option<String>,
+    pub risk_level: Option<String>,
+    pub phases: Option<Vec<serde_json::Value>>,
+    pub human_gates: Option<Vec<String>>,
+    pub cost_config: Option<serde_json::Value>,
+    pub skills_required: Option<Vec<String>>,
+    pub state_schema: Option<serde_json::Value>,
+    pub is_active: Option<bool>,
+}

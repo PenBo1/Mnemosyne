@@ -1,5 +1,6 @@
 pub mod context_filter;
 pub mod context_assembly;
+pub mod text_utils;
 pub mod governed_context;
 pub mod governed_working_set;
 pub mod memory_retrieval;

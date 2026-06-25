@@ -440,7 +440,7 @@ async fn handle_user_input(
     // Save user message to DB
     {
         let db = config.db.lock().await;
-        if let Err(e) = db.create_message(chat_session_id, "user", content, None, None) {
+        if let Err(e) = db.create_message(chat_session_id, "user", content, None, None).await {
             tracing::error!(error = %e, "Failed to save user message");
         }
     }
@@ -459,7 +459,7 @@ async fn handle_user_input(
     // Load history
     let all_messages: Vec<Message> = {
         let db = config.db.lock().await;
-        let db_messages = db.list_messages(chat_session_id)
+        let db_messages = db.list_messages(chat_session_id).await
             .map_err(|e| AppError::internal(format!("Failed to load messages: {}", e)))?;
         let start = db_messages.len().saturating_sub(50);
         db_messages[start..].iter().map(|m| {
@@ -516,16 +516,16 @@ async fn handle_user_input(
     // Save final response
     if !text_buf.is_empty() {
         let db = config.db.lock().await;
-        let _ = db.create_message(chat_session_id, "assistant", &text_buf, None, None);
+        let _ = db.create_message(chat_session_id, "assistant", &text_buf, None, None).await;
     }
 
     // Update token counts
     {
         let db = config.db.lock().await;
-        if let Ok(Some(mut session)) = db.get_session(chat_session_id) {
+        if let Ok(Some(mut session)) = db.get_session(chat_session_id).await {
             session.input_tokens += total_input;
             session.output_tokens += total_output;
-            let _ = db.update_session(&session);
+            let _ = db.update_session(&session).await;
         }
     }
 
@@ -553,7 +553,7 @@ async fn handle_write_next_chapter(
 
     let workspace_path = {
         let db = config.db.lock().await;
-        let ws = db.get_workspace(&payload.workspace_id)?
+        let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
         std::path::PathBuf::from(ws.path)
     };
@@ -617,7 +617,7 @@ async fn handle_create_book(
 
     let workspace_path = {
         let db = config.db.lock().await;
-        let ws = db.get_workspace(&payload.workspace_id)?
+        let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
         std::path::PathBuf::from(ws.path)
     };
@@ -649,7 +649,7 @@ async fn handle_create_book(
             language: "zh".to_string(),
             target_chapters: 100,
             chapter_words: 3000,
-        })?;
+        }).await?;
     }
 
     let _ = tx_event.send(Event::Progress(
@@ -674,7 +674,7 @@ async fn handle_plan_chapter(
 
     let workspace_path = {
         let db = config.db.lock().await;
-        let ws = db.get_workspace(&payload.workspace_id)?
+        let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
         std::path::PathBuf::from(ws.path)
     };
@@ -735,7 +735,7 @@ async fn handle_audit_chapter(
 
     let workspace_path = {
         let db = config.db.lock().await;
-        let ws = db.get_workspace(&payload.workspace_id)?
+        let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
         std::path::PathBuf::from(ws.path)
     };
@@ -796,7 +796,7 @@ async fn handle_revise_chapter(
 
     let workspace_path = {
         let db = config.db.lock().await;
-        let ws = db.get_workspace(&payload.workspace_id)?
+        let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
         std::path::PathBuf::from(ws.path)
     };

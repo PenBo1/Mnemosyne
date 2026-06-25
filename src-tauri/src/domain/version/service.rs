@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::path::Path;
 use crate::errors::AppError;
 use crate::infra::db::Database;
@@ -7,11 +5,11 @@ use super::models::*;
 use super::diff_engine::DiffEngine;
 
 pub struct VersionService {
-    db: Arc<Mutex<Database>>,
+    db: Database,
 }
 
 impl VersionService {
-    pub fn new(db: Arc<Mutex<Database>>) -> Self {
+    pub fn new(db: Database) -> Self {
         Self { db }
     }
 
@@ -21,14 +19,12 @@ impl VersionService {
         novel_id: &str,
         chapter_number: u32,
     ) -> Result<Vec<ChapterVersion>, AppError> {
-        let db = self.db.lock().await;
-        db.list_chapter_versions(novel_id, chapter_number)
+        self.db.list_chapter_versions(novel_id, chapter_number).await
     }
 
     /// Get a specific version by ID
     pub async fn get_version(&self, version_id: &str) -> Result<Option<ChapterVersion>, AppError> {
-        let db = self.db.lock().await;
-        db.get_chapter_version(version_id)
+        self.db.get_chapter_version(version_id).await
     }
 
     /// Get the latest version for a chapter
@@ -37,8 +33,7 @@ impl VersionService {
         novel_id: &str,
         chapter_number: u32,
     ) -> Result<Option<ChapterVersion>, AppError> {
-        let db = self.db.lock().await;
-        db.get_latest_chapter_version(novel_id, chapter_number)
+        self.db.get_latest_chapter_version(novel_id, chapter_number).await
     }
 
     /// Save a new version (called after revision)
@@ -50,17 +45,15 @@ impl VersionService {
         revision_mode: RevisionMode,
         revision_reason: &str,
     ) -> Result<ChapterVersion, AppError> {
-        let db = self.db.lock().await;
-        
         // Get next version number
-        let next_version_number = db.get_next_version_number(novel_id, chapter_number)?;
-        
+        let next_version_number = self.db.get_next_version_number(novel_id, chapter_number).await?;
+
         // Compute content hash
         let content_hash = DiffEngine::compute_hash(content);
-        
+
         // Count words (simplified: count Chinese chars + English words)
         let word_count = count_words(content);
-        
+
         let request = CreateVersionRequest {
             novel_id: novel_id.to_string(),
             chapter_number,
@@ -68,8 +61,8 @@ impl VersionService {
             revision_mode,
             revision_reason: revision_reason.to_string(),
         };
-        
-        db.create_chapter_version(&request, next_version_number, &content_hash, word_count)
+
+        self.db.create_chapter_version(&request, next_version_number, &content_hash, word_count).await
     }
 
     /// Compute diff between two versions
@@ -78,14 +71,12 @@ impl VersionService {
         from_version_id: &str,
         to_version_id: &str,
     ) -> Result<LineDiffResult, AppError> {
-        let db = self.db.lock().await;
-        
-        let from_version = db.get_chapter_version(from_version_id)?
+        let from_version = self.db.get_chapter_version(from_version_id).await?
             .ok_or_else(|| AppError::not_found("From version not found"))?;
-        
-        let to_version = db.get_chapter_version(to_version_id)?
+
+        let to_version = self.db.get_chapter_version(to_version_id).await?
             .ok_or_else(|| AppError::not_found("To version not found"))?;
-        
+
         Ok(DiffEngine::compute_line_diff(&from_version.content, &to_version.content))
     }
 
@@ -95,17 +86,16 @@ impl VersionService {
         novel_id: &str,
         chapter_number: u32,
     ) -> Result<Option<LineDiffResult>, AppError> {
-        let db = self.db.lock().await;
-        let versions = db.list_chapter_versions(novel_id, chapter_number)?;
-        
+        let versions = self.db.list_chapter_versions(novel_id, chapter_number).await?;
+
         if versions.len() < 2 {
             return Ok(None);
         }
-        
+
         // Get the two most recent versions
         let to_version = &versions[0];
         let from_version = &versions[1];
-        
+
         Ok(Some(DiffEngine::compute_line_diff(&from_version.content, &to_version.content)))
     }
 
@@ -115,8 +105,7 @@ impl VersionService {
         version_id: &str,
         book_dir: &Path,
     ) -> Result<bool, AppError> {
-        let db = self.db.lock().await;
-        let version = db.get_chapter_version(version_id)?
+        let version = self.db.get_chapter_version(version_id).await?
             .ok_or_else(|| AppError::not_found("Version not found"))?;
         
         // Write content back to chapter file

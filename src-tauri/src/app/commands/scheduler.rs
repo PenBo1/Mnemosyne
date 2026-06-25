@@ -1,23 +1,20 @@
 use crate::errors::{AppError, IpcResponse};
 use crate::domain::pipeline::{Scheduler, SchedulerConfig, WriteCycleResult};
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 use std::sync::Arc;
 use tauri::State;
 
 /// Initialize the scheduler for a workspace.
-/// Must be called before any scheduler operations.
 #[tauri::command]
 pub async fn scheduler_init(
     state: State<'_, AppState>,
     workspace_id: String,
 ) -> Result<IpcResponse<String>, AppError> {
-    // Get workspace path
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&workspace_id, "workspace_id")?;
+    let ws = state.db.get_workspace(&workspace_id).await?
+        .ok_or_else(|| AppError::not_found("Workspace not found"))?;
+    let workspace_path = std::path::PathBuf::from(ws.path);
 
     // Build pipeline runner
     let memory_store = state.memory_store.clone();
@@ -60,6 +57,7 @@ pub async fn scheduler_write_cycle(
     state: State<'_, AppState>,
     book_id: String,
 ) -> Result<IpcResponse<WriteCycleResult>, AppError> {
+    validate_id_component(&book_id, "book_id")?;
     let scheduler = {
         let s = state.scheduler.lock().await;
         s.as_ref().ok_or_else(|| AppError::internal("Scheduler not initialized"))?.clone()
@@ -164,6 +162,10 @@ pub async fn scheduler_search_memory(
     query: String,
     top_k: Option<usize>,
 ) -> Result<IpcResponse<Vec<crate::domain::agents::MemoryEntry>>, AppError> {
+    validate_id_component(&book_id, "book_id")?;
+    if query.len() > 1000 {
+        return Err(AppError::invalid_input("Query too long (max 1000 chars)"));
+    }
     let scheduler = {
         let s = state.scheduler.lock().await;
         s.as_ref().ok_or_else(|| AppError::internal("Scheduler not initialized"))?.clone()
@@ -193,6 +195,7 @@ pub async fn scheduler_restore_checkpoint(
     state: State<'_, AppState>,
     book_id: String,
 ) -> Result<IpcResponse<Option<crate::domain::pipeline::GraphState>>, AppError> {
+    validate_id_component(&book_id, "book_id")?;
     let scheduler = {
         let s = state.scheduler.lock().await;
         s.as_ref().ok_or_else(|| AppError::internal("Scheduler not initialized"))?.clone()

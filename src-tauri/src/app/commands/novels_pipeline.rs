@@ -2,6 +2,7 @@ use crate::errors::{AppError, IpcResponse};
 use crate::domain::pipeline::{PipelineConfig, PipelineRunner};
 use crate::domain::version::{VersionService, RevisionMode};
 use crate::infra::db::models::CreateNovelRequest;
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 use tauri::State;
 
@@ -26,6 +27,15 @@ fn build_runner(
     Ok(PipelineRunner::new(config))
 }
 
+async fn resolve_workspace_path(
+    state: &AppState,
+    workspace_id: &str,
+) -> Result<std::path::PathBuf, AppError> {
+    let ws = state.db.get_workspace(workspace_id).await?
+        .ok_or_else(|| AppError::not_found("Workspace not found"))?;
+    Ok(std::path::PathBuf::from(ws.path))
+}
+
 #[tauri::command]
 pub async fn novel_create(
     state: State<'_, AppState>,
@@ -34,12 +44,7 @@ pub async fn novel_create(
     genre: String,
     brief: Option<String>,
 ) -> Result<IpcResponse<crate::domain::story::BookConfig>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
@@ -49,8 +54,7 @@ pub async fn novel_create(
     let config = runner.create_book(&title, &genre, brief.as_deref()).await?;
 
     {
-        let db = state.db.lock().await;
-        db.insert_novel(&config.id, &CreateNovelRequest {
+        state.db.insert_novel(&config.id, &CreateNovelRequest {
             workspace_id: workspace_id.clone(),
             title: title.clone(),
             genre: genre.clone(),
@@ -58,7 +62,7 @@ pub async fn novel_create(
             language: "zh".to_string(),
             target_chapters: 100,
             chapter_words: 3000,
-        })?;
+        }).await?;
     }
 
     Ok(IpcResponse::created(config))
@@ -71,12 +75,8 @@ pub async fn novel_write_next(
     book_id: String,
     target_words: Option<u32>,
 ) -> Result<IpcResponse<crate::domain::story::WriteResult>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&book_id, "book_id")?;
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
@@ -94,12 +94,8 @@ pub async fn novel_plan(
     book_id: String,
     context: Option<String>,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&book_id, "book_id")?;
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
@@ -117,12 +113,8 @@ pub async fn novel_audit(
     book_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<crate::domain::story::AuditResult>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&book_id, "book_id")?;
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
@@ -133,6 +125,29 @@ pub async fn novel_audit(
     Ok(IpcResponse::ok(result))
 }
 
+fn read_chapter_content(
+    workspace_path: &std::path::Path,
+    book_id: &str,
+    chapter_number: u32,
+) -> Result<String, AppError> {
+    validate_id_component(book_id, "book_id")?;
+    let book_dir = workspace_path.join("books").join(book_id);
+    let chapters_dir = book_dir.join("chapters");
+    let prefix = format!("{:04}_", chapter_number);
+
+    let mut chapter_content = String::new();
+    if let Ok(entries) = std::fs::read_dir(&chapters_dir) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                chapter_content = std::fs::read_to_string(entry.path())
+                    .map_err(|e| AppError::internal(format!("Failed to read chapter: {}", e)))?;
+                break;
+            }
+        }
+    }
+    Ok(chapter_content)
+}
+
 #[tauri::command]
 pub async fn novel_revise(
     state: State<'_, AppState>,
@@ -140,38 +155,16 @@ pub async fn novel_revise(
     book_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<String>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&book_id, "book_id")?;
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
-    // Read chapter content before revision for version saving
-    let book_dir = workspace_path.join("books").join(&book_id);
-    let chapters_dir = book_dir.join("chapters");
-    let prefix = format!("{:04}_", chapter_number);
-    
-    let content_before = {
-        let mut chapter_content = String::new();
-        if let Ok(entries) = std::fs::read_dir(&chapters_dir) {
-            for entry in entries.flatten() {
-                if entry.file_name().to_string_lossy().starts_with(&prefix) {
-                    chapter_content = std::fs::read_to_string(entry.path())
-                        .map_err(|e| AppError::internal(format!("Failed to read chapter: {}", e)))?;
-                    break;
-                }
-            }
-        }
-        chapter_content
-    };
+    let content_before = read_chapter_content(&workspace_path, &book_id, chapter_number)?;
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
-    let runner = build_runner(&registry, workspace_path.clone(), memory_store, state.data_dir.clone())?;
+    let runner = build_runner(&registry, workspace_path, memory_store, state.data_dir.clone())?;
     drop(registry);
 
-    // Save version before revision (if content exists)
     if !content_before.is_empty() {
         let version_service = VersionService::new(state.db.clone());
         let _ = version_service.save_version(
@@ -185,7 +178,6 @@ pub async fn novel_revise(
 
     let result = runner.revise_chapter(&book_id, chapter_number, Default::default()).await?;
 
-    // Save version after revision
     let version_service = VersionService::new(state.db.clone());
     let _ = version_service.save_version(
         &book_id,
@@ -205,19 +197,14 @@ pub async fn novel_observe(
     book_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&book_id, "book_id")?;
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
     let memory_store = Some(state.memory_store.clone());
     let registry = state.provider_registry.lock().await;
     let runner = build_runner(&registry, workspace_path, memory_store.clone(), state.data_dir.clone())?;
     drop(registry);
 
-    // Observe extracts facts from the chapter
     let book_dir = runner.config.project_root.join("books").join(&book_id);
     let chapters_dir = book_dir.join("chapters");
     let prefix = format!("{:04}_", chapter_number);
@@ -237,13 +224,11 @@ pub async fn novel_observe(
         return Err(AppError::not_found(format!("Chapter {} not found", chapter_number)));
     }
 
-    // Extract chapter title from filename
     let chapter_title = chapter_content.lines().next()
         .and_then(|line| line.strip_prefix("# ").or_else(|| line.strip_prefix("## ")))
         .unwrap_or("")
         .to_string();
 
-    // Use ObserverAgent to extract facts
     let observer = crate::domain::agents::observer::ObserverAgent::new();
     let ctx = runner.agent_ctx_for("observer", Some(&book_id)).await;
     let language = "zh";
@@ -307,7 +292,6 @@ pub async fn novel_observe(
                 "chapter_summary": summary_json,
             });
 
-            // Archive facts and hooks into shared memory
             if let Some(ref mem_store) = memory_store {
                 for fact in &output.facts {
                     mem_store.archive_fact(
@@ -361,17 +345,12 @@ pub async fn novel_reflect(
     book_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let ws = db.get_workspace(&workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
-    };
+    validate_id_component(&book_id, "book_id")?;
+    let workspace_path = resolve_workspace_path(&state, &workspace_id).await?;
 
     let book_dir = workspace_path.join("books").join(&book_id);
     let state_path = book_dir.join("story").join("state.json");
 
-    // Load existing state
     let mut story_state: crate::domain::story::StoryState = if state_path.exists() {
         serde_json::from_str(
             &std::fs::read_to_string(&state_path).unwrap_or_default()
@@ -382,7 +361,6 @@ pub async fn novel_reflect(
 
     story_state.current_chapter = chapter_number;
 
-    // Load observation data if available
     let observation_path = book_dir.join("observations").join(format!("{:04}.json", chapter_number));
     let mut facts_count = 0u32;
     let mut hooks_new_count = 0u32;
@@ -398,13 +376,11 @@ pub async fn novel_reflect(
         }
     }
 
-    // Save updated state
     let state_json = serde_json::to_string_pretty(&story_state)
         .map_err(|e| AppError::internal(format!("Failed to serialize state: {}", e)))?;
     std::fs::write(&state_path, &state_json)
         .map_err(|e| AppError::internal(format!("Failed to write state: {}", e)))?;
 
-    // Save snapshot
     let snapshots_dir = book_dir.join("story").join("snapshots");
     let _ = std::fs::create_dir_all(&snapshots_dir);
     let snapshot_path = snapshots_dir.join(format!("{:04}.json", chapter_number));

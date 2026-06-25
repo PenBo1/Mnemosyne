@@ -1,5 +1,6 @@
 use crate::errors::{AppError, IpcResponse};
 use crate::AppState;
+use crate::infra::fs_utils::validate_id_component;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -115,6 +116,26 @@ pub async fn update_agent(
     _state: State<'_, AppState>,
     req: UpdateAgentRequest,
 ) -> Result<IpcResponse<AgentConfig>, AppError> {
+    validate_id_component(&req.id, "agent_id")?;
+    if let Some(ref name) = req.name {
+        if name.trim().is_empty() {
+            return Err(AppError::invalid_input("Agent name cannot be empty"));
+        }
+        if name.len() > 255 {
+            return Err(AppError::invalid_input("Agent name too long (max 255 chars)"));
+        }
+    }
+    if let Some(temp) = req.temperature {
+        if !temp.is_finite() || temp < 0.0 || temp > 2.0 {
+            return Err(AppError::invalid_input("Temperature must be between 0.0 and 2.0"));
+        }
+    }
+    if let Some(max_tokens) = req.max_tokens {
+        if max_tokens == 0 || max_tokens > 1_000_000 {
+            return Err(AppError::invalid_input("max_tokens must be between 1 and 1000000"));
+        }
+    }
+
     tracing::info!(agent_id = %req.id, "update_agent");
 
     let mut agents = default_agents();
@@ -139,6 +160,7 @@ pub async fn toggle_agent_status(
     _state: State<'_, AppState>,
     id: String,
 ) -> Result<IpcResponse<AgentConfig>, AppError> {
+    validate_id_component(&id, "agent_id")?;
     tracing::info!(agent_id = %id, "toggle_agent_status");
 
     let mut agents = default_agents();

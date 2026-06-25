@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use crate::infra::data_dir::DataDir;
-use crate::infra::db::Database;
 use crate::infra::llm::ProviderRegistry;
 use crate::infra::skill::SkillManager;
 use crate::infra::sandbox::enforce::SandboxEnforcer;
@@ -8,12 +7,25 @@ use crate::infra::memory::MemoryStore;
 use crate::infra::feedback::FeedbackStore;
 use crate::infra::mcp::McpServer;
 use crate::domain::pipeline::Scheduler;
+use crate::infra::db::Database;
 use crate::domain::session::{Session, SessionConfig, SessionStatus};
+
+/// Per-session agent cancellation state.
+pub struct AgentSessionState {
+    pub cancelled: Arc<tokio::sync::RwLock<bool>>,
+}
+
+/// Per-session main agent state with channel handles.
+pub struct MainAgentSessionState {
+    pub progress_rx: tokio::sync::mpsc::UnboundedReceiver<crate::domain::agents::ProgressUpdate>,
+    pub confirmation_tx: tokio::sync::mpsc::UnboundedSender<crate::domain::agents::ConfirmationResponse>,
+    pub cancelled: Arc<tokio::sync::RwLock<bool>>,
+}
 
 pub struct AppState {
     pub data_dir: DataDir,
-    pub db: Arc<tokio::sync::Mutex<Database>>,
-    pub feedback_db: Arc<tokio::sync::Mutex<Database>>,
+    pub db: Database,
+    pub feedback_db: Database,
     pub provider_registry: tokio::sync::Mutex<ProviderRegistry>,
     pub skill_manager: tokio::sync::Mutex<SkillManager>,
     pub sandbox: tokio::sync::Mutex<SandboxEnforcer>,
@@ -24,6 +36,10 @@ pub struct AppState {
     pub app_handle: tauri::AppHandle,
     /// Active SQ/EQ sessions keyed by session ID
     pub sessions: tokio::sync::Mutex<std::collections::HashMap<String, Session>>,
+    /// Per-session agent cancellation flags (replaces static AGENT_STATES)
+    pub agent_states: tokio::sync::Mutex<std::collections::HashMap<String, AgentSessionState>>,
+    /// Per-session main agent state (replaces static MAIN_AGENT_STATES)
+    pub main_agent_states: tokio::sync::Mutex<std::collections::HashMap<String, MainAgentSessionState>>,
 }
 
 impl AppState {
@@ -58,7 +74,7 @@ impl AppState {
             model,
             project_root: self.data_dir.root().join("workspace"),
             data_dir: self.data_dir.clone(),
-            db: self.db.clone(),
+            db: Arc::new(tokio::sync::Mutex::new(self.db.clone())),
             sandbox: Arc::new(tokio::sync::Mutex::new(
                 crate::infra::sandbox::enforce::SandboxEnforcer::new(
                     crate::infra::sandbox::policy::SandboxPolicy::restricted(),

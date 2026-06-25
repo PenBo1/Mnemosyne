@@ -3,6 +3,8 @@ use tauri::State;
 use crate::errors::{AppError, IpcResponse};
 use crate::domain::version::{ChapterVersion, RevisionMode, LineDiffResult};
 use crate::domain::version::DiffEngine;
+use crate::domain::utils::text_utils::count_words;
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 
 /// List all versions for a chapter
@@ -12,10 +14,13 @@ pub async fn version_list(
     novel_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<Vec<ChapterVersion>>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
+    if chapter_number == 0 || chapter_number > 100_000 {
+        return Err(AppError::invalid_input("chapter_number must be between 1 and 100000"));
+    }
     tracing::debug!(novel_id = %novel_id, chapter_number = chapter_number, "version_list");
-    let db = state.db.lock().await;
     
-    let versions = db.list_chapter_versions(&novel_id, chapter_number)?;
+    let versions = state.db.list_chapter_versions(&novel_id, chapter_number).await?;
     
     tracing::debug!(count = versions.len(), "Chapter versions listed");
     Ok(IpcResponse::ok(versions))
@@ -27,10 +32,10 @@ pub async fn version_get(
     state: State<'_, AppState>,
     version_id: String,
 ) -> Result<IpcResponse<ChapterVersion>, AppError> {
+    validate_id_component(&version_id, "version_id")?;
     tracing::debug!(version_id = %version_id, "version_get");
-    let db = state.db.lock().await;
     
-    let version = db.get_chapter_version(&version_id)?
+    let version = state.db.get_chapter_version(&version_id).await?
         .ok_or_else(|| AppError::not_found("Version not found"))?;
     
     Ok(IpcResponse::ok(version))
@@ -43,10 +48,13 @@ pub async fn version_get_latest(
     novel_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<Option<ChapterVersion>>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
+    if chapter_number == 0 || chapter_number > 100_000 {
+        return Err(AppError::invalid_input("chapter_number must be between 1 and 100000"));
+    }
     tracing::debug!(novel_id = %novel_id, chapter_number = chapter_number, "version_get_latest");
-    let db = state.db.lock().await;
     
-    let version = db.get_latest_chapter_version(&novel_id, chapter_number)?;
+    let version = state.db.get_latest_chapter_version(&novel_id, chapter_number).await?;
     
     Ok(IpcResponse::ok(version))
 }
@@ -58,13 +66,14 @@ pub async fn version_diff(
     from_version_id: String,
     to_version_id: String,
 ) -> Result<IpcResponse<LineDiffResult>, AppError> {
+    validate_id_component(&from_version_id, "from_version_id")?;
+    validate_id_component(&to_version_id, "to_version_id")?;
     tracing::debug!(from = %from_version_id, to = %to_version_id, "version_diff");
-    let db = state.db.lock().await;
     
-    let from_version = db.get_chapter_version(&from_version_id)?
+    let from_version = state.db.get_chapter_version(&from_version_id).await?
         .ok_or_else(|| AppError::not_found("From version not found"))?;
     
-    let to_version = db.get_chapter_version(&to_version_id)?
+    let to_version = state.db.get_chapter_version(&to_version_id).await?
         .ok_or_else(|| AppError::not_found("To version not found"))?;
     
     let diff = DiffEngine::compute_line_diff(&from_version.content, &to_version.content);
@@ -86,10 +95,13 @@ pub async fn version_diff_latest(
     novel_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<Option<LineDiffResult>>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
+    if chapter_number == 0 || chapter_number > 100_000 {
+        return Err(AppError::invalid_input("chapter_number must be between 1 and 100000"));
+    }
     tracing::debug!(novel_id = %novel_id, chapter_number = chapter_number, "version_diff_latest");
-    let db = state.db.lock().await;
     
-    let versions = db.list_chapter_versions(&novel_id, chapter_number)?;
+    let versions = state.db.list_chapter_versions(&novel_id, chapter_number).await?;
     
     if versions.len() < 2 {
         return Ok(IpcResponse::ok(None));
@@ -109,24 +121,19 @@ pub async fn version_restore(
     state: State<'_, AppState>,
     version_id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    validate_id_component(&version_id, "version_id")?;
     tracing::info!(version_id = %version_id, "version_restore");
     
     // Get version content
-    let version = {
-        let db = state.db.lock().await;
-        db.get_chapter_version(&version_id)?
-            .ok_or_else(|| AppError::not_found("Version not found"))?
-    };
+    let version = state.db.get_chapter_version(&version_id).await?
+        .ok_or_else(|| AppError::not_found("Version not found"))?;
     
     // Get novel's workspace path to find book_dir
-    let workspace_path = {
-        let db = state.db.lock().await;
-        let novel = db.get_novel_by_id(&version.novel_id)?
-            .ok_or_else(|| AppError::not_found("Novel not found"))?;
-        let workspace = db.get_workspace(&novel.workspace_id)?
-            .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        PathBuf::from(workspace.path)
-    };
+    let novel = state.db.get_novel_by_id(&version.novel_id).await?
+        .ok_or_else(|| AppError::not_found("Novel not found"))?;
+    let workspace = state.db.get_workspace(&novel.workspace_id).await?
+        .ok_or_else(|| AppError::not_found("Workspace not found"))?;
+    let workspace_path = PathBuf::from(workspace.path);
     
     let book_dir = workspace_path.join(&version.novel_id);
     
@@ -157,15 +164,26 @@ pub async fn version_save(
     revision_mode: String,
     revision_reason: String,
 ) -> Result<IpcResponse<ChapterVersion>, AppError> {
+    validate_id_component(&novel_id, "novel_id")?;
+    if chapter_number == 0 || chapter_number > 100_000 {
+        return Err(AppError::invalid_input("chapter_number must be between 1 and 100000"));
+    }
+    if content.is_empty() {
+        return Err(AppError::invalid_input("Content cannot be empty"));
+    }
+    if content.len() > 10_000_000 {
+        return Err(AppError::invalid_input("Content too long (max 10MB)"));
+    }
+    if revision_reason.len() > 1000 {
+        return Err(AppError::invalid_input("Revision reason too long (max 1000 chars)"));
+    }
     tracing::info!(novel_id = %novel_id, chapter_number = chapter_number, "version_save");
     
     let mode = revision_mode.parse::<RevisionMode>()
         .map_err(|e| AppError::invalid_input(e))?;
     
-    let db = state.db.lock().await;
-    
     // Get next version number
-    let next_version_number = db.get_next_version_number(&novel_id, chapter_number)?;
+    let next_version_number = state.db.get_next_version_number(&novel_id, chapter_number).await?;
     
     // Compute content hash
     let content_hash = DiffEngine::compute_hash(&content);
@@ -181,16 +199,8 @@ pub async fn version_save(
         revision_reason,
     };
     
-    let version = db.create_chapter_version(&request, next_version_number, &content_hash, word_count)?;
+    let version = state.db.create_chapter_version(&request, next_version_number, &content_hash, word_count).await?;
     
     tracing::info!(version_id = %version.id, version_number = version.version_number, "Version saved");
     Ok(IpcResponse::created(version))
-}
-
-/// Count words in content (approximation)
-fn count_words(content: &str) -> u32 {
-    // Chinese chars + English words approximation
-    let chinese_chars = content.chars().filter(|c| !c.is_ascii()).count() as u32;
-    let english_words = content.split_whitespace().count() as u32;
-    chinese_chars + english_words
 }

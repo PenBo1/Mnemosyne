@@ -5,6 +5,7 @@ use crate::AppState;
 use crate::domain::novel::types::*;
 use crate::domain::novel::client::NovelClient;
 use crate::domain::novel::source::{load_builtin_sources_from_dir, load_sources_from_file};
+use crate::infra::fs_utils::validate_path_within_root;
 use std::path::PathBuf;
 
 fn novels_dir(state: &AppState) -> PathBuf {
@@ -26,6 +27,12 @@ pub async fn novel_source_toggle(
     name: String,
     enabled: bool,
 ) -> Result<IpcResponse<()>, AppError> {
+    if name.trim().is_empty() {
+        return Err(AppError::invalid_input("Source name cannot be empty"));
+    }
+    if name.len() > 255 {
+        return Err(AppError::invalid_input("Source name too long (max 255 chars)"));
+    }
     let sources_dir = state.data_dir.book_sources_dir();
     let mut all_sources = load_builtin_sources_from_dir(&sources_dir);
     
@@ -54,6 +61,12 @@ pub async fn novel_source_add(
     state: State<'_, AppState>,
     source: BookSource,
 ) -> Result<IpcResponse<()>, AppError> {
+    if source.name.trim().is_empty() {
+        return Err(AppError::invalid_input("Source name cannot be empty"));
+    }
+    if source.name.len() > 255 {
+        return Err(AppError::invalid_input("Source name too long (max 255 chars)"));
+    }
     let sources_dir = state.data_dir.book_sources_dir();
     let custom_path = sources_dir.join("custom.json");
     
@@ -84,6 +97,9 @@ pub async fn novel_source_update(
     state: State<'_, AppState>,
     source: BookSource,
 ) -> Result<IpcResponse<()>, AppError> {
+    if source.name.trim().is_empty() {
+        return Err(AppError::invalid_input("Source name cannot be empty"));
+    }
     let sources_dir = state.data_dir.book_sources_dir();
     let custom_path = sources_dir.join("custom.json");
     
@@ -113,6 +129,9 @@ pub async fn novel_source_delete(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<IpcResponse<()>, AppError> {
+    if name.trim().is_empty() {
+        return Err(AppError::invalid_input("Source name cannot be empty"));
+    }
     let sources_dir = state.data_dir.book_sources_dir();
     let custom_path = sources_dir.join("custom.json");
     
@@ -143,6 +162,12 @@ pub async fn novel_search(
     source_name: String,
     keyword: String,
 ) -> Result<IpcResponse<Vec<SearchBookResult>>, AppError> {
+    if source_name != "all" && source_name.trim().is_empty() {
+        return Err(AppError::invalid_input("Source name cannot be empty"));
+    }
+    if source_name.len() > 255 {
+        return Err(AppError::invalid_input("Source name too long (max 255 chars)"));
+    }
     if keyword.trim().is_empty() {
         return Err(AppError::invalid_input("Search keyword cannot be empty"));
     }
@@ -185,6 +210,18 @@ pub async fn novel_download(
     book_url: String,
     book_name: String,
 ) -> Result<IpcResponse<String>, AppError> {
+    if source_name.trim().is_empty() {
+        return Err(AppError::invalid_input("Source name cannot be empty"));
+    }
+    if source_name.len() > 255 {
+        return Err(AppError::invalid_input("Source name too long (max 255 chars)"));
+    }
+    if book_url.trim().is_empty() {
+        return Err(AppError::invalid_input("Book URL cannot be empty"));
+    }
+    if book_url.len() > 2048 {
+        return Err(AppError::invalid_input("Book URL too long (max 2048 chars)"));
+    }
     if book_name.trim().is_empty() {
         return Err(AppError::invalid_input("Book name cannot be empty"));
     }
@@ -205,6 +242,8 @@ pub async fn novel_download(
     // Create book directory
     let safe_name = book_name.replace(|c: char| !c.is_alphanumeric() && c != ' ' && c != '_', "_");
     let book_dir = novels_dir(&state).join(&safe_name);
+    let novels_root = novels_dir(&state);
+    validate_path_within_root(&book_dir, &novels_root, "book_name")?;
     std::fs::create_dir_all(&book_dir)
         .map_err(|_| AppError::file_write_error(book_dir.display().to_string()))?;
 

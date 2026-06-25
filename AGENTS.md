@@ -72,22 +72,25 @@ UI Layer (pages/components) → Hook Layer (hooks/) → Service Layer (services/
 
 **Main process (Rust — `src-tauri/src/`)**:
 ```
-Command Layer (commands/) → Service Layer (services/) → System Layer (db/, OS access)
+Command Layer (app/commands/) → Domain Layer (domain/) + Infrastructure Layer (infra/)
+                                        ↓
+                               System Layer (infra/db/, infra/sandbox/)
 ```
 - `lib.rs` registers commands, initializes app state (AppState with db)
-- `commands/` — thin `#[tauri::command]` handlers: extract params, lock db, delegate to service, return
-- `services/` — business logic as pure functions, no Tauri dependencies. Must validate inputs here.
-- `db/` — database access layer (`connection.rs` for queries, `models.rs` for types, `sql/` for schema)
+- `app/commands/` — thin `#[tauri::command]` handlers: extract params, validate, delegate to domain/infra, return
+- `app/state.rs` — `AppState` struct holding all shared state (db, providers, sessions, etc.)
+- `domain/` — business logic as pure functions/structs, no Tauri dependencies. Sub-modules: `agents/`, `pipeline/`, `session/`, `story/`, `wiki/`, `version/`, `radar/`, `novel/`, `harness/`
+- `infra/` — system access layer: `db/` (SQLite), `llm/` (providers), `sandbox/` (security), `memory.rs`, `feedback.rs`, `mcp.rs`, `rag.rs`, `skill/`
 - `errors/` — unified `AppError` type (`app_error.rs`), `IpcResponse<T>` envelope (`ipc.rs`), status codes (`status.rs`)
 - `middleware/` — cross-cutting concerns (e.g. `logging.rs` for structured tracing)
 
 **Rules**:
-- No business logic in `#[command]` handlers — they extract params, lock db, delegate to service, and return.
-- No Tauri dependencies in `services/` — services receive `&Database` and return `Result<T, AppError>`.
-- No UI in `src/lib/` — it must be framework-agnostic.
-- No IPC calls in `src/pages/` — all IPC goes through `services/` → `hooks/` → `pages/`.
+- No business logic in `#[command]` handlers — they extract params, validate, delegate to domain, and return.
+- No Tauri dependencies in `domain/` — domain structs receive dependencies via traits and return `Result<T, AppError>`.
+- No Tauri dependencies in `infra/` — infra modules receive `&Database` and return `Result<T, AppError>`.
 - IPC boundary is the trust seam: always validate in Rust, never trust frontend.
-- All `#[command]` functions must delegate to `services/` for validation and business logic.
+- All `#[command]` functions must validate inputs before delegating to domain/infra.
+- Path components from IPC (book_id, workspace_id) must be validated for traversal before use in filesystem operations.
 
 ## File & modularization requirements
 

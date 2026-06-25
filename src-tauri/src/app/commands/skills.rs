@@ -27,6 +27,19 @@ pub struct UpdateSkillRequest {
     pub content: String,
 }
 
+fn validate_skill_name(name: &str) -> Result<(), AppError> {
+    if name.trim().is_empty() {
+        return Err(AppError::invalid_input("Skill name cannot be empty"));
+    }
+    if name.len() > 255 {
+        return Err(AppError::invalid_input("Skill name too long (max 255 chars)"));
+    }
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err(AppError::path_traversal());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn skill_list(
     state: State<'_, AppState>,
@@ -43,6 +56,7 @@ pub async fn skill_get(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<IpcResponse<crate::infra::skill::Skill>, AppError> {
+    validate_skill_name(&name)?;
     tracing::debug!(name = %name, "skill_get");
     let manager = state.skill_manager.lock().await;
     let skill = manager.load(&name)
@@ -58,6 +72,13 @@ pub async fn skill_create(
     state: State<'_, AppState>,
     req: CreateSkillRequest,
 ) -> Result<IpcResponse<crate::infra::skill::Skill>, AppError> {
+    validate_skill_name(&req.name)?;
+    if req.description.len() > 2000 {
+        return Err(AppError::invalid_input("Skill description too long (max 2000 chars)"));
+    }
+    if req.content.len() > 10_000_000 {
+        return Err(AppError::invalid_input("Skill content too long (max 10MB)"));
+    }
     tracing::info!(name = %req.name, category = %req.category, "skill_create");
     let meta = SkillMeta {
         name: req.name,
@@ -80,6 +101,13 @@ pub async fn skill_update(
     state: State<'_, AppState>,
     req: UpdateSkillRequest,
 ) -> Result<IpcResponse<crate::infra::skill::Skill>, AppError> {
+    validate_skill_name(&req.name)?;
+    if req.description.len() > 2000 {
+        return Err(AppError::invalid_input("Skill description too long (max 2000 chars)"));
+    }
+    if req.content.len() > 10_000_000 {
+        return Err(AppError::invalid_input("Skill content too long (max 10MB)"));
+    }
     tracing::info!(name = %req.name, "skill_update");
     let meta = SkillMeta {
         name: req.name.clone(),
@@ -102,6 +130,7 @@ pub async fn skill_delete(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<IpcResponse<()>, AppError> {
+    validate_skill_name(&name)?;
     tracing::info!(name = %name, "skill_delete");
     let mut manager = state.skill_manager.lock().await;
     manager.delete_skill(&name)?;

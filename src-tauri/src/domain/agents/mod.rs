@@ -1,5 +1,6 @@
 pub mod types;
 pub mod base;
+pub mod chat_loop;
 pub mod config;
 pub mod identity;
 pub mod agent_identity;

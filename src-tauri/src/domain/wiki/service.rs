@@ -1,15 +1,13 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use crate::errors::AppError;
 use crate::infra::db::Database;
 use super::models::*;
 
 pub struct WikiService {
-    db: Arc<Mutex<Database>>,
+    db: Database,
 }
 
 impl WikiService {
-    pub fn new(db: Arc<Mutex<Database>>) -> Self {
+    pub fn new(db: Database) -> Self {
         Self { db }
     }
 
@@ -19,14 +17,12 @@ impl WikiService {
         novel_id: &str,
         category: Option<&WikiCategory>,
     ) -> Result<Vec<WikiEntry>, AppError> {
-        let db = self.db.lock().await;
-        db.list_wiki_entries(novel_id, category)
+        self.db.list_wiki_entries(novel_id, category).await
     }
 
     /// Get a single wiki entry by ID
     pub async fn get_entry(&self, entry_id: &str) -> Result<Option<WikiEntry>, AppError> {
-        let db = self.db.lock().await;
-        db.get_wiki_entry(entry_id)
+        self.db.get_wiki_entry(entry_id).await
     }
 
     /// Create a new wiki entry
@@ -34,8 +30,7 @@ impl WikiService {
         &self,
         request: &CreateWikiEntryRequest,
     ) -> Result<WikiEntry, AppError> {
-        let db = self.db.lock().await;
-        db.create_wiki_entry(request)
+        self.db.create_wiki_entry(request).await
     }
 
     /// Update an existing wiki entry
@@ -44,14 +39,12 @@ impl WikiService {
         entry_id: &str,
         request: &UpdateWikiEntryRequest,
     ) -> Result<WikiEntry, AppError> {
-        let db = self.db.lock().await;
-        db.update_wiki_entry(entry_id, request)
+        self.db.update_wiki_entry(entry_id, request).await
     }
 
     /// Delete a wiki entry
     pub async fn delete_entry(&self, entry_id: &str) -> Result<bool, AppError> {
-        let db = self.db.lock().await;
-        db.delete_wiki_entry(entry_id)
+        self.db.delete_wiki_entry(entry_id).await
     }
 
     /// Get wiki graph view for visualization
@@ -61,8 +54,7 @@ impl WikiService {
         filter_category: Option<&WikiCategory>,
         min_importance: Option<u32>,
     ) -> Result<WikiGraphView, AppError> {
-        let db = self.db.lock().await;
-        db.get_wiki_graph_view(novel_id, filter_category, min_importance)
+        self.db.get_wiki_graph_view(novel_id, filter_category, min_importance).await
     }
 
     /// Create a wiki entity link
@@ -70,14 +62,12 @@ impl WikiService {
         &self,
         request: &CreateWikiLinkRequest,
     ) -> Result<WikiEntityLink, AppError> {
-        let db = self.db.lock().await;
-        db.create_wiki_link(request)
+        self.db.create_wiki_link(request).await
     }
 
     /// Delete a wiki entity link
     pub async fn delete_link(&self, link_id: &str) -> Result<bool, AppError> {
-        let db = self.db.lock().await;
-        db.delete_wiki_link(link_id)
+        self.db.delete_wiki_link(link_id).await
     }
 
     /// Search wiki entries by query
@@ -87,8 +77,7 @@ impl WikiService {
         query: &str,
         limit: Option<u32>,
     ) -> Result<Vec<WikiEntry>, AppError> {
-        let db = self.db.lock().await;
-        db.search_wiki_entries(novel_id, query, limit)
+        self.db.search_wiki_entries(novel_id, query, limit).await
     }
 
     /// Get wiki entries relevant for a chapter (AI context integration)
@@ -97,8 +86,7 @@ impl WikiService {
         novel_id: &str,
         chapter_number: u32,
     ) -> Result<Vec<WikiEntry>, AppError> {
-        let db = self.db.lock().await;
-        db.get_wiki_context_for_chapter(novel_id, chapter_number)
+        self.db.get_wiki_context_for_chapter(novel_id, chapter_number).await
     }
 
     /// Get wiki entry summaries for AI context

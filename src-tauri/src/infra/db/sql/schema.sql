@@ -207,3 +207,113 @@ CREATE TABLE IF NOT EXISTS chapter_versions (
 CREATE INDEX IF NOT EXISTS idx_versions_novel_chapter ON chapter_versions(novel_id, chapter_number);
 CREATE INDEX IF NOT EXISTS idx_versions_created ON chapter_versions(novel_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_versions_hash ON chapter_versions(content_hash);
+
+-- ═══════════════════════════════════════════════════════════
+-- Kanban Tasks
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS kanban_tasks (
+    id TEXT PRIMARY KEY,
+    novel_id TEXT NOT NULL,
+    title TEXT NOT NULL CHECK(length(title) > 0 AND length(title) <= 500),
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'plan' CHECK(status IN ('plan', 'compose', 'write', 'audit', 'revise', 'done', 'cancelled')),
+    priority TEXT NOT NULL DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high', 'urgent')),
+    assigned_agent TEXT,
+    chapter_id TEXT,
+    parent_task_id TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    due_date TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+    FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE SET NULL,
+    FOREIGN KEY (parent_task_id) REFERENCES kanban_tasks(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kanban_novel ON kanban_tasks(novel_id);
+CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_tasks(novel_id, status);
+CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_tasks(parent_task_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- Kanban Columns
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS kanban_columns (
+    id TEXT PRIMARY KEY,
+    novel_id TEXT NOT NULL,
+    name TEXT NOT NULL CHECK(length(name) > 0 AND length(name) <= 100),
+    status_key TEXT NOT NULL CHECK(length(status_key) > 0 AND length(status_key) <= 50),
+    color TEXT NOT NULL DEFAULT '#6366f1',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    wip_limit INTEGER,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+    UNIQUE(novel_id, status_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_kanban_cols_novel ON kanban_columns(novel_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- Loop States
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS loop_states (
+    id TEXT PRIMARY KEY,
+    novel_id TEXT NOT NULL,
+    pattern_id TEXT NOT NULL CHECK(length(pattern_id) > 0 AND length(pattern_id) <= 100),
+    status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'running', 'paused', 'error')),
+    readiness_level TEXT NOT NULL DEFAULT 'L0' CHECK(readiness_level IN ('L0', 'L1', 'L2', 'L3')),
+    state_payload TEXT NOT NULL DEFAULT '{}',
+    config TEXT NOT NULL DEFAULT '{}',
+    token_usage_today INTEGER NOT NULL DEFAULT 0 CHECK(token_usage_today >= 0),
+    token_cap_daily INTEGER NOT NULL DEFAULT 50000 CHECK(token_cap_daily > 0),
+    last_run_at TEXT,
+    last_run_result TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_loop_states_novel ON loop_states(novel_id);
+CREATE INDEX IF NOT EXISTS idx_loop_states_pattern ON loop_states(novel_id, pattern_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- Loop Run Logs
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS loop_run_logs (
+    id TEXT PRIMARY KEY,
+    loop_state_id TEXT NOT NULL,
+    pattern_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('success', 'partial', 'failed', 'escalated')),
+    phase_results TEXT NOT NULL DEFAULT '[]',
+    tokens_used INTEGER NOT NULL DEFAULT 0 CHECK(tokens_used >= 0),
+    duration_ms INTEGER NOT NULL DEFAULT 0 CHECK(duration_ms >= 0),
+    findings TEXT NOT NULL DEFAULT '[]',
+    actions_taken TEXT NOT NULL DEFAULT '[]',
+    escalations TEXT NOT NULL DEFAULT '[]',
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (loop_state_id) REFERENCES loop_states(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_loop_logs_state ON loop_run_logs(loop_state_id);
+CREATE INDEX IF NOT EXISTS idx_loop_logs_created ON loop_run_logs(loop_state_id, created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════
+-- Loop Patterns (Registry)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS loop_patterns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL CHECK(length(name) > 0 AND length(name) <= 200),
+    description TEXT NOT NULL DEFAULT '',
+    goal TEXT NOT NULL DEFAULT '',
+    cadence TEXT NOT NULL DEFAULT '1d',
+    risk_level TEXT NOT NULL DEFAULT 'low' CHECK(risk_level IN ('low', 'medium', 'high')),
+    phases TEXT NOT NULL DEFAULT '[]',
+    human_gates TEXT NOT NULL DEFAULT '[]',
+    cost_config TEXT NOT NULL DEFAULT '{}',
+    skills_required TEXT NOT NULL DEFAULT '[]',
+    state_schema TEXT NOT NULL DEFAULT '{}',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

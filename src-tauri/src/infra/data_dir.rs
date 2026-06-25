@@ -200,3 +200,43 @@ impl DataDir {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_data_dir_paths() {
+        let root = PathBuf::from("/tmp/test_app_data");
+        let data_dir = DataDir::new(root.clone());
+
+        assert_eq!(data_dir.root(), &root);
+        assert_eq!(data_dir.data_dir(), root.join("data"));
+        assert_eq!(data_dir.logs_dir(), root.join("logs"));
+        assert_eq!(data_dir.skills_dir(), root.join("skills"));
+        assert_eq!(data_dir.book_sources_dir(), root.join("book_sources"));
+        assert_eq!(data_dir.agents_dir(), root.join("agents"));
+        assert_eq!(data_dir.config_path(), root.join("config.json"));
+        assert_eq!(data_dir.state_db_path(), root.join("data").join("state.sqlite"));
+        assert_eq!(data_dir.feedback_db_path(), root.join("data").join("feedback.sqlite"));
+    }
+
+    #[test]
+    fn test_agent_identity_paths() {
+        let root = PathBuf::from("/tmp/test_app_data");
+        let data_dir = DataDir::new(root.clone());
+
+        assert_eq!(data_dir.agent_dir("writer"), root.join("agents").join("writer"));
+        assert_eq!(data_dir.agent_soul_path("writer"), root.join("agents").join("writer").join("SOUL.md"));
+        assert_eq!(data_dir.agent_context_path("writer"), root.join("agents").join("writer").join("CONTEXT.md"));
+        assert_eq!(data_dir.agent_memory_path("writer"), root.join("agents").join("writer").join("MEMORY.md"));
+    }
+
+    #[test]
+    fn test_agent_roles_list() {
+        assert!(AGENT_ROLES.contains(&"architect"));
+        assert!(AGENT_ROLES.contains(&"writer"));
+        assert!(AGENT_ROLES.contains(&"auditor"));
+        assert!(AGENT_ROLES.contains(&"observer"));
+    }
+}

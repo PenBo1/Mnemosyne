@@ -36,7 +36,8 @@ pub fn run() {
 
             let db_path = data_dir.state_db_path();
             tracing::info!(path = %db_path.display(), "Opening state database");
-            let database = Database::new(db_path.to_str().unwrap())
+            let database = tokio::runtime::Handle::current()
+                .block_on(Database::new(db_path.to_str().unwrap()))
                 .expect("failed to open state database");
             // Initialize AI logs schema
             if let Err(e) = database.init_ai_logs() {
@@ -46,7 +47,8 @@ pub fn run() {
 
             let feedback_db_path = data_dir.feedback_db_path();
             tracing::info!(path = %feedback_db_path.display(), "Opening feedback database");
-            let feedback_db = Database::new_feedback(feedback_db_path.to_str().unwrap())
+            let feedback_db = tokio::runtime::Handle::current()
+                .block_on(Database::new_feedback(feedback_db_path.to_str().unwrap()))
                 .expect("failed to open feedback database");
             tracing::info!("Feedback database initialized");
 
@@ -64,8 +66,6 @@ pub fn run() {
             let skill_count = skill_manager.list().len();
             tracing::info!(count = skill_count, "Skills discovered");
 
-            let db_arc = Arc::new(tokio::sync::Mutex::new(database));
-            let feedback_db_arc = Arc::new(tokio::sync::Mutex::new(feedback_db));
             let sandbox_policy = SandboxPolicy::restricted();
             let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
             let memory_store = crate::infra::memory::MemoryStore::new(app_dir.clone());
@@ -78,8 +78,8 @@ pub fn run() {
 
             app.manage(AppState {
                 data_dir,
-                db: db_arc,
-                feedback_db: feedback_db_arc,
+                db: database,
+                feedback_db: feedback_db,
                 provider_registry: tokio::sync::Mutex::new(provider_registry),
                 skill_manager: tokio::sync::Mutex::new(skill_manager),
                 sandbox: tokio::sync::Mutex::new(sandbox_enforcer),
@@ -89,6 +89,8 @@ pub fn run() {
                 scheduler,
                 app_handle,
                 sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                agent_states: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                main_agent_states: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             });
 
             Ok(())
@@ -208,6 +210,28 @@ pub fn run() {
             app::commands::version::version_diff_latest,
             app::commands::version::version_restore,
             app::commands::version::version_save,
+            // Kanban commands
+            app::commands::kanban::kanban_create_task,
+            app::commands::kanban::kanban_get_tasks,
+            app::commands::kanban::kanban_update_task,
+            app::commands::kanban::kanban_delete_task,
+            app::commands::kanban::kanban_reorder_tasks,
+            app::commands::kanban::kanban_get_columns,
+            app::commands::kanban::kanban_create_column,
+            app::commands::kanban::kanban_update_column,
+            app::commands::kanban::kanban_delete_column,
+            // Loop Engineering commands
+            app::commands::loop_engine::loop_create_state,
+            app::commands::loop_engine::loop_get_states,
+            app::commands::loop_engine::loop_update_state,
+            app::commands::loop_engine::loop_delete_state,
+            app::commands::loop_engine::loop_run_cycle,
+            app::commands::loop_engine::loop_get_run_logs,
+            app::commands::loop_engine::loop_get_patterns,
+            app::commands::loop_engine::loop_upsert_pattern,
+            app::commands::loop_engine::loop_pause,
+            app::commands::loop_engine::loop_resume,
+            app::commands::loop_engine::loop_get_budget_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -151,6 +151,7 @@ mod tests {
                 ContextSource { source: "outline/story_frame.md".into(), reason: "World foundation".into(), excerpt: None },
                 ContextSource { source: "story/current_state.md".into(), reason: "Current state".into(), excerpt: Some("test".into()) },
             ],
+            wiki_entries: vec![],
         };
         assert_eq!(pkg.selected_context.len(), 2);
         assert!(pkg.selected_context[0].excerpt.is_none());

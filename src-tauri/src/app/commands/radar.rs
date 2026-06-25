@@ -3,6 +3,7 @@ use crate::errors::{IpcResponse, AppError};
 use crate::AppState;
 use crate::domain::radar::agent::RadarAgent;
 use crate::domain::radar::source::default_sources;
+use crate::infra::fs_utils::validate_id_component;
 
 #[tauri::command]
 pub async fn radar_scan(
@@ -20,13 +21,11 @@ pub async fn radar_scan(
     let agent = RadarAgent::new(provider, model, sources);
     let (result, raw_rankings) = agent.scan().await?;
 
-    let db = state.db.lock().await;
-    let scan = db.create_radar_scan(
+    let scan = state.db.create_radar_scan(
         &result.market_summary,
         &result.recommendations,
         &raw_rankings,
-    )?;
-    drop(db);
+    ).await?;
 
     tracing::info!(
         recommendations = result.recommendations.len(),
@@ -41,8 +40,7 @@ pub async fn radar_history(
     state: State<'_, AppState>,
     limit: Option<i64>,
 ) -> Result<IpcResponse<Vec<crate::infra::db::models::RadarScan>>, AppError> {
-    let db = state.db.lock().await;
-    let scans = db.list_radar_scans(limit)?;
+    let scans = state.db.list_radar_scans(limit).await?;
     Ok(IpcResponse::ok(scans))
 }
 
@@ -51,7 +49,7 @@ pub async fn radar_delete(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
-    let db = state.db.lock().await;
-    let deleted = db.delete_radar_scan(&id)?;
+    validate_id_component(&id, "radar_scan_id")?;
+    let deleted = state.db.delete_radar_scan(&id).await?;
     Ok(IpcResponse::ok(deleted))
 }

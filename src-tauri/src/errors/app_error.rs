@@ -37,8 +37,8 @@ impl From<tauri::Error> for AppError {
     }
 }
 
-impl From<rusqlite::Error> for AppError {
-    fn from(err: rusqlite::Error) -> Self {
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
         tracing::error!(error = %err, "SQLite error");
         Self::new(status::DB_QUERY_FAILED, "DB_ERROR", err.to_string())
     }
@@ -128,4 +128,72 @@ impl AppError {
     pub fn not_implemented(message: impl Into<String>) -> Self { Self::new(status::NOT_IMPLEMENTED, "NOT_IMPLEMENTED", message) }
     pub fn unavailable(message: impl Into<String>) -> Self { Self::new(status::UNAVAILABLE, "UNAVAILABLE", message) }
     pub fn config_error(message: impl Into<String>) -> Self { Self::new(status::CONFIG_ERROR, "CONFIG_ERROR", message) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display() {
+        let err = AppError::invalid_input("bad input");
+        assert_eq!(err.status, 100);
+        assert_eq!(err.code, "INVALID_INPUT");
+        assert!(err.message.contains("bad input"));
+    }
+
+    #[test]
+    fn test_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let app_err: AppError = io_err.into();
+        assert_eq!(app_err.status, 302);
+        assert_eq!(app_err.code, "IO_ERROR");
+    }
+
+    #[test]
+    fn test_error_from_json() {
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let app_err: AppError = json_err.into();
+        assert_eq!(app_err.status, 102);
+    }
+
+    #[test]
+    fn test_error_from_sqlite() {
+        let sql_err = sqlx::Error::PoolClosed;
+        let app_err: AppError = sql_err.into();
+        assert_eq!(app_err.status, 410);
+    }
+
+    #[test]
+    fn test_path_traversal() {
+        let err = AppError::path_traversal();
+        assert_eq!(err.status, 104);
+        assert_eq!(err.code, "PATH_TRAVERSAL");
+    }
+
+    #[test]
+    fn test_provider_not_found() {
+        let err = AppError::provider_not_found("openai");
+        assert_eq!(err.status, 200);
+        assert!(err.message.contains("openai"));
+    }
+
+    #[test]
+    fn test_error_codes_unique() {
+        let errors = vec![
+            AppError::invalid_input("test"),
+            AppError::not_found("test"),
+            AppError::forbidden("test"),
+            AppError::internal("test"),
+            AppError::provider_not_found("test"),
+            AppError::sandbox_violation("test"),
+            AppError::task_cancelled(),
+            AppError::network_timeout(),
+            AppError::db_connection("test"),
+            AppError::file_not_found("test"),
+        ];
+        let codes: Vec<&str> = errors.iter().map(|e| e.code.as_str()).collect();
+        let unique: std::collections::HashSet<&str> = codes.into_iter().collect();
+        assert_eq!(unique.len(), errors.len());
+    }
 }

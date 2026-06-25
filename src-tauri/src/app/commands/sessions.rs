@@ -1,5 +1,6 @@
 use crate::errors::{AppError, IpcResponse};
 use crate::infra::db::CreateSessionRequest;
+use crate::infra::fs_utils::validate_id_component;
 use crate::AppState;
 use tauri::State;
 
@@ -9,9 +10,19 @@ pub async fn session_create(
     novel_id: Option<String>,
     title: Option<String>,
 ) -> Result<IpcResponse<crate::infra::db::Session>, AppError> {
+    if let Some(ref nid) = novel_id {
+        validate_id_component(nid, "novel_id")?;
+    }
+    if let Some(ref t) = title {
+        if t.trim().is_empty() {
+            return Err(AppError::invalid_input("Session title cannot be empty"));
+        }
+        if t.len() > 500 {
+            return Err(AppError::invalid_input("Session title too long (max 500 chars)"));
+        }
+    }
     tracing::info!(novel_id = ?novel_id, title = ?title, "session_create");
-    let db = state.db.lock().await;
-    let session = db.create_session(CreateSessionRequest { novel_id, title })?;
+    let session = state.db.create_session(CreateSessionRequest { novel_id, title }).await?;
     tracing::info!(session_id = %session.id, "Session created");
     Ok(IpcResponse::ok(session))
 }
@@ -21,9 +32,11 @@ pub async fn session_list(
     state: State<'_, AppState>,
     novel_id: Option<String>,
 ) -> Result<IpcResponse<Vec<crate::infra::db::Session>>, AppError> {
+    if let Some(ref nid) = novel_id {
+        validate_id_component(nid, "novel_id")?;
+    }
     tracing::debug!(novel_id = ?novel_id, "session_list");
-    let db = state.db.lock().await;
-    let sessions = db.list_sessions(novel_id.as_deref())?;
+    let sessions = state.db.list_sessions(novel_id.as_deref()).await?;
     tracing::debug!(count = sessions.len(), "Sessions listed");
     Ok(IpcResponse::ok(sessions))
 }
@@ -33,9 +46,9 @@ pub async fn session_get(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<IpcResponse<crate::infra::db::Session>, AppError> {
+    validate_id_component(&id, "session_id")?;
     tracing::debug!(session_id = %id, "session_get");
-    let db = state.db.lock().await;
-    let session = db.get_session(&id)?
+    let session = state.db.get_session(&id).await?
         .ok_or_else(|| {
             tracing::warn!(session_id = %id, "Session not found");
             AppError::session_not_found()
@@ -48,9 +61,9 @@ pub async fn session_delete(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    validate_id_component(&id, "session_id")?;
     tracing::info!(session_id = %id, "session_delete");
-    let db = state.db.lock().await;
-    let deleted = db.delete_session(&id)?;
+    let deleted = state.db.delete_session(&id).await?;
     tracing::info!(session_id = %id, deleted, "Session deleted");
     Ok(IpcResponse::ok(deleted))
 }
@@ -60,9 +73,9 @@ pub async fn session_messages(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<IpcResponse<Vec<crate::infra::db::Message>>, AppError> {
+    validate_id_component(&session_id, "session_id")?;
     tracing::debug!(session_id = %session_id, "session_messages");
-    let db = state.db.lock().await;
-    let messages = db.list_messages(&session_id)?;
+    let messages = state.db.list_messages(&session_id).await?;
     tracing::debug!(session_id = %session_id, count = messages.len(), "Messages listed");
     Ok(IpcResponse::ok(messages))
 }

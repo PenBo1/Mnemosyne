@@ -287,3 +287,39 @@ impl SandboxPolicy {
         policy
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_restricted_policy() {
+        let policy = SandboxPolicy::restricted();
+        assert_eq!(policy.name, "restricted");
+        assert_eq!(policy.level, SecurityLevel::Restricted);
+        assert!(!policy.exec_rules.is_empty());
+        assert!(!policy.fs_rules.is_empty());
+    }
+
+    #[test]
+    fn test_strict_policy() {
+        let policy = SandboxPolicy::strict();
+        assert_eq!(policy.name, "strict");
+        assert_eq!(policy.level, SecurityLevel::Strict);
+    }
+
+    #[test]
+    fn test_isolated_policy() {
+        let policy = SandboxPolicy::isolated();
+        assert_eq!(policy.name, "isolated");
+        assert_eq!(policy.level, SecurityLevel::Isolated);
+        assert_eq!(policy.max_exec_timeout_secs, 30);
+    }
+
+    #[test]
+    fn test_security_level_ordering() {
+        assert!(SecurityLevel::Unrestricted < SecurityLevel::Restricted);
+        assert!(SecurityLevel::Restricted < SecurityLevel::Strict);
+        assert!(SecurityLevel::Strict < SecurityLevel::Isolated);
+    }
+}

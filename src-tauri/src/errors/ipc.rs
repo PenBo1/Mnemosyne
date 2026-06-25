@@ -39,3 +39,40 @@ impl IpcResponse<()> {
         Self::no_content()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ipc_ok() {
+        let resp = IpcResponse::ok("hello");
+        assert_eq!(resp.status, 0);
+        assert_eq!(resp.code, "OK");
+        assert_eq!(resp.data.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn test_ipc_created() {
+        let resp = IpcResponse::created(42);
+        assert_eq!(resp.status, 1);
+        assert_eq!(resp.code, "CREATED");
+        assert_eq!(resp.data, Some(42));
+    }
+
+    #[test]
+    fn test_ipc_no_content() {
+        let resp = IpcResponse::<()>::no_content();
+        assert_eq!(resp.status, 4);
+        assert_eq!(resp.code, "NO_CONTENT");
+        assert!(resp.data.is_none());
+    }
+
+    #[test]
+    fn test_ipc_serialization() {
+        let resp = IpcResponse::ok(vec![1, 2, 3]);
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"status\":0"));
+        assert!(json.contains("\"data\":[1,2,3]"));
+    }
+}
