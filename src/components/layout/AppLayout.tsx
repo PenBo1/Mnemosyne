@@ -8,7 +8,7 @@ export function AppLayout() {
     <TooltipProvider>
       <SidebarProvider className="h-screen">
         <AppSidebar />
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 h-full overflow-hidden">
           <Router />
         </main>
       </SidebarProvider>

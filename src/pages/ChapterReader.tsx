@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import MainAgentPage from "@/pages/MainAgentPage";
 
 interface Chapter {
   id: string;
@@ -98,7 +97,12 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
             </ScrollArea>
           </>
         ) : (
-          <MainAgentPage />
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <FileTextIcon className="size-12 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">{t.chapterReader.selectChapter}</p>
+            </div>
+          </div>
         )}
       </div>
     </div>
