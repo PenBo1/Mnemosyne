@@ -89,8 +89,8 @@ pub struct PromptArgument {
 
 /// MCP server session state
 struct McpSession {
-    initialized: bool,
-    client_info: Option<serde_json::Value>,
+    _initialized: bool,
+    _client_info: Option<serde_json::Value>,
 }
 
 /// MCP Server that handles protocol requests
@@ -179,8 +179,8 @@ impl McpServer {
     async fn handle_initialized(&self, session_id: &str) {
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.to_string(), McpSession {
-            initialized: true,
-            client_info: None,
+            _initialized: true,
+            _client_info: None,
         });
     }
 

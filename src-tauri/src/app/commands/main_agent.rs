@@ -126,12 +126,6 @@ pub async fn main_agent_execute(
         let mut rx = progress_rx;
         while let Some(update) = rx.recv().await {
             match update.status {
-                AgentStatus::Completed => {
-                    let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Completed {
-                        session_id: sid_clone.clone(),
-                        result: update.message,
-                    });
-                }
                 AgentStatus::Failed => {
                     let _ = app_clone.emit("main-agent:progress", MainAgentEvent::Failed {
                         session_id: sid_clone.clone(),

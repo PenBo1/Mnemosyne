@@ -132,11 +132,9 @@ impl Database {
     pub fn init_ai_logs(&self) -> Result<(), AppError> {
         let pool = self.pool.clone();
         let schema = AI_LOGS_SCHEMA.to_string();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                sqlx::raw_sql(&schema).execute(&pool).await.map_err(db_err)?;
-                Ok::<(), AppError>(())
-            })
+        tauri::async_runtime::block_on(async {
+            sqlx::raw_sql(&schema).execute(&pool).await.map_err(db_err)?;
+            Ok::<(), AppError>(())
         })
     }
 

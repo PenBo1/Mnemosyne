@@ -399,7 +399,7 @@ impl Scheduler {
         let checkpoints = store.list();
         let latest = checkpoints.iter()
             .filter(|c| c.starts_with(book_id))
-            .max_by_key(|c| c.clone())
+            .max_by_key(|c| c.to_string())
             .cloned();
 
         match latest {

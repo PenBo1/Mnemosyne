@@ -6,7 +6,7 @@ use mnemosyne_lib::domain::agents::iteration_budget::IterationBudget;
 use mnemosyne_lib::domain::agents::tool_guardrails::{ToolCallGuardrailController, ToolGuardrailConfig};
 use mnemosyne_lib::domain::agents::context_compressor::{ContextCompressor, CompressorConfig};
 use mnemosyne_lib::errors::AppError;
-use mnemosyne_lib::infra::llm::types::{Message, ToolSpec, StreamEvent, FinishReason, TokenUsage, ModelInfo};
+use mnemosyne_lib::infra::llm::types::{Message, ToolSpec, StreamEvent, ModelInfo};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -51,7 +51,7 @@ impl mnemosyne_lib::infra::llm::types::Provider for MockProvider {
         model: &str,
         system: &str,
         messages: &[Message],
-        tools: &[ToolSpec],
+        _tools: &[ToolSpec],
     ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = StreamEvent> + Send>>, AppError> {
         let resp = self.complete(model, system, messages).await?;
         let stream = futures::stream::once(async move {
@@ -125,10 +125,10 @@ impl ToolExecutor for MockTool {
 
 // ── Failing Tool ──────────────────────────────────────────────
 
-struct FailingTool;
+struct _FailingTool;
 
 #[async_trait]
-impl ToolExecutor for FailingTool {
+impl ToolExecutor for _FailingTool {
     fn definition(&self, name: &str) -> ToolDefinition {
         ToolDefinition {
             name: name.to_string(),
@@ -246,7 +246,7 @@ async fn test_agent_loop_executes_plan_with_tools() {
     ]).to_string();
 
     let provider = Arc::new(MockProvider::new(vec![plan_response]));
-    let tool = MockTool::new(temp_dir.path().to_path_buf(), recorded.clone());
+    let _tool = MockTool::new(temp_dir.path().to_path_buf(), recorded.clone());
 
     let mut tools = ToolRegistry::new();
     tools.register("write_file", Box::new(MockTool::new(temp_dir.path().to_path_buf(), recorded.clone())));
@@ -286,7 +286,7 @@ async fn test_agent_loop_rejects_high_risk_step() {
     ]).to_string();
 
     let provider = Arc::new(MockProvider::new(vec![plan_response]));
-    let tool = MockTool::new(temp_dir.path().to_path_buf(), recorded.clone());
+    let _tool = MockTool::new(temp_dir.path().to_path_buf(), recorded.clone());
 
     let mut tools = ToolRegistry::new();
     tools.register("bash", Box::new(MockTool::new(temp_dir.path().to_path_buf(), recorded.clone())));
