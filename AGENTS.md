@@ -226,6 +226,65 @@ GC runs automatically every N chapters (configurable in `harness.json` → `gc_p
 - Commit only includes task-related files. No user's pre-existing changes, formatting noise, or debug files.
 - **No browser-based testing**: Do not launch browsers for testing. Safe commands: build, test, lint.
 
+### Branch management
+
+采用 **Git Flow 简化版**（主干开发 + 功能分支）：
+
+| 分支类型 | 命名规范 | 生命周期 | 作用 |
+| :--- | :--- | :--- | :--- |
+| **主分支** | `master` | 永久存在 | 线上生产环境代码。**严禁直接提交**，只能通过 PR/MR 合并。 |
+| **开发分支** | `develop` | 永久存在 | 集成分支，用于最新功能联调。合并后触发测试环境部署。 |
+| **功能分支** | `feature/xxx` 或 `feature/版本号-xxx` | 临时 | 从 `develop` 切出，开发完成后合并回 `develop`。 |
+| **修复分支** | `hotfix/xxx` | 临时 | 从 `master` 切出，用于紧急修复线上 Bug，修复后同时合并入 `master` 和 `develop`。 |
+| **发版分支** | `release/vX.Y.Z` | 临时 | 从 `develop` 切出，用于预发布测试。只允许修复 Bug，不增加新功能。测试完成后合并入 `master` 并打 Tag。 |
+
+**分支工作流规则**：
+- 功能开发从 `develop` 切出 `feature/xxx` 分支
+- 推送前先 `git pull origin develop --rebase`（保持线性历史）
+- 功能分支合并进 `develop` 必须通过 PR/MR
+- **禁止**对 `master` 和 `develop` 使用 `git push --force`
+- 功能分支整理提交可用 `--force-with-lease`
+
+### Commit message 规范（Conventional Commits）
+
+```text
+<type>(<scope>): <subject>   # 标题行：必填
+<BLANK LINE>
+<body>                       # 正文：描述为什么改、怎么改（选填）
+<BLANK LINE>
+<footer>                     # 脚注：关闭 Issue 或 BREAKING CHANGE（选填）
+```
+
+**Type 类型**：
+
+| Type | 含义 | 触发版本号更新 |
+| :--- | :--- | :--- |
+| **feat** | 新增功能/特性 | 次版本号（1.1.0） |
+| **fix** | 修复 Bug | 补丁版本号（1.0.1） |
+| **docs** | 仅文档修改 | 否 |
+| **style** | 代码格式调整（不影响逻辑） | 否 |
+| **refactor** | 代码重构（非新功能非修 Bug） | 否 |
+| **perf** | 性能优化 | 补丁版本号 |
+| **test** | 增加或修改测试用例 | 否 |
+| **build** | 构建系统或外部依赖变更 | 否 |
+| **ci** | CI 配置或脚本修改 | 否 |
+| **chore** | 杂务（非 src/test 文件修改） | 否 |
+| **revert** | 回滚之前的提交 | 否 |
+
+**Subject 规则**：
+- 使用祈使句，动词开头
+- 不超过 50 个字符
+- 首字母小写，结尾不加句号
+- 示例：`fix(login): handle empty password error`
+
+### Tag 规范（语义化版本 SemVer）
+
+每次从 `develop` 合并入 `master` 并发布后，**必须**在 `master` 上打 Tag：
+- 命名：`v[主版本号].[次版本号].[补丁版本号]`，如 `v2.1.3`
+- **主版本号**：不兼容的 API 大变更
+- **次版本号**：新增向下兼容的功能
+- **补丁版本号**：向下兼容的 Bug 修复
+
 ## Testing standards
 
 - New features and logic changes must have tests. Modified files that affect tests must be updated together.
