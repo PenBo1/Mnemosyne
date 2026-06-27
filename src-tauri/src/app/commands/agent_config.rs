@@ -1,5 +1,6 @@
 use crate::errors::{AppError, IpcResponse};
 use crate::AppState;
+use crate::infra::data_dir::AGENT_ROLES;
 use crate::infra::fs_utils::validate_id_component;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -15,6 +16,22 @@ pub struct AgentConfig {
     pub max_tokens: u32,
     pub status: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentIdentityData {
+    pub role: String,
+    pub soul: String,
+    pub context: String,
+    pub memory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateAgentIdentityRequest {
+    pub role: String,
+    pub soul: Option<String>,
+    pub context: Option<String>,
+    pub memory: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,4 +190,56 @@ pub async fn toggle_agent_status(
     let result = agent.clone();
     tracing::info!(agent_id = %result.id, status = %result.status, "Agent status toggled");
     Ok(IpcResponse::ok(result))
+}
+
+#[tauri::command]
+pub async fn get_agent_identity(
+    state: State<'_, AppState>,
+    role: String,
+) -> Result<IpcResponse<AgentIdentityData>, AppError> {
+    validate_id_component(&role, "agent_role")?;
+    if !AGENT_ROLES.contains(&role.as_str()) {
+        return Err(AppError::not_found(format!("Agent role '{}' not found", role)));
+    }
+
+    let identity = crate::domain::agents::agent_identity::AgentIdentity::load(&state.data_dir, &role);
+    Ok(IpcResponse::ok(AgentIdentityData {
+        role,
+        soul: identity.soul,
+        context: identity.context,
+        memory: identity.memory,
+    }))
+}
+
+#[tauri::command]
+pub async fn update_agent_identity(
+    state: State<'_, AppState>,
+    req: UpdateAgentIdentityRequest,
+) -> Result<IpcResponse<AgentIdentityData>, AppError> {
+    validate_id_component(&req.role, "agent_role")?;
+    if !AGENT_ROLES.contains(&req.role.as_str()) {
+        return Err(AppError::not_found(format!("Agent role '{}' not found", req.role)));
+    }
+
+    let role = &req.role;
+    if let Some(soul) = &req.soul {
+        std::fs::write(state.data_dir.agent_soul_path(role), soul)
+            .map_err(|e| AppError::internal(format!("Failed to write SOUL.md: {}", e)))?;
+    }
+    if let Some(context) = &req.context {
+        std::fs::write(state.data_dir.agent_context_path(role), context)
+            .map_err(|e| AppError::internal(format!("Failed to write CONTEXT.md: {}", e)))?;
+    }
+    if let Some(memory) = &req.memory {
+        std::fs::write(state.data_dir.agent_memory_path(role), memory)
+            .map_err(|e| AppError::internal(format!("Failed to write MEMORY.md: {}", e)))?;
+    }
+
+    let identity = crate::domain::agents::agent_identity::AgentIdentity::load(&state.data_dir, role);
+    Ok(IpcResponse::ok(AgentIdentityData {
+        role: role.clone(),
+        soul: identity.soul,
+        context: identity.context,
+        memory: identity.memory,
+    }))
 }

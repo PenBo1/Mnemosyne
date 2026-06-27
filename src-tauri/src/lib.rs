@@ -36,8 +36,7 @@ pub fn run() {
 
             let db_path = data_dir.state_db_path();
             tracing::info!(path = %db_path.display(), "Opening state database");
-            let database = tokio::runtime::Handle::current()
-                .block_on(Database::new(db_path.to_str().unwrap()))
+            let database = tauri::async_runtime::block_on(Database::new(db_path.to_str().unwrap()))
                 .expect("failed to open state database");
             // Initialize AI logs schema
             if let Err(e) = database.init_ai_logs() {
@@ -47,8 +46,7 @@ pub fn run() {
 
             let feedback_db_path = data_dir.feedback_db_path();
             tracing::info!(path = %feedback_db_path.display(), "Opening feedback database");
-            let feedback_db = tokio::runtime::Handle::current()
-                .block_on(Database::new_feedback(feedback_db_path.to_str().unwrap()))
+            let feedback_db = tauri::async_runtime::block_on(Database::new_feedback(feedback_db_path.to_str().unwrap()))
                 .expect("failed to open feedback database");
             tracing::info!("Feedback database initialized");
 
@@ -164,6 +162,8 @@ pub fn run() {
             app::commands::agent_config::list_agents,
             app::commands::agent_config::update_agent,
             app::commands::agent_config::toggle_agent_status,
+            app::commands::agent_config::get_agent_identity,
+            app::commands::agent_config::update_agent_identity,
             app::commands::novels_pipeline::novel_observe,
             app::commands::novels_pipeline::novel_reflect,
             app::commands::novel_sources::novel_source_list,
