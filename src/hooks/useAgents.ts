@@ -9,6 +9,8 @@ export function useAgents() {
     loadAgents,
     updateAgent,
     toggleAgentStatus,
+    getIdentity,
+    updateIdentity,
   } = useAgentConfigStore();
 
   useEffect(() => {
@@ -22,5 +24,7 @@ export function useAgents() {
     error,
     update: updateAgent,
     toggleStatus: toggleAgentStatus,
+    getIdentity,
+    updateIdentity,
   };
 }

@@ -140,7 +140,14 @@ export interface Agent {
   created_at: string;
 }
 
-// ── Session ────────────────────────────────────────────────
+export interface AgentIdentity {
+  role: string;
+  soul: string;
+  context: string;
+  memory: string;
+}
+
+// ── User Profile ──────────────────────────────────────────
 
 export interface Session {
   id: string;

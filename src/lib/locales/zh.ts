@@ -163,6 +163,7 @@ export default {
     description: "管理您的 AI 写作智能体",
     pipelineDesc: "Pipeline 智能体是系统组件，协同工作来创作小说。您可以调整它们的模型和运行时参数。",
     systemNote: "系统智能体 — 角色和约束已固定",
+    identityDesc: "查看和编辑智能体的身份、流水线上下文和累积记忆。",
     configure: "配置",
     activate: "激活",
     deactivate: "停用",
@@ -184,6 +185,22 @@ export default {
     status: {
       active: "活跃",
       inactive: "未激活",
+    },
+    tabs: {
+      soul: "灵魂",
+      context: "流水线上下文",
+      memory: "记忆",
+    },
+    identity: {
+      soulLabel: "SOUL.md — 智能体身份",
+      soulDesc: "定义智能体的核心人格、风格和行为准则。这是系统提示词的前缀层。",
+      soulPlaceholder: "# 智能体灵魂\n\n在这里定义智能体的身份...",
+      contextLabel: "CONTEXT.md — 流水线上下文",
+      contextDesc: "描述智能体在流水线中的位置、输入输出和质量规则。",
+      contextPlaceholder: "# 流水线上下文\n\n## 你的位置\n...",
+      memoryLabel: "MEMORY.md — 累积记忆",
+      memoryDesc: "智能体在多次流水线运行中积累的学习笔记。会在下次运行时注入系统提示词。",
+      memoryPlaceholder: "# 智能体记忆\n\n<!-- 智能体在此累积学习笔记 -->",
     },
   },
   skills: {
@@ -740,6 +757,7 @@ export default {
     requestChapter: "在对话中请求创建章节",
     chapterPrefix: "第{number}章",
     wordCount: "{count} 字",
+    selectChapter: "选择左侧章节查看内容",
     aiAssistant: "AI 创作助手",
     aiAssistantDesc: "与 AI 对话来创作和管理章节",
     startChat: "开始与 AI 对话来创作你的故事",

@@ -164,6 +164,7 @@ export default {
     description: "Manage your AI writing agents",
     pipelineDesc: "Pipeline agents are system components that work together to write novels. You can adjust their model and runtime parameters.",
     systemNote: "System agents — role and constraints are fixed",
+    identityDesc: "View and edit agent identity, pipeline context, and accumulated memory.",
     configure: "Configure",
     activate: "Activate",
     deactivate: "Deactivate",
@@ -185,6 +186,22 @@ export default {
     status: {
       active: "Active",
       inactive: "Inactive",
+    },
+    tabs: {
+      soul: "Soul",
+      context: "Pipeline Context",
+      memory: "Memory",
+    },
+    identity: {
+      soulLabel: "SOUL.md — Agent Identity",
+      soulDesc: "Defines the agent's core personality, style, and behavioral rules. This is the prefix layer of the system prompt.",
+      soulPlaceholder: "# Agent Soul\n\nDefine the agent's identity here...",
+      contextLabel: "CONTEXT.md — Pipeline Context",
+      contextDesc: "Describes the agent's position in the pipeline, inputs/outputs, and quality rules.",
+      contextPlaceholder: "# Pipeline Context\n\n## Your position\n...",
+      memoryLabel: "MEMORY.md — Accumulated Memory",
+      memoryDesc: "Learning notes accumulated across pipeline runs. Injected into the system prompt on the next run.",
+      memoryPlaceholder: "# Agent Memory\n\n<!-- Agent accumulates learning notes here -->",
     },
   },
   skills: {
@@ -741,6 +758,7 @@ export default {
     requestChapter: "Request chapter creation in chat",
     chapterPrefix: "Chapter {number}",
     wordCount: "{count} words",
+    selectChapter: "Select a chapter from the sidebar to read",
     aiAssistant: "AI Writing Assistant",
     aiAssistantDesc: "Chat with AI to create and manage chapters",
     startChat: "Start a conversation with AI to write your story",
