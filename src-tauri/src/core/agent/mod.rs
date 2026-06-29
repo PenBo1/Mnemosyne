@@ -60,5 +60,4 @@ pub use main_agent::{AgentLoop, AgentStatus, ProgressUpdate, ConfirmationRequest
 
 // ── 子模块（从 domain/ 迁移）──────────────────────────────────
 pub mod pipeline;
-pub mod harness;
 pub mod loop_engine;

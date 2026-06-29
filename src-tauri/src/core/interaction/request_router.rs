@@ -58,7 +58,6 @@ mod tests {
             model_overrides: std::collections::HashMap::new(),
             memory_store: None,
             data_dir: crate::infrastructure::file_storage::data_dir::DataDir::new(std::path::PathBuf::from("/tmp")),
-            harness_config: None,
             user_profile: None,
         });
         let result = route_interaction_request(&req, &pipeline).unwrap();

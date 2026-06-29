@@ -566,7 +566,6 @@ async fn handle_write_next_chapter(
             model_overrides: config.model_overrides.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
-            harness_config: None,
             user_profile: None,
         };
         PipelineRunner::new(pipeline_config)
@@ -630,7 +629,6 @@ async fn handle_create_book(
             model_overrides: config.model_overrides.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
-            harness_config: None,
             user_profile: None,
         };
         PipelineRunner::new(pipeline_config)
@@ -687,7 +685,6 @@ async fn handle_plan_chapter(
             model_overrides: config.model_overrides.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
-            harness_config: None,
             user_profile: None,
         };
         PipelineRunner::new(pipeline_config)
@@ -748,7 +745,6 @@ async fn handle_audit_chapter(
             model_overrides: config.model_overrides.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
-            harness_config: None,
             user_profile: None,
         };
         PipelineRunner::new(pipeline_config)
@@ -809,7 +805,6 @@ async fn handle_revise_chapter(
             model_overrides: config.model_overrides.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
-            harness_config: None,
             user_profile: None,
         };
         PipelineRunner::new(pipeline_config)

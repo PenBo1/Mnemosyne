@@ -21,7 +21,6 @@ fn build_runner(
         model_overrides: std::collections::HashMap::new(),
         memory_store,
         data_dir,
-        harness_config: None,
         user_profile: None,
     };
     Ok(PipelineRunner::new(config))

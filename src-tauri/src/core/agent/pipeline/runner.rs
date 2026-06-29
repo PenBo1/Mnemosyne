@@ -1,5 +1,4 @@
 use crate::shared::errors::AppError;
-use crate::core::agent::harness::HarnessConfig;
 use crate::features::story::{BookConfig, ChapterMeta, AuditResult, WriteResult};
 use crate::infrastructure::llm_client::Provider;
 use crate::infrastructure::state_store::gc::utils;
@@ -29,8 +28,6 @@ pub struct PipelineConfig {
     pub memory_store: Option<Arc<crate::infrastructure::state_store::memory::MemoryStore>>,
     /// App data directory for loading agent identity files (SOUL.md, CONTEXT.md, MEMORY.md)
     pub data_dir: crate::infrastructure::file_storage::data_dir::DataDir,
-    /// Harness configuration for per-agent tool/sandbox policy
-    pub harness_config: Option<HarnessConfig>,
     /// User profile for tailoring agent output
     pub user_profile: Option<Arc<tokio::sync::Mutex<crate::features::user_profile::UserProfileStore>>>,
 }
@@ -90,7 +87,8 @@ impl PipelineRunner {
         }
     }
 
-    /// Get agent context with optional model override and harness-based tool filtering
+    /// Get agent context with optional model override.
+    /// All agents receive the standard tool set; per-agent tool filtering is not yet supported.
     pub async fn agent_ctx_for(&self, agent_name: &str, book_id: Option<&str>) -> AgentContext {
         let model = self.config.model_overrides.get(agent_name)
             .cloned()
@@ -104,54 +102,14 @@ impl PipelineRunner {
         let mut tools = ToolRegistry::new();
         let work_dir = self.config.project_root.clone();
 
-        // Determine tool set from harness config
-        let slot_config = self.config.harness_config.as_ref()
-            .and_then(|hc| hc.agents.get(agent_name));
+        tools.register("read_file", Box::new(ReadFileTool::new(work_dir.clone())));
+        tools.register("write_file", Box::new(WriteFileTool::new(work_dir.clone())));
+        tools.register("list_files", Box::new(ListFilesTool::new(work_dir.clone())));
+        tools.register("search_memory", Box::new(SearchMemoryTool::new(memory.clone())));
+        tools.register("archive_memory", Box::new(ArchiveMemoryTool::new(memory.clone())));
 
-        let should_register = |tool_name: &str| -> bool {
-            match slot_config {
-                None => true,
-                Some(slot) => {
-                    if !slot.tools_allowed.is_empty() && !slot.tools_allowed.contains(&tool_name.to_string()) {
-                        return false;
-                    }
-                    if slot.tools_denied.contains(&tool_name.to_string()) {
-                        return false;
-                    }
-                    true
-                }
-            }
-        };
-
-        if should_register("read_file") {
-            tools.register("read_file", Box::new(ReadFileTool::new(work_dir.clone())));
-        }
-        if should_register("write_file") {
-            tools.register("write_file", Box::new(WriteFileTool::new(work_dir.clone())));
-        }
-        if should_register("list_files") {
-            tools.register("list_files", Box::new(ListFilesTool::new(work_dir.clone())));
-        }
-        if should_register("search_memory") {
-            tools.register("search_memory", Box::new(SearchMemoryTool::new(memory.clone())));
-        }
-        if should_register("archive_memory") {
-            tools.register("archive_memory", Box::new(ArchiveMemoryTool::new(memory.clone())));
-        }
-        if should_register("bash") {
-            let sandbox_policy = slot_config
-                .and_then(|s| s.sandbox_policy.as_deref())
-                .map(|p| match p {
-                    "strict" => SandboxPolicy::strict(),
-                    "isolated" => SandboxPolicy::isolated(),
-                    _ => SandboxPolicy::restricted(),
-                })
-                .unwrap_or_else(SandboxPolicy::restricted);
-            let sandbox = Arc::new(SandboxEnforcer::new(sandbox_policy, work_dir.clone()));
-            tools.register("bash", Box::new(BashTool::new(work_dir.clone(), Some(sandbox))));
-        }
-
-        let token_budget = slot_config.map(|s| s.token_budget).unwrap_or(50);
+        let sandbox = Arc::new(SandboxEnforcer::new(SandboxPolicy::restricted(), work_dir.clone()));
+        tools.register("bash", Box::new(BashTool::new(work_dir.clone(), Some(sandbox))));
 
         AgentContext {
             provider: self.config.provider.clone(),
@@ -160,7 +118,7 @@ impl PipelineRunner {
             book_id: book_id.map(|s| s.to_string()),
             tools: Arc::new(tools),
             memory,
-            iteration_budget: Arc::new(IterationBudget::new(token_budget as usize)),
+            iteration_budget: Arc::new(IterationBudget::new(50)),
             tool_guardrails: Arc::new(tokio::sync::Mutex::new(
                 ToolCallGuardrailController::new(ToolGuardrailConfig::default())
             )),
