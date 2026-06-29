@@ -75,10 +75,9 @@ pub async fn loop_run_cycle(
     state_id: String,
 ) -> Result<IpcResponse<crate::infrastructure::db::models::LoopRunLog>, AppError> {
     validate_id_component(&state_id, "state_id")?;
-    let start = std::time::Instant::now();
 
     let ls = state.db.get_loop_state_by_id(&state_id).await?;
-    let pattern_id = ls.pattern_id;
+    let pattern_id = ls.pattern_id.clone();
     let token_cap = ls.token_cap_daily;
     let token_usage = ls.token_usage_today;
 
@@ -88,28 +87,20 @@ pub async fn loop_run_cycle(
 
     tracing::info!(state_id = %state_id, pattern_id = %pattern_id, "loop_run_cycle");
 
-    let log = state.db.create_loop_run_log(&crate::infrastructure::db::models::LoopRunLog {
-        id: uuid::Uuid::new_v4().to_string(),
-        loop_state_id: state_id.clone(),
-        pattern_id: pattern_id.clone(),
-        status: "success".to_string(),
-        phase_results: vec![],
-        tokens_used: 0,
-        duration_ms: start.elapsed().as_millis() as i64,
-        findings: vec!["Loop cycle completed".to_string()],
-        actions_taken: vec![],
-        escalations: vec![],
-        error_message: None,
-        created_at: chrono::Utc::now().to_rfc3339(),
-    }).await?;
+    // 委派给 LoopEngine 执行真实循环。
+    // 当前 LoopEngine::run_cycle 返回 not_implemented 错误（见 engine.rs 文档），
+    // 前端应 catch 此错误并显示"功能开发中"。
+    // 完整实现后，此处会写入 loop_run_log + 更新 loop_state 的 token_usage_today。
+    let log = crate::core::agent::loop_engine::LoopEngine::run_cycle(&ls)?;
 
+    state.db.create_loop_run_log(&log).await?;
     state.db.update_loop_state(&state_id, UpdateLoopStateRequest {
         status: Some("idle".to_string()),
         last_run_at: Some(chrono::Utc::now().to_rfc3339()),
         last_run_result: Some(serde_json::json!({
-            "findings": ["Loop cycle completed"],
-            "actions": [],
-            "escalations": []
+            "findings": log.findings,
+            "actions": log.actions_taken,
+            "escalations": log.escalations
         })),
         ..Default::default()
     }).await?;
