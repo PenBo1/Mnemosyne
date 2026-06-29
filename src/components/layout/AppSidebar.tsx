@@ -112,7 +112,7 @@ export function AppSidebar() {
               tooltip={t.app.name}
               onClick={() => navigateTo("trends")}
             >
-              <div className="flex size-7 items-center justify-center rounded-lg bg-foreground text-background">
+              <div className="flex size-7 items-center justify-center rounded-[var(--radius-4)] bg-foreground text-background">
                 <LayersIcon className="size-4" />
               </div>
               <span className="text-base font-semibold">{t.app.name}</span>

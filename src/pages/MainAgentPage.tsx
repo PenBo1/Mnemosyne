@@ -274,10 +274,10 @@ function PlanView({
       ))}
 
       {result && (
-        <Card className="transition-shadow hover:shadow-md">
+        <Card className="transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="size-4 text-[var(--status-success-default)]" />
               {t.mainAgent.executionComplete}
             </CardTitle>
           </CardHeader>
@@ -290,7 +290,7 @@ function PlanView({
       )}
 
       {error && (
-        <Card className="border-destructive transition-shadow hover:shadow-md">
+        <Card className="border-destructive transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-destructive">
               <XCircle className="size-4" />
@@ -312,7 +312,7 @@ function StepCard({ step, isCurrent }: { step: PlanStep; isCurrent: boolean }) {
   const statusIcon = (() => {
     switch (step.status) {
       case "Completed":
-        return <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />;
+        return <CheckCircle2 className="size-4 text-[var(--status-success-default)]" />;
       case "InProgress":
         return <Loader2 className="size-4 text-primary animate-spin" />;
       case "Failed":
@@ -364,7 +364,7 @@ function StepCard({ step, isCurrent }: { step: PlanStep; isCurrent: boolean }) {
             </p>
           )}
           {previewResult && (
-            <p className="text-xs text-emerald-600 dark:text-emerald-400">{previewResult}</p>
+            <p className="text-xs text-[var(--status-success-default)]">{previewResult}</p>
           )}
           {step.result && step.status === "Failed" && (
             <p className="text-xs text-destructive">{step.result}</p>

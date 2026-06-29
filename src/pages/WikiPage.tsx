@@ -206,7 +206,7 @@ export function WikiPage({ novelId }: { novelId: string }) {
                 </EmptyState>
               ) : (
                 <ScrollArea className="flex-1">
-                  <Card className="transition-shadow hover:shadow-md">
+                  <Card className="transition-shadow">
                     <CardContent className="p-0">
                       <div className="divide-y">
                         {filteredEntries.map((entry) => (

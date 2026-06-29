@@ -9,13 +9,13 @@ interface DiffViewProps {
 }
 
 const LINE_COLORS: Record<DiffLineType, string> = {
-  added: "bg-emerald-100 dark:bg-emerald-900/30 border-l-2 border-emerald-500",
+  added: "bg-[var(--status-success-default)]/10 border-l-2 border-[var(--status-success-default)]",
   removed: "bg-destructive/10 dark:bg-destructive/20 border-l-2 border-destructive",
   context: "bg-transparent",
 };
 
 const LINE_NUMBER_COLORS: Record<DiffLineType, string> = {
-  added: "text-emerald-600 dark:text-emerald-400",
+  added: "text-[var(--status-success-default)]",
   removed: "text-destructive",
   context: "text-muted-foreground",
 };
@@ -37,7 +37,7 @@ export function DiffView({ diffResult, showStats = true, className }: DiffViewPr
       {showStats && (
         <div className="flex gap-4 text-xs text-muted-foreground border-b pb-2">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="w-2 h-2 rounded-full bg-[var(--status-success-default)]" />
             +{stats.lines_added} additions
           </span>
           <span className="flex items-center gap-1">
@@ -108,7 +108,7 @@ function DiffLineView({ line }: { line: DiffLine }) {
       {/* 行内容 */}
       <div className="flex-1 whitespace-pre-wrap break-all pl-1">
         <span className={cn(
-          line.line_type === "added" && "text-emerald-600 dark:text-emerald-400",
+          line.line_type === "added" && "text-[var(--status-success-default)]",
           line.line_type === "removed" && "text-destructive",
         )}>
           {prefix}

@@ -39,9 +39,9 @@ export function ChatInput({
     <div className="border-t border-border bg-background px-4 pb-4 pt-2">
       <div className="mx-auto max-w-3xl">
         <div
-          className={`flex flex-col rounded-2xl border bg-card shadow-sm transition-[border-color,box-shadow] ${
+          className={`flex flex-col rounded-[var(--radius-8)] border bg-card shadow-sm transition-[border-color,box-shadow] ${
             value.trim()
-              ? "border-border focus-within:border-primary/40 focus-within:shadow-md"
+              ? "border-border focus-within:border-primary/40"
               : "border-border"
           }`}
         >
@@ -60,7 +60,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={onCancel}
-                className="flex size-8 items-center justify-center rounded-xl bg-destructive/10 text-destructive transition-colors hover:bg-destructive/20"
+                className="flex size-8 items-center justify-center rounded-[var(--radius-full)] bg-destructive/10 text-destructive transition-colors hover:bg-destructive/20"
                 aria-label={t.agentChat.stop}
               >
                 <StopCircle className="size-4" />
@@ -70,7 +70,7 @@ export function ChatInput({
                 type="button"
                 onClick={onSubmit}
                 disabled={!canSend}
-                className={`flex size-8 items-center justify-center rounded-xl transition-all ${
+                className={`flex size-8 items-center justify-center rounded-[var(--radius-full)] transition-all ${
                   canSend
                     ? "bg-primary text-primary-foreground shadow-sm hover:opacity-90 active:scale-95"
                     : "cursor-not-allowed bg-muted text-muted-foreground/25"
@@ -83,12 +83,12 @@ export function ChatInput({
           </div>
         </div>
         <div className="mt-1.5 flex items-center justify-center gap-1 text-[10px] text-muted-foreground/40">
-          <kbd className="rounded border border-border/30 bg-card px-1 py-px font-mono">
+          <kbd className="rounded-[var(--radius-2)] border border-[var(--border-neutral-l1)] bg-[var(--bg-overlay-l2)] px-1 py-px font-mono">
             Enter
           </kbd>
           <span>{t.common.send}</span>
           <span>·</span>
-          <kbd className="rounded border border-border/30 bg-card px-1 py-px font-mono">
+          <kbd className="rounded-[var(--radius-2)] border border-[var(--border-neutral-l1)] bg-[var(--bg-overlay-l2)] px-1 py-px font-mono">
             Shift+Enter
           </kbd>
           <span>{t.agentChat.newline}</span>

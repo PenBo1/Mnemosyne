@@ -5,7 +5,7 @@ export function EmptyState() {
   const { t } = useI18n();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
-      <div className="flex size-14 items-center justify-center rounded-2xl border border-border bg-card shadow-sm">
+      <div className="flex size-14 items-center justify-center rounded-[var(--radius-8)] border border-border bg-card shadow-sm">
         <BotIcon className="size-6 text-primary" />
       </div>
       <div className="flex flex-col gap-1.5">

@@ -63,7 +63,7 @@ export function LoopDashboard({
           <div
             key={ls.id}
             className={cn(
-              "border rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow flex flex-col gap-2",
+              "border rounded-lg p-3 cursor-pointer transition-shadow flex flex-col gap-2",
               selectedStateId === ls.id && "ring-2 ring-primary"
             )}
             onClick={() => onSelect(ls.id)}

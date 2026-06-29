@@ -36,7 +36,7 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
 
 function RecommendationCard({ rec }: { rec: RadarRecommendation }) {
   return (
-    <div className="rounded-lg border bg-card p-5 flex flex-col gap-3 transition-shadow hover:shadow-md">
+    <div className="rounded-lg border bg-card p-5 flex flex-col gap-3 transition-shadow">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">

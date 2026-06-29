@@ -9,10 +9,10 @@ interface LoopRunLogProps {
 }
 
 const STATUS_ICONS: Record<string, ReactNode> = {
-  success: <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />,
+  success: <CheckCircle className="h-3.5 w-3.5 text-[var(--status-success-default)]" />,
   partial: <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />,
   failed: <XCircle className="h-3.5 w-3.5 text-destructive" />,
-  escalated: <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />,
+  escalated: <AlertTriangle className="h-3.5 w-3.5 text-[var(--status-warning-default)]" />,
 };
 
 export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {

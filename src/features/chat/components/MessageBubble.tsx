@@ -27,15 +27,11 @@ export function MessageBubble({
     return (
       <div className="flex justify-end" data-user-message-id={message.id}>
         <div className="flex max-w-[75%] flex-row-reverse items-start gap-2.5">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <UserIcon className="size-3.5 text-primary" />
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-brand)]">
+            <UserIcon className="size-3.5 text-[var(--text-onbrand)]" />
           </div>
           <div
-            className="rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-[1.6]"
-            style={{
-              background: "var(--color-primary)",
-              color: "var(--color-text-on-primary)",
-            }}
+            className="bg-[var(--bg-brand)] text-[var(--text-onbrand)] rounded-[var(--radius-8)] rounded-tr-[var(--radius-2)] px-4 py-2.5 text-sm leading-[1.6]"
           >
             <p className="whitespace-pre-wrap">{message.content}</p>
           </div>
@@ -78,11 +74,11 @@ export function MessageBubble({
   return (
     <div className="flex justify-start">
       <div className="flex max-w-[85%] items-start gap-2.5">
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
-          <BotIcon className="size-3.5 text-primary" />
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-brand)]">
+          <BotIcon className="size-3.5 text-[var(--text-onbrand)]" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="rounded-2xl rounded-tl-md border border-border bg-card px-4 py-3 shadow-sm">
+          <div className="rounded-[var(--radius-8)] rounded-tl-[var(--radius-2)] border border-border bg-card px-4 py-3 shadow-sm">
             {showThinking ? (
               <span className="inline-flex items-center gap-1">
                 <span className="size-1.5 animate-pulse rounded-full bg-primary" />
@@ -93,7 +89,7 @@ export function MessageBubble({
               <>
                 <MarkdownRenderer content={message.content} />
                 {showCursor && (
-                  <span className="ml-0.5 inline-block h-3.5 w-[3px] animate-pulse bg-primary align-text-bottom" />
+                  <span className="ml-0.5 inline-block h-3.5 w-[3px] animate-pulse bg-[var(--bg-brand)] align-text-bottom" />
                 )}
               </>
             )}

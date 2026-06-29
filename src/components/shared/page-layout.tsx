@@ -68,7 +68,7 @@ function PageTitle({
     <h1
       data-slot="page-title"
       className={cn(
-        "flex items-center gap-2 text-2xl font-bold tracking-tight",
+        "flex items-center gap-2 text-lg font-semibold tracking-tight",
         className
       )}
       {...props}

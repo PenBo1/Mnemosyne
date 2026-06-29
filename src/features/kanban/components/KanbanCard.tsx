@@ -11,7 +11,7 @@ interface KanbanCardProps {
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: "bg-destructive",
-  high: "bg-orange-500",
+  high: "bg-[var(--status-warning-default)]",
   medium: "bg-muted-foreground",
   low: "bg-primary",
 };
@@ -19,7 +19,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 export function KanbanCard({ task, onDragStart, onEdit, onDelete }: KanbanCardProps) {
   return (
     <div
-      className="group bg-background border rounded-md p-2.5 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+      className="group bg-background border rounded-md p-2.5 shadow-sm cursor-grab active:cursor-grabbing transition-shadow"
       draggable
       onDragStart={(e) => onDragStart(e, task.id)}
     >

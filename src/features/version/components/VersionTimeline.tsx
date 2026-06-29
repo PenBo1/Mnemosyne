@@ -15,7 +15,7 @@ interface VersionTimelineProps {
 const REVISION_MODE_COLORS: Record<string, string> = {
   auto: "bg-primary",
   polish: "bg-muted-foreground",
-  rewrite: "bg-orange-500",
+  rewrite: "bg-[var(--status-warning-default)]",
   rework: "bg-destructive",
   spot_fix: "bg-purple-500",
   manual: "bg-primary",

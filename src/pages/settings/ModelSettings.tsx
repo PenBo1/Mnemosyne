@@ -145,7 +145,7 @@ export function ModelSettings() {
                       {testing === model.id ? (
                         <Loader2Icon className="size-3.5 animate-spin" />
                       ) : testResult === "success" && testing === null ? (
-                        <CheckCircleIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <CheckCircleIcon className="size-3.5 text-[var(--status-success-default)]" />
                       ) : testResult === "failed" && testing === null ? (
                         <XCircleIcon className="size-3.5 text-destructive" />
                       ) : null}

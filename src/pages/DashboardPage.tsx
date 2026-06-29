@@ -170,7 +170,7 @@ export function DashboardPage() {
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <CardContent className="flex flex-col items-center gap-1 py-4">
-                  <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+                  <p className="text-3xl font-bold text-[var(--status-success-default)]">
                     {tokenUsage.tools.total_calls - tokenUsage.tools.errors}
                   </p>
                   <p className="text-xs text-muted-foreground">{t.dashboard.ai.successful}</p>
@@ -214,7 +214,7 @@ export function DashboardPage() {
                   <Card key={call.id}>
                     <CardContent className="py-2 px-3 flex items-center gap-3 text-xs">
                       {call.status === "completed" ? (
-                        <CheckCircleIcon className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <CheckCircleIcon className="size-4 text-[var(--status-success-default)] shrink-0" />
                       ) : call.status === "failed" ? (
                         <XCircleIcon className="size-4 text-destructive shrink-0" />
                       ) : (

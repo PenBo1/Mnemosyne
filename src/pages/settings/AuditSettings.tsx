@@ -54,7 +54,7 @@ export function AuditSettings() {
       {/* 文件系统规则 */}
       <Card className="py-0 gap-0">
         <CardContent className="flex items-center gap-2 border-b py-3">
-          <CheckCircleIcon className="size-4 text-emerald-600 dark:text-emerald-400" />
+          <CheckCircleIcon className="size-4 text-[var(--status-success-default)]" />
           <span className="text-sm font-medium">{t.audit.fileSystemRules}</span>
         </CardContent>
         {status?.fs_status.allowed_patterns.map((pattern, i) => (

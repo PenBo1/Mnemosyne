@@ -182,7 +182,7 @@ export function MemoryPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {memories.map((memory) => (
-            <Card key={memory.id} className="transition-shadow hover:shadow-md">
+            <Card key={memory.id} className="transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">

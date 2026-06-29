@@ -167,7 +167,7 @@ export function SkillsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {skills.map((skill) => (
-            <Card key={skill.name} className="group transition-shadow hover:shadow-md">
+            <Card key={skill.name} className="group transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
