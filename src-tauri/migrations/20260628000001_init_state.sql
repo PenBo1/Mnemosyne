@@ -1,16 +1,9 @@
 -- Mnemosyne 初始 schema（state.sqlite）
 -- 业务核心 + AI 日志 + 章节版本 + 看板 + 循环工程
 -- 清库重建版本：合并原 state/logs 两库
-
--- ═══════════════════════════════════════════════════════════
--- PRAGMA（WAL 模式下推荐配置）
--- ═══════════════════════════════════════════════════════════
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA synchronous = NORMAL;       -- WAL 模式推荐
-PRAGMA busy_timeout = 5000;        -- 5s 避免并发死锁
-PRAGMA temp_store = MEMORY;
-PRAGMA cache_size = -20000;        -- 20MB 缓存
+--
+-- 注意：PRAGMA 必须在事务外执行，由 Database::new() 在连接池建立后设置。
+-- sqlx::migrate 会在事务中执行本文件，故此处不再包含任何 PRAGMA 语句。
 
 -- ═══════════════════════════════════════════════════════════
 -- Workspaces
