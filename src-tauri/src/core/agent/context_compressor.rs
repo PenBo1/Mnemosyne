@@ -5,6 +5,8 @@
 //! 支持迭代摘要更新（跨多次压缩保留信息）。
 
 use serde::{Serialize, Deserialize};
+use crate::shared::errors::AppError;
+use crate::infrastructure::llm_client::{Provider, types::Message};
 
 // ── 常量 ──────────────────────────────────────────────────────────
 
@@ -134,6 +136,63 @@ impl ContextCompressor {
     /// 检查是否需要压缩
     pub fn should_compress(&self, estimated_tokens: usize, context_length: usize) -> bool {
         estimated_tokens as f64 > context_length as f64 * self.config.threshold_ratio
+    }
+
+    /// 执行上下文压缩：调用 LLM 摘要中间消息，保留尾部最近消息。
+    ///
+    /// 流程：
+    /// 1. 估算总 token，若未超阈值则原样返回
+    /// 2. 分割为"待压缩"和"最近保留"两部分（保留尾部 preserve_recent_count 条）
+    /// 3. 构建摘要提示词（含上一次摘要以支持迭代更新）
+    /// 4. 调用 LLM 生成摘要
+    /// 5. 解析摘要并构建压缩后上下文（摘要系统消息 + 最近消息）
+    ///
+    /// 若消息数 ≤ preserve_recent_count，无法分割，原样返回
+    /// （避免压缩全部后无"最近"上下文可供 LLM 续接）。
+    pub async fn compress(
+        &mut self,
+        messages: &[CompressibleMessage],
+        provider: &dyn Provider,
+        model: &str,
+        context_length: usize,
+    ) -> Result<Vec<CompressibleMessage>, AppError> {
+        // 1. 检查是否需要压缩
+        let total_tokens: usize = messages.iter().map(|m| m.estimate_tokens()).sum();
+        if !self.should_compress(total_tokens, context_length) {
+            return Ok(messages.to_vec());
+        }
+
+        // 2. 分割：保留尾部 preserve_recent_count 条，压缩其余
+        let preserve = self.config.preserve_recent_count;
+        if messages.len() <= preserve {
+            return Ok(messages.to_vec());
+        }
+        let split = messages.len() - preserve;
+        let (to_compress, recent) = messages.split_at(split);
+
+        // 3. 构建摘要提示词（含上一次摘要以支持迭代更新）
+        let prev = self.previous_summary.as_ref().map(|s| s.summary.as_str());
+        let prompt = self.build_summarizer_prompt(to_compress, prev);
+
+        // 4. 调用 LLM 生成摘要
+        let system = "你是对话摘要助手。请按用户指定的格式输出结构化摘要。";
+        let user_msg = Message {
+            role: "user".to_string(),
+            content: prompt,
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        let summary_text = provider.complete(model, system, &[user_msg]).await?;
+
+        // 5. 解析摘要并构建压缩后上下文
+        let summary = self.parse_summary_response(&summary_text, to_compress.len(), total_tokens);
+        tracing::info!(
+            messages_compressed = summary.messages_compressed,
+            tokens_before = summary.tokens_before,
+            tokens_after = summary.tokens_after,
+            "Context compressed via LLM summary"
+        );
+        Ok(self.build_compressed_context(&summary, recent))
     }
 
     /// 构建摘要提示词 — 供 LLM 摘要使用
@@ -288,6 +347,28 @@ fn extract_section(text: &str, section_name: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use crate::infrastructure::llm_client::types::{ModelInfo, ToolSpec, StreamEvent};
+
+    /// 测试用 Provider — complete 返回固定摘要文本，stream 未实现。
+    struct MockProvider;
+
+    #[async_trait]
+    impl Provider for MockProvider {
+        fn name(&self) -> &str { "mock" }
+        fn models(&self) -> Vec<ModelInfo> { vec![] }
+        fn api_key(&self) -> &str { "" }
+        fn base_url(&self) -> &str { "" }
+        async fn complete(&self, _: &str, _: &str, _: &[Message]) -> Result<String, AppError> {
+            Ok("### 任务概览\n测试任务\n\n### 关键决策\n决策1\n".to_string())
+        }
+        async fn stream(
+            &self, _: &str, _: &str, _: &[Message], _: &[ToolSpec],
+        ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = StreamEvent> + Send>>, AppError> {
+            Err(AppError::not_implemented("mock does not stream"))
+        }
+        async fn test_connection(&self) -> Result<(), AppError> { Ok(()) }
+    }
 
     #[test]
     fn test_should_compress() {
@@ -348,5 +429,55 @@ mod tests {
         let tasks = extract_section(text, "任务概览");
         assert_eq!(tasks.len(), 2);
         assert_eq!(tasks[0], "写一部玄幻小说");
+    }
+
+    #[tokio::test]
+    async fn test_compress_below_threshold_returns_original() {
+        let mut compressor = ContextCompressor::new(CompressorConfig::default());
+        let messages = vec![
+            CompressibleMessage::user("短消息1"),
+            CompressibleMessage::user("短消息2"),
+        ];
+        // 未超阈值 — 不调用 LLM，原样返回
+        let result = compressor.compress(&messages, &MockProvider, "mock", 200_000).await.unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_compress_too_few_messages_returns_original() {
+        let mut compressor = ContextCompressor::new(CompressorConfig {
+            preserve_recent_count: 10,
+            ..Default::default()
+        });
+        // 超阈值但消息数 ≤ preserve_recent_count — 无法分割，原样返回
+        let big = "x".repeat(200_000);
+        let messages = vec![CompressibleMessage::user(&big)];
+        let result = compressor.compress(&messages, &MockProvider, "mock", 100_000).await.unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_compress_invokes_llm_and_replaces_middle() {
+        let mut compressor = ContextCompressor::new(CompressorConfig {
+            preserve_recent_count: 2,
+            ..Default::default()
+        });
+        // 5 条消息，每条足够大以触发压缩（estimate_tokens = len/3，1000 chars → ~333 tokens）
+        // threshold_ratio=0.75，context_length=1000 → 阈值 750 tokens
+        // 5 条 × 333 = 1665 tokens > 750，触发压缩
+        let big = "x".repeat(1000);
+        let messages: Vec<CompressibleMessage> = (0..5).map(|i| {
+            CompressibleMessage::user(&format!("{}-{}", i, big))
+        }).collect();
+        let result = compressor.compress(&messages, &MockProvider, "mock", 1000).await.unwrap();
+        // 期望：1 条摘要 system 消息 + 2 条最近消息 = 3 条
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].role, "system");
+        assert!(result[0].content.contains("上下文压缩"));
+        // 最近 2 条应为原消息 3、4
+        assert!(result[1].content.starts_with("3-"));
+        assert!(result[2].content.starts_with("4-"));
+        // previous_summary 应已更新
+        assert!(compressor.previous_summary().is_some());
     }
 }

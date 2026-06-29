@@ -260,13 +260,9 @@ impl PipelineRunner {
                     "Plan failed, attempting recovery"
                 );
 
-                // 如果上下文溢出，先压缩再重试
-                if classified.should_compress {
-                    tracing::info!("Context overflow detected, compressing before retry");
-                    let compressor = planner_ctx.context_compressor.lock().await;
-                    let _ = compressor.build_summarizer_prompt(&[], None);
-                    // TODO: 实际执行 LLM 摘要压缩
-                }
+                // 注意：Plan 阶段无长对话历史可压缩（planner 无状态），上下文溢出
+                // 由 RecoveryStrategy::CompressContext 分支处理（重试）。真正的压缩
+                // 适用于有状态长对话场景（见 ContextCompressor::compress）。
 
                 match recovery_manager.next_strategy(&e) {
                     Some(RecoveryStrategy::Retry) => {
