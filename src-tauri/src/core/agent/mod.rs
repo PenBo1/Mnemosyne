@@ -16,6 +16,7 @@ pub mod continuity;
 pub mod reviser;
 pub mod length_normalizer;
 pub mod observer;
+pub mod reflector;
 pub mod prompts;
 pub mod lesson_tracker;
 
@@ -45,6 +46,7 @@ pub use continuity::ContinuityAuditor;
 pub use reviser::ReviserAgent;
 pub use length_normalizer::LengthNormalizerAgent;
 pub use observer::ObserverAgent;
+pub use reflector::ReflectorAgent;
 
 // ── 移植模块导出 ─────────────────────────────────────────────
 pub use iteration_budget::IterationBudget;

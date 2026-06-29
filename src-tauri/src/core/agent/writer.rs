@@ -17,17 +17,12 @@ impl Default for WriterAgent {
 impl WriterAgent {
     pub fn new() -> Self { Self }
 
-    fn tool_defs(&self, ctx: &AgentContext) -> Vec<crate::infrastructure::llm_client::types::ToolSpec> {
-        ctx.tools.definitions().iter().map(|d| {
-            crate::infrastructure::llm_client::types::ToolSpec {
-                name: d.name.clone(),
-                description: d.description.clone(),
-                parameters: d.parameters.clone(),
-            }
-        }).collect()
-    }
-
-    /// Write a chapter using two-phase approach: creative writing + state settlement
+    /// Write a chapter (Phase 1: creative writing only).
+    ///
+    /// Observer + Reflector 阶段由 pipeline 独立编排（见 ObserverAgent /
+    /// ReflectorAgent），不再内嵌在 Writer 中，符合"职责单一"原则。
+    /// 之前内嵌的 Phase 2a/2b 写入的 markdown truth files 没有下游消费者
+    /// （runner 从 story/state.json 读取 StoryState），属于死代码路径，已移除。
     pub async fn write_chapter(
         &self,
         ctx: &AgentContext,
@@ -65,40 +60,6 @@ impl WriterAgent {
         let creative_response = self.chat(ctx, &creative_system, &creative_user).await?;
         let creative = parse_creative_output(&creative_response.content, chapter_number, &language)?;
 
-        // ── Phase 2: State settlement (Observer + Reflector) ──
-        // Each sub-agent loads its OWN identity — not the writer's
-        tracing::info!(chapter = chapter_number, "Phase 2a: observing facts");
-        let observer_identity = AgentIdentity::load(data_dir, "observer");
-        let observer_prefix = observer_identity.build_system_prefix();
-        let observer_system = super::prompts::observer_prompts::build_system_prompt(&language, Some(&observer_prefix));
-        let observer_user = super::prompts::observer_prompts::build_user_prompt(
-            chapter_number,
-            &creative.title,
-            &creative.content,
-            &language,
-        );
-        let observations = self.chat(ctx, &observer_system, &observer_user).await?;
-
-        tracing::info!(chapter = chapter_number, "Phase 2b: reflecting into truth files");
-        let reflector_identity = AgentIdentity::load(data_dir, "reflector");
-        let reflector_prefix = reflector_identity.build_system_prefix();
-        let settler_system = super::prompts::settler_prompts::build_system_prompt(&language, Some(&reflector_prefix));
-        let settler_user = super::prompts::settler_prompts::build_user_message(
-            chapter_number,
-            &creative.title,
-            &creative.content,
-            book_dir,
-            &observations.content,
-            &language,
-        )?;
-        let settlement = self.chat(ctx, &settler_system, &settler_user).await?;
-
-        // Parse settlement delta
-        let delta = parse_settlement_delta(&settlement.content, chapter_number)?;
-
-        // Save settlement outputs
-        save_settlement_outputs(book_dir, chapter_number, &creative, &delta, &language)?;
-
         Ok(WriteOutput {
             chapter_number,
             title: creative.title,
@@ -133,15 +94,6 @@ pub struct WriteOutput {
     pub content: String,
     pub word_count: u32,
     pub pre_write_check: String,
-}
-
-pub struct SettlementDelta {
-    pub updated_state: String,
-    pub updated_hooks: String,
-    pub chapter_summary: String,
-    pub updated_subplots: String,
-    pub updated_emotional_arcs: String,
-    pub updated_character_matrix: String,
 }
 
 fn parse_creative_output(content: &str, chapter_number: u32, language: &str) -> Result<CreativeOutput, AppError> {
@@ -185,124 +137,6 @@ fn parse_creative_output(content: &str, chapter_number: u32, language: &str) -> 
         word_count,
         pre_write_check,
     })
-}
-
-fn parse_settlement_delta(content: &str, _chapter_number: u32) -> Result<SettlementDelta, AppError> {
-    // Try JSON parsing first
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-        return Ok(SettlementDelta {
-            updated_state: json.get("updated_state")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            updated_hooks: json.get("updated_hooks")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            chapter_summary: json.get("chapter_summary")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            updated_subplots: json.get("updated_subplots")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            updated_emotional_arcs: json.get("updated_emotional_arcs")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            updated_character_matrix: json.get("updated_character_matrix")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        });
-    }
-
-    // Fallback: treat entire content as updated state
-    Ok(SettlementDelta {
-        updated_state: content.to_string(),
-        updated_hooks: String::new(),
-        chapter_summary: String::new(),
-        updated_subplots: String::new(),
-        updated_emotional_arcs: String::new(),
-        updated_character_matrix: String::new(),
-    })
-}
-
-fn save_settlement_outputs(
-    book_dir: &std::path::Path,
-    chapter_number: u32,
-    creative: &CreativeOutput,
-    delta: &SettlementDelta,
-    language: &str,
-) -> Result<(), AppError> {
-    let story_dir = book_dir.join("story");
-    let chapters_dir = book_dir.join("chapters");
-
-    // Save chapter file
-    std::fs::create_dir_all(&chapters_dir)?;
-    let filename = format!("{:04}_{}.md", chapter_number, utils::sanitize_filename(&creative.title));
-    let heading = if language == "en" {
-        format!("# Chapter {}: {}", chapter_number, creative.title)
-    } else {
-        format!("# 第{}章 {}", chapter_number, creative.title)
-    };
-    std::fs::write(
-        chapters_dir.join(filename),
-        format!("{}\n\n{}", heading, creative.content),
-    )?;
-
-    // Save truth files
-    if !delta.updated_state.is_empty() {
-        std::fs::write(story_dir.join("current_state.md"), &delta.updated_state)?;
-    }
-    if !delta.updated_hooks.is_empty() {
-        std::fs::write(story_dir.join("pending_hooks.md"), &delta.updated_hooks)?;
-    }
-    if !delta.chapter_summary.is_empty() {
-        append_chapter_summary(&story_dir, &delta.chapter_summary, language)?;
-    }
-    if !delta.updated_subplots.is_empty() {
-        std::fs::write(story_dir.join("subplot_board.md"), &delta.updated_subplots)?;
-    }
-    if !delta.updated_emotional_arcs.is_empty() {
-        std::fs::write(story_dir.join("emotional_arcs.md"), &delta.updated_emotional_arcs)?;
-    }
-    if !delta.updated_character_matrix.is_empty() {
-        std::fs::write(story_dir.join("character_matrix.md"), &delta.updated_character_matrix)?;
-    }
-
-    Ok(())
-}
-
-fn append_chapter_summary(
-    story_dir: &std::path::Path,
-    summary: &str,
-    language: &str,
-) -> Result<(), AppError> {
-    let path = story_dir.join("chapter_summaries.md");
-    let header = if language == "en" {
-        "# Chapter Summaries\n\n| Chapter | Title | Characters | Key Events | State Changes | Hook Activity | Mood | Chapter Type |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
-    } else {
-        "# 章节摘要\n\n| 章节 | 标题 | 出场人物 | 关键事件 | 状态变化 | 伏笔动态 | 情绪基调 | 章节类型 |\n|------|------|----------|----------|----------|----------|----------|----------|\n"
-    };
-
-    let mut content = if path.exists() {
-        std::fs::read_to_string(&path)?
-    } else {
-        header.to_string()
-    };
-
-    // Extract only data rows from summary
-    for line in summary.lines() {
-        if line.starts_with('|') && !line.starts_with("| 章节") && !line.starts_with("| Chapter") && !line.starts_with("|--") {
-            content.push_str(line);
-            content.push('\n');
-        }
-    }
-
-    std::fs::write(path, content)?;
-    Ok(())
 }
 
 fn read_book_language(book_dir: &std::path::Path) -> Option<String> {
