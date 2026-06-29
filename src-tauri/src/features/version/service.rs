@@ -51,8 +51,8 @@ impl VersionService {
         // Compute content hash
         let content_hash = DiffEngine::compute_hash(content);
 
-        // Count words (simplified: count Chinese chars + English words)
-        let word_count = count_words(content);
+        // Count words (Chinese-aware)
+        let word_count = crate::shared::text::count_words_default(content);
 
         let request = CreateVersionRequest {
             novel_id: novel_id.to_string(),
@@ -118,12 +118,4 @@ impl VersionService {
         
         Ok(true)
     }
-}
-
-/// Count words in content (Chinese chars + English words approximation)
-fn count_words(content: &str) -> u32 {
-    let chinese_chars = content.chars().filter(|c| c.is_ascii()).count() as u32;
-    let english_words = content.split_whitespace().count() as u32;
-    // Approximate: Chinese ~1.5 chars per word, English ~1 word
-    (chinese_chars / 2 + english_words) as u32
 }

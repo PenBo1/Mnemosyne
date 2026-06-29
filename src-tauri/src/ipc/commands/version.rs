@@ -3,7 +3,7 @@ use tauri::State;
 use crate::shared::errors::{AppError, IpcResponse};
 use crate::features::version::{ChapterVersion, RevisionMode, LineDiffResult};
 use crate::features::version::DiffEngine;
-use crate::infrastructure::utils::text_utils::count_words;
+use crate::shared::text::count_words_default as count_words;
 use crate::infrastructure::file_storage::fs_utils::validate_id_component;
 use crate::AppState;
 

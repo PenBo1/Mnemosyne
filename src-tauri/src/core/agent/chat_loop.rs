@@ -245,7 +245,10 @@ mod tests {
             crate::infrastructure::db::Message {
                 id: "1".into(), session_id: "s".into(), role: "user".into(),
                 content: "hi".into(), tool_calls: None, tool_results: None,
-                token_count: None, created_at: "now".into(),
+                token_count: None, thinking_content: None,
+                model: None, provider: None,
+                input_tokens: 0, output_tokens: 0, latency_ms: None,
+                created_at: "now".into(),
             },
         ];
         assert!(compact_messages_simple(&messages).is_empty());

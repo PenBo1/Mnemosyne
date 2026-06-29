@@ -5,7 +5,9 @@ use chrono::Utc;
 use super::Database;
 use super::connection::db_err;
 use crate::shared::errors::AppError;
-use crate::features::version::{ChapterVersion, CreateVersionRequest, RevisionMode};
+// ChapterVersion / CreateVersionRequest / RevisionMode 已下沉到 shared/version，
+// 修复 infra → features/version 反向依赖。
+use crate::shared::version::{ChapterVersion, CreateVersionRequest, RevisionMode};
 
 impl Database {
     fn map_chapter_version(row: &sqlx::sqlite::SqliteRow) -> Result<ChapterVersion, AppError> {

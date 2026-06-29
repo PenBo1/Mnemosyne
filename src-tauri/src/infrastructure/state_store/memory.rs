@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use tokio::sync::RwLock;
-use crate::core::agent::{MemoryEntry, MemoryType, MemorySystem};
+// MemoryEntry / MemoryType 已下沉到 shared/memory，修复 infra → core/agent 反向依赖。
+// MemorySystem 仍留在 core/agent（它是 agent 内部的工具系统，不被 infra 持久化）。
+use crate::shared::memory::{MemoryEntry, MemoryType};
+use crate::core::agent::MemorySystem;
 
 const DEFAULT_BUDGET: usize = 20;
 

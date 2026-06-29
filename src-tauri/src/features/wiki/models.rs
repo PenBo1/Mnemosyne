@@ -1,89 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// Wiki entry categories
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WikiCategory {
-    General,
-    Character,
-    Location,
-    Event,
-    Concept,
-    Reference,
-}
-
-impl Default for WikiCategory {
-    fn default() -> Self {
-        Self::General
-    }
-}
-
-impl std::fmt::Display for WikiCategory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WikiCategory::General => write!(f, "general"),
-            WikiCategory::Character => write!(f, "character"),
-            WikiCategory::Location => write!(f, "location"),
-            WikiCategory::Event => write!(f, "event"),
-            WikiCategory::Concept => write!(f, "concept"),
-            WikiCategory::Reference => write!(f, "reference"),
-        }
-    }
-}
-
-impl std::str::FromStr for WikiCategory {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "general" => Ok(WikiCategory::General),
-            "character" => Ok(WikiCategory::Character),
-            "location" => Ok(WikiCategory::Location),
-            "event" => Ok(WikiCategory::Event),
-            "concept" => Ok(WikiCategory::Concept),
-            "reference" => Ok(WikiCategory::Reference),
-            _ => Err(format!("Unknown wiki category: {}", s)),
-        }
-    }
-}
-
-/// Wiki entry source type
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WikiSourceType {
-    Manual,
-    AiExtracted,
-    Imported,
-}
-
-impl Default for WikiSourceType {
-    fn default() -> Self {
-        Self::Manual
-    }
-}
-
-impl std::fmt::Display for WikiSourceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WikiSourceType::Manual => write!(f, "manual"),
-            WikiSourceType::AiExtracted => write!(f, "ai_extracted"),
-            WikiSourceType::Imported => write!(f, "imported"),
-        }
-    }
-}
-
-impl std::str::FromStr for WikiSourceType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "manual" => Ok(WikiSourceType::Manual),
-            "ai_extracted" => Ok(WikiSourceType::AiExtracted),
-            "imported" => Ok(WikiSourceType::Imported),
-            _ => Err(format!("Unknown wiki source type: {}", s)),
-        }
-    }
-}
+// WikiCategory 与 WikiSourceType 已下沉到 crate::shared::wiki（修复 infra →
+// features/wiki 反向依赖）。这里通过 re-export 保持
+// `crate::features::wiki::WikiCategory` 路径兼容。
+pub use crate::shared::wiki::{WikiCategory, WikiSourceType};
 
 /// Wiki entry - a knowledge base article for a novel
 #[derive(Debug, Clone, Serialize, Deserialize)]

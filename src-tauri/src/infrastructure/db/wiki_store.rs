@@ -22,8 +22,8 @@ impl Database {
             novel_id: row.get(1),
             title: row.get(2),
             content: row.get(3),
-            category: category_str.parse().unwrap_or(crate::features::wiki::WikiCategory::General),
-            source_type: source_type_str.parse().unwrap_or(crate::features::wiki::WikiSourceType::Manual),
+            category: category_str.parse().unwrap_or(crate::shared::wiki::WikiCategory::General),
+            source_type: source_type_str.parse().unwrap_or(crate::shared::wiki::WikiSourceType::Manual),
             source_chapter: row.try_get::<Option<i64>, usize>(6).unwrap_or(None).map(|n| n as u32),
             tags: json_decode(&tags_json, "tags")?,
             importance: row.get::<i64, usize>(8) as u32,
@@ -36,7 +36,7 @@ impl Database {
     pub async fn list_wiki_entries(
         &self,
         novel_id: &str,
-        category: Option<&crate::features::wiki::WikiCategory>,
+        category: Option<&crate::shared::wiki::WikiCategory>,
     ) -> Result<Vec<WikiEntry>, AppError> {
         let rows = if let Some(cat) = category {
             sqlx::query(
@@ -84,7 +84,7 @@ impl Database {
 
         Ok(WikiEntry {
             id, novel_id: req.novel_id.clone(), title: req.title.clone(), content: req.content.clone(),
-            category: req.category.clone(), source_type: crate::features::wiki::WikiSourceType::Manual,
+            category: req.category.clone(), source_type: crate::shared::wiki::WikiSourceType::Manual,
             source_chapter: req.source_chapter, tags: req.tags.clone(), importance,
             word_count, created_at: now.clone(), updated_at: now,
         })
@@ -164,7 +164,7 @@ impl Database {
     pub async fn get_wiki_graph_view(
         &self,
         novel_id: &str,
-        filter_category: Option<&crate::features::wiki::WikiCategory>,
+        filter_category: Option<&crate::shared::wiki::WikiCategory>,
         min_importance: Option<u32>,
     ) -> Result<WikiGraphView, AppError> {
         let min_imp = min_importance.unwrap_or(0);
@@ -246,7 +246,7 @@ impl Database {
     }
 }
 
-/// 字数统计委托给共享实现。
+/// 字数统计委托给 shared::text 单参兼容包装。
 fn count_words(content: &str) -> u32 {
-    crate::infrastructure::utils::text_utils::count_words(content)
+    crate::shared::text::count_words_default(content)
 }

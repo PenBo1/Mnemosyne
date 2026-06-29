@@ -79,28 +79,13 @@ impl SnapshotGc {
 
 /// 跨 agent 去重公共工具函数。
 pub mod utils {
-    /// 按语言感知方式统计文本字数。
-    /// English：按空白分隔的单词。Chinese：非 ASCII 字符 + ASCII 单词。
-    pub fn count_words(text: &str, language: &str) -> u32 {
-        if language == "en" {
-            text.split_whitespace().count() as u32
-        } else {
-            let mut non_ascii = 0u32;
-            for ch in text.chars() {
-                if !ch.is_ascii() && !ch.is_whitespace() {
-                    non_ascii += 1;
-                }
-            }
-            let ascii_words: u32 = text.split_whitespace()
-                .filter(|w| w.bytes().all(|b| b.is_ascii()))
-                .count() as u32;
-            non_ascii + ascii_words
-        }
-    }
+    // count_words 已提升到 crate::shared::text 作为唯一实现（消除 4 处重复）。
+    // 这里通过 re-export 保持 `utils::count_words(text, language)` 调用路径兼容。
+    pub use crate::shared::text::count_words;
 
     /// 统计字数（默认 English）。
     pub fn count_words_en(text: &str) -> u32 {
-        text.split_whitespace().count() as u32
+        crate::shared::text::count_words(text, "en")
     }
 
     /// 从 config 读取 book 语言（通过 project_root + book_id）。

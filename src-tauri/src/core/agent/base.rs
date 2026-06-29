@@ -78,27 +78,10 @@ pub trait ToolExecutor: Send + Sync {
 }
 
 // ── Memory System (P14.07 MemGPT) ──────────────────────────────────────────
-
-/// A memory entry stored in the archival store
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryEntry {
-    pub id: String,
-    pub content: String,
-    pub entry_type: MemoryType,
-    pub chapter: Option<u32>,
-    pub timestamp: String,
-    pub tags: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum MemoryType {
-    Character,
-    Plot,
-    Setting,
-    Dialogue,
-    Fact,
-    Style,
-}
+//
+// MemoryEntry 与 MemoryType 已下沉到 crate::shared::memory（修复 infra → core/agent
+// 反向依赖）。这里通过 re-export 保持 `crate::core::agent::MemoryEntry` 路径兼容。
+pub use crate::shared::memory::{MemoryEntry, MemoryType};
 
 /// Two-layer memory system (P14.07 MemGPT)
 pub struct MemorySystem {
