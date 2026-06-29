@@ -2,13 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,9 +16,11 @@ import {
   TrendingUpIcon,
   BookOpenIcon,
 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useRadar } from "@/hooks/useRadar";
-import type { RadarRecommendation } from "@/types";
+import { PageContainer, PageHeader, PageHeading, PageTitle, PageDescription, PageActions } from "@/components/shared/page-layout";
+import { EmptyState } from "@/components/shared/state";
+import { useI18n } from "@/shared/i18n";
+import { useRadar } from "@/features/radar/hooks/useRadar";
+import type { RadarRecommendation } from "@/shared/types";
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
@@ -41,7 +36,7 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
 
 function RecommendationCard({ rec }: { rec: RadarRecommendation }) {
   return (
-    <div className="rounded-lg border bg-card p-5 space-y-3">
+    <div className="rounded-lg border bg-card p-5 flex flex-col gap-3 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -81,30 +76,32 @@ export function TrendsPage() {
   const { t } = useI18n();
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <RadarIcon />
             {t.trends.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.trends.description}</p>
-        </div>
-        <Button
-          onClick={scan}
-          disabled={scanning}
-          size="sm"
-          className="gap-2"
-        >
-          {scanning ? <Spinner className="size-4" /> : <ScanSearchIcon className="size-4" />}
-          {scanning ? t.trends.scanning : t.trends.scan}
-        </Button>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.trends.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button
+            onClick={scan}
+            disabled={scanning}
+            size="sm"
+            className="gap-2"
+          >
+            {scanning ? <Spinner className="size-4" /> : <ScanSearchIcon className="size-4" />}
+            {scanning ? t.trends.scanning : t.trends.scan}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       {currentResult && (
-        <div className="space-y-6">
-          <div className="rounded-lg border bg-card p-5">
-            <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-col gap-6">
+          <div className="rounded-lg border bg-card p-5 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
               <TrendingUpIcon className="size-4 text-muted-foreground" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 {t.trends.summary}
@@ -124,36 +121,32 @@ export function TrendsPage() {
       )}
 
       {!currentResult && !scanning && !error && (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <RadarIcon />
-            </EmptyMedia>
-            <EmptyTitle>{t.trends.empty}</EmptyTitle>
-            <EmptyDescription>{t.trends.emptyHint}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <EmptyState
+          icon={<RadarIcon />}
+          title={t.trends.empty}
+          description={t.trends.emptyHint}
+        />
       )}
 
       {history.length > 0 && (
-        <div className="rounded-lg border bg-card p-5 space-y-3">
+        <div className="rounded-lg border bg-card p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <ClockIcon className="size-4 text-muted-foreground" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               {t.trends.history}
             </h3>
           </div>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             {history.slice(0, 10).map((scan) => (
               <div key={scan.id} className="flex items-center gap-2">
                 <button
                   onClick={() => viewHistoryItem(scan)}
-                  className="flex-1 rounded-md border border-border/40 px-3 py-2 text-left text-xs hover:bg-muted/30 transition-colors"
+                  className="flex-1 rounded-md border border-border/40 px-3 py-2 text-left text-xs hover:bg-muted/30 transition-colors flex flex-col gap-1"
                 >
                   <div className="font-medium text-foreground">
                     {new Date(scan.created_at).toLocaleString()}
                   </div>
-                  <div className="mt-1 line-clamp-1 text-muted-foreground">
+                  <div className="line-clamp-1 text-muted-foreground">
                     {scan.market_summary || t.common.noSummary}
                   </div>
                 </button>
@@ -178,6 +171,6 @@ export function TrendsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

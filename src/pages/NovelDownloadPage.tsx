@@ -20,10 +20,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+} from "@/components/shared/page-layout";
+import { EmptyState, LoadingState } from "@/components/shared/state";
 import { DownloadIcon, SearchIcon, CheckCircleIcon, BookOpenIcon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import * as novelService from "@/services/novel";
-import type { BookSource, SearchBookResult } from "@/types";
+import { useI18n } from "@/shared/i18n";
+import * as novelService from "@/features/novel/services";
+import type { BookSource, SearchBookResult } from "@/shared/types";
 
 export function NovelDownloadPage() {
   const { t } = useI18n();
@@ -99,16 +107,16 @@ export function NovelDownloadPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <DownloadIcon />
             {t.novels.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.novels.description}</p>
-        </div>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.novels.description}</PageDescription>
+        </PageHeading>
+      </PageHeader>
 
       <div className="flex items-center gap-3">
         <Select value={selectedSource} onValueChange={setSelectedSource}>
@@ -137,11 +145,7 @@ export function NovelDownloadPage() {
         </Button>
       </div>
 
-      {searching && (
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="size-6" />
-        </div>
-      )}
+      {searching && <LoadingState label={t.common.loading} />}
 
       {!searching && results.length > 0 && (
         <div className="border rounded-lg">
@@ -157,7 +161,7 @@ export function NovelDownloadPage() {
             </TableHeader>
             <TableBody>
               {results.map((result) => (
-                <TableRow key={result.url}>
+                <TableRow key={result.url} className="transition-colors hover:bg-muted/50">
                   <TableCell className="font-medium">{result.book_name}</TableCell>
                   <TableCell>{result.author}</TableCell>
                   <TableCell>
@@ -168,7 +172,7 @@ export function NovelDownloadPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     {downloadComplete === result.book_name ? (
-                      <Badge variant="default" className="bg-green-600">
+                      <Badge variant="default">
                         <CheckCircleIcon data-icon="inline-start" />
                         {t.novels.download.downloaded}
                       </Badge>
@@ -198,15 +202,12 @@ export function NovelDownloadPage() {
       )}
 
       {!searching && results.length === 0 && keyword && (
-        <div className="text-center py-8 text-muted-foreground">
-          <SearchIcon className="size-12 mx-auto mb-4 opacity-50" />
-          <p>{t.novels.download.noResults}</p>
-        </div>
+        <EmptyState icon={<SearchIcon />} title={t.novels.download.noResults} />
       )}
 
       {localNovels.length > 0 && (
-        <div>
-          <h4 className="text-sm font-medium mb-3">
+        <div className="flex flex-col gap-3">
+          <h4 className="text-sm font-medium">
             {t.novels.download.downloadedNovels.replace("{count}", String(localNovels.length))}
           </h4>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -223,6 +224,6 @@ export function NovelDownloadPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

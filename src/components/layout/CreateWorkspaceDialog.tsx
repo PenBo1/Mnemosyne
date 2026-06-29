@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PlusIcon, FolderOpenIcon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 
 interface CreateWorkspaceDialogProps {
   open: boolean;

@@ -11,9 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2Icon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useModelSettings } from "@/hooks/useModelSettings";
-import type { AiModelConfig } from "@/lib/settings";
+import { useI18n } from "@/shared/i18n";
+import { useModelSettings } from "@/features/settings/hooks";
+import type { AiModelConfig } from "@/shared/settings";
 
 interface EditModelDialogProps {
   open: boolean;
@@ -51,7 +51,7 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
       });
       onOpenChange(false);
     } catch {
-      // Error handled by hook
+      // 错误由 hook 处理
     } finally {
       setSaving(false);
     }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   CheckCircleIcon,
   XCircleIcon,
@@ -10,11 +10,20 @@ import {
   Trash2Icon,
   PencilIcon,
 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useModelSettings } from "@/hooks/useModelSettings";
+import { useI18n } from "@/shared/i18n";
+import { useModelSettings } from "@/features/settings/hooks";
 import { AddModelDialog } from "./AddModelDialog";
 import { EditModelDialog } from "./EditModelDialog";
-import type { AiModelConfig } from "@/lib/settings";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
+import type { AiModelConfig } from "@/shared/settings";
 
 export function ModelSettings() {
   const { t } = useI18n();
@@ -64,59 +73,61 @@ export function ModelSettings() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Spinner className="size-6" />
-      </div>
+      <PageContainer scrollable={false}>
+        <LoadingState label={t.common.loading} />
+      </PageContainer>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t.settings.modelSettings.title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t.settings.modelSettings.subtitle}
-          </p>
-        </div>
-        <Button onClick={() => setAddDialogOpen(true)} size="sm">
-          <PlusIcon data-icon="inline-start" />
-          {t.settings.modelSettings.addProvider}
-        </Button>
-      </div>
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>{t.settings.modelSettings.title}</PageTitle>
+          <PageDescription>{t.settings.modelSettings.subtitle}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={() => setAddDialogOpen(true)} size="sm">
+            <PlusIcon data-icon="inline-start" />
+            {t.settings.modelSettings.addProvider}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
-      {/* Active Model */}
+      {/* 当前模型 */}
       {activeModelId && (() => {
         const active = models.find((m) => m.id === activeModelId);
         if (!active) return null;
         return (
-          <div className="rounded-lg border bg-card">
-            <div className="px-4 py-3 border-b">
+          <Card className="py-0 gap-0">
+            <CardContent className="border-b py-3">
               <span className="text-sm font-medium">{t.settings.modelSettings.defaultModel}</span>
-            </div>
-            <div className="flex items-center justify-between px-4 py-3">
+            </CardContent>
+            <CardContent className="flex items-center justify-between py-3">
               <div className="flex items-center gap-4 text-xs">
                 <span className="text-muted-foreground">{t.settings.modelSettings.provider}:</span>
                 <span className="font-medium">{active.provider}</span>
                 <span className="text-muted-foreground">{t.settings.modelSettings.model}:</span>
                 <span className="font-medium">{active.name}</span>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         );
       })()}
 
-      {/* Model List */}
-      <div className="rounded-lg border bg-card">
-        {models.length === 0 ? (
-          <div className="px-4 py-8 text-center text-muted-foreground">
-            {t.settings.modelSettings.noProviders}
-          </div>
-        ) : (
-          <div className="divide-y">
+      {/* 模型列表 */}
+      {models.length === 0 ? (
+        <EmptyState
+          icon={<PlusIcon className="size-6" />}
+          title={t.settings.modelSettings.noProviders}
+          description={t.settings.modelSettings.subtitle}
+        />
+      ) : (
+        <Card className="py-0 gap-0">
+          <CardContent className="divide-y px-0">
             {models.map((model) => (
-              <div key={model.id} className="px-4 py-3">
-                <div className="flex items-center justify-between mb-1">
+              <div key={model.id} className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-muted/50">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{model.name}</span>
                     <Badge variant="secondary" className="text-xs capitalize">{model.provider}</Badge>
@@ -134,7 +145,7 @@ export function ModelSettings() {
                       {testing === model.id ? (
                         <Loader2Icon className="size-3.5 animate-spin" />
                       ) : testResult === "success" && testing === null ? (
-                        <CheckCircleIcon className="size-3.5 text-green-500" />
+                        <CheckCircleIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                       ) : testResult === "failed" && testing === null ? (
                         <XCircleIcon className="size-3.5 text-destructive" />
                       ) : null}
@@ -158,9 +169,9 @@ export function ModelSettings() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    {model.model} · {model.base_url || t.common.defaultUrl}
-                    <span className="ml-2 font-mono">{model.api_key.slice(0, 8)}...{model.api_key.slice(-4)}</span>
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{model.model} · {model.base_url || t.common.defaultUrl}</span>
+                    <span className="font-mono">{model.api_key.slice(0, 8)}...{model.api_key.slice(-4)}</span>
                   </p>
                   <Button
                     variant={activeModelId === model.id ? "default" : "outline"}
@@ -174,9 +185,9 @@ export function ModelSettings() {
                 </div>
               </div>
             ))}
-          </div>
-        )}
-      </div>
+          </CardContent>
+        </Card>
+      )}
 
       <AddModelDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
       <EditModelDialog
@@ -184,6 +195,6 @@ export function ModelSettings() {
         onOpenChange={setEditDialogOpen}
         model={editingModel}
       />
-    </div>
+    </PageContainer>
   );
 }

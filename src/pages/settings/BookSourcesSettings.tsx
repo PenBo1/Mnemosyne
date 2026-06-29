@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Spinner } from "@/components/ui/spinner";
+import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import {
   Dialog,
@@ -29,9 +29,19 @@ import {
   RefreshCwIcon,
   GlobeIcon,
 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { ipc } from "@/lib/ipc";
-import type { BookSource } from "@/types";
+import { toast } from "sonner";
+import { useI18n } from "@/shared/i18n";
+import { ipc } from "@/infrastructure/api";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
+import type { BookSource } from "@/shared/types";
 
 export function BookSourcesSettings() {
   const { t } = useI18n();
@@ -42,7 +52,7 @@ export function BookSourcesSettings() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
 
-  // Form state
+  // 表单状态
   const [formName, setFormName] = useState("");
   const [formUrl, setFormUrl] = useState("");
   const [formComment, setFormComment] = useState("");
@@ -166,6 +176,7 @@ export function BookSourcesSettings() {
       setDialogOpen(false);
       loadSources();
     } catch (err) {
+      toast.error(t.common.failedToSave);
       console.error("Failed to save source:", err);
     }
   }
@@ -176,18 +187,19 @@ export function BookSourcesSettings() {
       setDeleteConfirm(null);
       loadSources();
     } catch (err) {
+      toast.error(t.common.failedToDelete);
       console.error("Failed to delete source:", err);
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t.settings.bookSources}</h1>
-          <p className="text-sm text-muted-foreground">{t.settings.bookSourcesDesc}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>{t.settings.bookSources}</PageTitle>
+          <PageDescription>{t.settings.bookSourcesDesc}</PageDescription>
+        </PageHeading>
+        <PageActions>
           <Button variant="outline" size="sm" onClick={loadSources} disabled={loading}>
             <RefreshCwIcon data-icon="inline-start" className={loading ? "animate-spin" : ""} />
           </Button>
@@ -195,36 +207,33 @@ export function BookSourcesSettings() {
             <PlusIcon data-icon="inline-start" />
             {t.common.create}
           </Button>
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
 
       {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="size-6" />
-        </div>
+        <LoadingState label={t.common.loading} />
       ) : sources.length === 0 ? (
-        <div className="rounded-lg border bg-card">
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <GlobeIcon className="size-12 mb-4 opacity-30" />
-            <p className="text-lg font-medium">{t.settings.bookSourcesEmpty}</p>
-          </div>
-        </div>
+        <EmptyState
+          icon={<GlobeIcon className="size-6" />}
+          title={t.settings.bookSourcesEmpty}
+          description={t.settings.bookSourcesDesc}
+        />
       ) : (
-        <div className="rounded-lg border bg-card divide-y">
-          {sources.map((source) => (
-            <div key={source.name} className="px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <GlobeIcon className="size-4 shrink-0" />
-                  <span className="text-sm font-medium">{source.name}</span>
-                  <Badge variant={source.disabled ? "secondary" : "default"} className="text-xs">
-                    {source.disabled ? t.settings.bookSourceDisabled : t.settings.bookSourceEnabled}
-                  </Badge>
-                  {source.search?.disabled && (
-                    <Badge variant="outline" className="text-xs">{t.settings.bookSourceNoSearch}</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
+        <Card className="py-0 gap-0">
+          <CardContent className="divide-y px-0">
+            {sources.map((source) => (
+              <div key={source.name} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-muted/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <GlobeIcon className="size-4 shrink-0" />
+                    <span className="text-sm font-medium">{source.name}</span>
+                    <Badge variant={source.disabled ? "secondary" : "default"} className="text-xs">
+                      {source.disabled ? t.settings.bookSourceDisabled : t.settings.bookSourceEnabled}
+                    </Badge>
+                    {source.search?.disabled && (
+                      <Badge variant="outline" className="text-xs">{t.settings.bookSourceNoSearch}</Badge>
+                    )}
+                  </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon-sm">
@@ -246,27 +255,27 @@ export function BookSourcesSettings() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                <p className="line-clamp-1 text-xs text-muted-foreground">{source.url}</p>
+                {source.comment && (
+                  <p className="line-clamp-2 text-xs text-muted-foreground">{source.comment}</p>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {source.search?.disabled ? t.settings.bookSourceNoSearch : t.settings.bookSourceSearchable}
+                  </span>
+                  <Switch
+                    checked={!source.disabled}
+                    onCheckedChange={() => handleToggle(source)}
+                    disabled={toggling === source.name}
+                  />
+                </div>
               </div>
-              <p className="line-clamp-1 text-xs text-muted-foreground mb-2">{source.url}</p>
-              {source.comment && (
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{source.comment}</p>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {source.search?.disabled ? t.settings.bookSourceNoSearch : t.settings.bookSourceSearchable}
-                </span>
-                <Switch
-                  checked={!source.disabled}
-                  onCheckedChange={() => handleToggle(source)}
-                  disabled={toggling === source.name}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
-      {/* Create/Edit Dialog */}
+      {/* 创建/编辑对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -345,7 +354,7 @@ export function BookSourcesSettings() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* 删除确认对话框 */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
           <DialogHeader>
@@ -364,6 +373,6 @@ export function BookSourcesSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

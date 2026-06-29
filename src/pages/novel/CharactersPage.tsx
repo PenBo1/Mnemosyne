@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
+import { parseTags } from "@/shared/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,18 +17,28 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
 import {
   UsersIcon,
   PlusIcon,
   Trash2Icon,
   SearchIcon,
 } from "lucide-react";
-import { useCharacters } from "@/hooks/useCharacters";
-import type { Character } from "@/types";
+import { useCharacters } from "@/features/story/hooks";
+import type { Character } from "@/shared/types";
 
 export function CharactersPage() {
   const { t } = useI18n();
-  const { activeWorkspaceId } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const { characters, loading, create, update, remove } = useCharacters(activeWorkspaceId);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Character | null>(null);
@@ -47,9 +58,10 @@ export function CharactersPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formTraits, setFormTraits] = useState("");
 
-  const filtered = characters.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return characters.filter((c) => c.name.toLowerCase().includes(q));
+  }, [characters, search]);
 
   const resetForm = () => {
     setFormName(""); setFormRole(""); setFormAge(""); setFormGender("");
@@ -78,7 +90,7 @@ export function CharactersPage() {
 
   const handleSave = async () => {
     if (!formName.trim()) return;
-    const traits = formTraits.split(",").map((s) => s.trim()).filter(Boolean);
+    const traits = parseTags(formTraits);
 
     if (isEditing && selected) {
       await update({
@@ -104,20 +116,22 @@ export function CharactersPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <UsersIcon />
             {t.characters.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.characters.description}</p>
-        </div>
-        <Button onClick={openCreate}>
-          <PlusIcon data-icon="inline-start" />
-          {t.characters.create}
-        </Button>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.characters.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.characters.create}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       <div className="relative">
         <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -130,47 +144,45 @@ export function CharactersPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
+        <LoadingState label={t.common.loading} />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <UsersIcon className="size-12 mx-auto mb-4 opacity-50" />
-          <p>{t.characters.empty}</p>
-        </div>
+        <EmptyState icon={<UsersIcon />} title={t.characters.empty} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map((c) => (
-            <button
+            <div
               key={c.id}
+              role="button"
+              tabIndex={0}
               onClick={() => openEdit(c)}
-              className={`text-left rounded-lg border p-4 transition-colors ${
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(c); } }}
+              className={`flex flex-col gap-2 text-left rounded-lg border p-4 transition-colors group cursor-pointer ${
                 selected?.id === c.id ? "border-primary bg-primary/5" : "hover:bg-muted"
               }`}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">{c.name}</span>
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">{c.role}</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
-                    className="opacity-0 group-hover:opacity-100 hover:text-destructive"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
                   >
                     <Trash2Icon className="size-3" />
                   </button>
                 </div>
               </div>
               {c.description && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{c.description}</p>
+                <p className="text-xs text-muted-foreground line-clamp-2">{c.description}</p>
               )}
               {c.traits.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
+                <div className="flex flex-wrap gap-1">
                   {c.traits.slice(0, 3).map((trait) => (
-                    <span key={trait} className="text-[10px] bg-muted px-1.5 py-0.5 rounded">
-                      {trait}
-                    </span>
+                    <Badge key={trait} variant="outline">{trait}</Badge>
                   ))}
                 </div>
               )}
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -240,6 +252,6 @@ export function CharactersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

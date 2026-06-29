@@ -3,23 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Spinner } from "@/components/ui/spinner";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import {
   HistoryIcon,
   GitCompareIcon,
   RotateCwIcon,
 } from "lucide-react";
-import { useVersion } from "@/hooks/useVersion";
-import { VersionTimeline } from "@/components/VersionTimeline";
-import { DiffView } from "@/components/DiffView";
-import type { ChapterVersion } from "@/types";
+import { PageContainer, PageHeader, PageHeading, PageTitle, PageDescription, PageActions } from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
+import { useVersion } from "@/features/version/hooks/useVersion";
+import { VersionTimeline, DiffView } from "@/features/version/components";
+import type { ChapterVersion } from "@/shared/types";
 
 export function VersionPage({ novelId }: { novelId: string }) {
   const {
@@ -49,26 +42,24 @@ export function VersionPage({ novelId }: { novelId: string }) {
     await computeDiff(from.id, to.id);
   };
 
-  const handleRestore = async (version: ChapterVersion) => {
-    // Note: Need workspaceId and bookId for restore
-    // For now, just show a message
-    console.log("Restore version:", version.id);
+  const handleRestore = async (_version: ChapterVersion) => {
+    // TODO: 恢复操作需要 workspaceId 和 bookId，待后端实现后补全
   };
 
   return (
-    <div className="flex flex-col gap-6 h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer>
+      {/* 头部 */}
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <HistoryIcon />
             Version History
-          </h1>
-          <p className="text-sm text-muted-foreground">
+          </PageTitle>
+          <PageDescription>
             View and compare chapter revisions
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+          </PageDescription>
+        </PageHeading>
+        <PageActions>
           <span className="text-sm text-muted-foreground">Chapter:</span>
           <Input
             type="number"
@@ -77,12 +68,12 @@ export function VersionPage({ novelId }: { novelId: string }) {
             className="w-16 h-8"
             min={1}
           />
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
 
-      {/* Main Content */}
+      {/* 主内容 */}
       <div className="flex-1 flex gap-4">
-        {/* Timeline */}
+        {/* 时间线 */}
         <Card className="w-80 flex flex-col">
           <CardHeader className="border-b py-3">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -94,19 +85,13 @@ export function VersionPage({ novelId }: { novelId: string }) {
             <ScrollArea className="h-full">
               <div className="p-3">
                 {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Spinner className="size-6" />
-                  </div>
+                  <LoadingState />
                 ) : versions.length === 0 ? (
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <HistoryIcon />
-                      </EmptyMedia>
-                      <EmptyTitle>No versions</EmptyTitle>
-                      <EmptyDescription>No version history for this chapter</EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    icon={<HistoryIcon />}
+                    title="No versions"
+                    description="No version history for this chapter"
+                  />
                 ) : (
                   <VersionTimeline
                     versions={versions}
@@ -120,7 +105,7 @@ export function VersionPage({ novelId }: { novelId: string }) {
           </CardContent>
         </Card>
 
-        {/* Content/Diff View */}
+        {/* 内容/差异视图 */}
         <Card className="flex-1 flex flex-col">
           <CardHeader className="border-b py-3">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -145,7 +130,7 @@ export function VersionPage({ novelId }: { novelId: string }) {
                 className="ml-auto"
                 onClick={() => handleRestore(selectedVersion)}
               >
-                <RotateCwIcon className="size-4 mr-1" />
+                <RotateCwIcon className="size-4" />
                 Restore
               </Button>
             )}
@@ -160,23 +145,17 @@ export function VersionPage({ novelId }: { novelId: string }) {
                     {selectedVersion.content}
                   </pre>
                 ) : (
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <HistoryIcon />
-                      </EmptyMedia>
-                      <EmptyTitle>Select a version</EmptyTitle>
-                      <EmptyDescription>
-                        Click on a version to view content, or compare two versions
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    icon={<HistoryIcon />}
+                    title="Select a version"
+                    description="Click on a version to view content, or compare two versions"
+                  />
                 )}
               </div>
             </ScrollArea>
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageContainer>
   );
 }

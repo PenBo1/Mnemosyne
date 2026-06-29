@@ -1,8 +1,14 @@
 import { create } from "zustand";
 import { toast } from "sonner";
+<<<<<<< Updated upstream
 import type { Agent, AgentIdentity } from "@/types";
 import { AVAILABLE_MODELS } from "@/constants";
 import * as agentService from "@/services/agent";
+=======
+import type { Agent } from "@/shared/types";
+import { AVAILABLE_MODELS } from "@/shared/constants";
+import * as agentService from "@/features/chat/services";
+>>>>>>> Stashed changes
 
 interface AgentConfigState {
   agents: Agent[];

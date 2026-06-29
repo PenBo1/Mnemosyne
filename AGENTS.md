@@ -53,44 +53,93 @@ Capabilities are defined in `src-tauri/capabilities/*.json`. Only declared comma
 - Prefer minimal necessary complexity. Avoid unnecessary abstraction and over-engineering.
 - Challenge user assumptions when something doesn't make sense. User may not fully understand the codebase — ask questions to uncover true intent. ## Layered architecture
 
-Both the renderer process (frontend) and main process (backend) follow layered architecture:
+Both the renderer process (frontend) and main process (backend) follow a five-layer architecture: **core / features / infrastructure / ipc (or shared) / shared**.
 
-**Renderer process (WebView — `src/`)**:
-```
-UI Layer (pages/components) → Hook Layer (hooks/) → Service Layer (services/) → IPC Layer (lib/ipc/)
-                                                                        ↕
-                                                                 State (lib/store.tsx, stores/)
-```
-- `pages/` — page-level components, one per route/view. Must not contain IPC calls or business logic.
-- `router/` — Context-based page switcher (no URL router)
-- `components/` — reusable UI (ui/ for shadcn, layout/ for structure, shared/ for atoms)
-- `hooks/` — bridge between services and React state (e.g. `useNovels`, `usePrompts`, `useTrends`)
-- `services/` — IPC call wrappers and orchestration logic, no React dependencies
-- `lib/ipc/` — `invoke()` wrappers with common `ipc<T>()` helper
-- `lib/store.tsx` — `useReducer` + Context for global app state (page navigation, settings tab)
-- `stores/` — Zustand stores for complex domain state (e.g. workspace)
+### Main process (Rust — `src-tauri/src/`)
 
-**Main process (Rust — `src-tauri/src/`)**:
 ```
-Command Layer (app/commands/) → Domain Layer (domain/) + Infrastructure Layer (infra/)
-                                        ↓
-                               System Layer (infra/db/, infra/sandbox/)
+ipc/                 IPC 层（Tauri 命令入口，类型安全契约）
+  ├── core/          核心业务逻辑（agent 引擎、interaction 编排、state、init）
+  │     ├── agent/   AI Agent 核心决策引擎（14 子模块）
+  │     └── interaction/  编排层（session ↔ pipeline 桥接）
+  ├── features/      功能模块层（story/session/version/wiki/novel/radar/user_profile/skill_manager）
+  ├── infrastructure/ 基础设施层（db/llm_client/sandbox/file_storage/state_store/ai_services/middleware/utils）
+  └── shared/        跨层共享类型与纯函数（含 errors 错误处理）
 ```
-- `lib.rs` registers commands, initializes app state (AppState with db)
-- `app/commands/` — thin `#[tauri::command]` handlers: extract params, validate, delegate to domain/infra, return
-- `app/state.rs` — `AppState` struct holding all shared state (db, providers, sessions, etc.)
-- `domain/` — business logic as pure functions/structs, no Tauri dependencies. Sub-modules: `agents/`, `pipeline/`, `session/`, `story/`, `wiki/`, `version/`, `radar/`, `novel/`, `harness/`
-- `infra/` — system access layer: `db/` (SQLite), `llm/` (providers), `sandbox/` (security), `memory.rs`, `feedback.rs`, `mcp.rs`, `rag.rs`, `skill/`
-- `errors/` — unified `AppError` type (`app_error.rs`), `IpcResponse<T>` envelope (`ipc.rs`), status codes (`status.rs`)
-- `middleware/` — cross-cutting concerns (e.g. `logging.rs` for structured tracing)
+
+- `lib.rs` declares 5 top-level modules (core, features, infrastructure, ipc, shared), registers commands, initializes app state (AppState with db)
+- `ipc/commands/` — thin `#[tauri::command]` handlers. Only extract params, validate, delegate. No business logic.
+- `core/` — core business logic with no UI/framework dependencies
+  - `core/agent/` — AI Agent engine (base, pipeline, harness, loop_engine, identity, main_agent, chat_loop, prompts, tools, etc.)
+  - `core/interaction/` — orchestration layer (session ↔ pipeline bridge)
+  - `core/state.rs` — AppState (app_handle, db, provider_registry, skill_manager, sandbox, memory_store, feedback_store, mcp_server, scheduler, sessions, agent_states, main_agent_states)
+  - `core/init.rs` — business initialization orchestration
+- `features/` — feature modules (pure functions/structs, no Tauri dependencies): `story/`, `session/`, `version/`, `wiki/`, `novel/`, `radar/`, `user_profile/`, `skill_manager/`
+- `infrastructure/` — system access layer (no Tauri dependencies, receives `&Database`):
+  - `db/` — SQLite + sqlx (store files per business domain)
+  - `llm_client/` — LLM API providers (OpenAI/Anthropic/Ollama/Agnes + ProviderRegistry)
+  - `sandbox/` — sandbox enforcement + security (policy, enforce, fs_sandbox, exec_sandbox, net_sandbox, timeout, security)
+  - `file_storage/` — file I/O (data_dir, fs_utils, epub, secrets)
+  - `state_store/` — state stores (memory, feedback, gc)
+  - `ai_services/` — AI services (mcp, rag, token_budget, output_validator, proxy_fetch)
+  - `middleware/` — cross-cutting concerns (logging)
+  - `utils/` — utility functions (text_utils with count_words)
+- `shared/` — cross-layer shared types and side-effect-free functions
+  - `shared/errors/` — unified `AppError` type (`app_error.rs`), `IpcResponse<T>` envelope (`ipc.rs`), status codes (`status.rs`)
+  - `shared/memory/`, `shared/text/`, `shared/version/`, `shared/wiki/` — pure data types
 
 **Rules**:
-- No business logic in `#[command]` handlers — they extract params, validate, delegate to domain, and return.
-- No Tauri dependencies in `domain/` — domain structs receive dependencies via traits and return `Result<T, AppError>`.
-- No Tauri dependencies in `infra/` — infra modules receive `&Database` and return `Result<T, AppError>`.
+- `ipc/commands/` handlers contain NO business logic — only param extraction, validation, delegation.
+- `core/agent/` does NOT depend on any `features/` module — features orchestrate agent, agent does not reverse-depend.
+- No横向 dependencies between `features/` modules — cross-feature orchestration goes through `core/interaction/` or `ipc/commands/`.
+- No Tauri dependencies in `features/`, `core/`, or `infrastructure/` — they receive dependencies via traits and return `Result<T, AppError>`.
+- `infrastructure/` only depends on `shared/`, NOT on any `features/` or `core/agent/` (no reverse dependency).
+- `shared/` only contains pure data types and side-effect-free functions — no business logic, no I/O.
+- `core/init.rs` handles business initialization (extracting built-in resources, generating default identity files) — `infrastructure/file_storage/data_dir.rs` must NOT call business functions.
 - IPC boundary is the trust seam: always validate in Rust, never trust frontend.
-- All `#[command]` functions must validate inputs before delegating to domain/infra.
+- All `#[command]` functions must validate inputs before delegating to `core/` or `features/`.
 - Path components from IPC (book_id, workspace_id) must be validated for traversal before use in filesystem operations.
+
+### Renderer process (WebView — `src/`)
+
+```
+pages/ (page components) → features/{feature}/hooks/ → features/{feature}/services/ → infrastructure/api/
+                                                                                              ↕
+                                                                                       stores/ (Zustand)
+                                                                                              ↕
+                                                                          core/agent/ (pure logic kernel)
+```
+
+- `pages/` — page-level components, one per route/view. Must not contain IPC calls or business logic. Only call hooks and compose components.
+- `routes/` — Context-based page switcher (no URL router)
+- `features/` — feature modules (each feature is self-contained, communicates via contracts):
+  - `features/chat/` — chat feature (components/, hooks/, services/)
+  - `features/workspace/` — workspace management (components/, hooks/, services/)
+  - `features/story/` — story editing (hooks/, services/)
+  - `features/settings/` — settings page (hooks/, services/)
+  - `features/wiki/`, `features/version/`, `features/kanban/`, `features/loop/`, `features/novel/`, `features/radar/`, `features/memory/`, `features/sandbox/`, `features/skill/`, `features/stats/`, `features/session/`, `features/knowledge/`, `features/tools/` — other features
+- `core/` — core layer (UI-independent pure logic)
+  - `core/agent/` — AI Agent state machine and decision logic (stream-protocol, tool-protocol, session-lifecycle) — no React/Tauri/IPC dependencies, shared by hooks and stores
+  - `core/memory/` — frontend memory management (async action helpers)
+- `infrastructure/` — infrastructure layer (external service adapters)
+  - `infrastructure/api/` — Tauri command wrappers with `ipc<T>()` helper (only IPC exit point)
+  - `infrastructure/event_bus/` — unified event bus (all Tauri `listen()` must go through here)
+- `shared/` — shared layer (cross-module utilities)
+  - `shared/types/` — cross-layer shared types (single source of truth, no type exports from services/hooks)
+  - `shared/constants/` — centralized constants
+  - `shared/utils/` — utility functions
+  - `shared/locales/` — i18n translation files (en.ts, zh.ts)
+  - `shared/i18n.tsx` — I18n full implementation
+  - `shared/theme.tsx` — Theme full implementation
+  - `shared/app-context.tsx` — `useReducer` + Context for global app state (page navigation, settings tab)
+  - `shared/settings.ts` — settings utilities
+- `components/` — common UI components (business-agnostic)
+  - `components/ui/` — shadcn/ui base components (Button, Input, Modal, etc.)
+  - `components/layout/` — layout components (AppLayout, AppSidebar, etc.)
+  - `components/shared/` — shared atomic components
+- `hooks/` — global custom hooks (business-agnostic, e.g. `useCopyFeedback`, `useIsMobile`). Feature-specific hooks live in `features/{feature}/hooks/`.
+- `stores/` — Zustand stores for complex domain state. `stores/agent/` (chat-store.ts + main-agent-store.ts) for AI Agent state.
+- `styles/` — global styles (index.css)
 
 ## File & modularization requirements
 
@@ -130,7 +179,7 @@ Command Layer (app/commands/) → Domain Layer (domain/) + Infrastructure Layer 
 
 All application data is managed by `DataDir` (`src-tauri/src/infra/data_dir.rs`). On first launch, all directories and default config files are created automatically.
 
-Agent configurations and harness configs are **embedded in code** (`domain/harness/agent_configs.rs`, `domain/harness/global_config.rs`). No file-based loading — configs live in the binary only.
+Agent configurations and harness configs are **embedded in code** (`agent/harness/agent_configs.rs`, `agent/harness/global_config.rs`). No file-based loading — configs live in the binary only.
 
 ```
 %APPDATA%/com.admin.mnemosyne/       (Windows)

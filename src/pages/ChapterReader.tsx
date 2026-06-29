@@ -3,7 +3,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
+<<<<<<< Updated upstream
 import { useI18n } from "@/lib/i18n";
+=======
+import { useI18n } from "@/shared/i18n";
+import MainAgentPage from "@/pages/MainAgentPage";
+>>>>>>> Stashed changes
 
 interface Chapter {
   id: string;
@@ -24,12 +29,12 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
   const { t } = useI18n();
   const [chapters] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
-  // novelId preserved for future chapter loading functionality
+  // novelId 保留用于未来章节加载功能
   void novelId;
 
   return (
     <div className="flex h-full">
-      {/* Chapter Sidebar */}
+      {/* 章节侧边栏 */}
       <div className="w-64 border-r flex flex-col">
         <div className="p-3 border-b">
           <Button variant="ghost" size="sm" onClick={onBack} className="w-full justify-start">
@@ -37,17 +42,17 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
             {t.chapterReader.backToNovels}
           </Button>
         </div>
-        <div className="p-2 border-b">
-          <h3 className="text-sm font-medium px-2 mb-1">{novelTitle}</h3>
+        <div className="p-2 border-b flex flex-col gap-1">
+          <h3 className="text-sm font-medium px-2">{novelTitle}</h3>
           <p className="text-xs text-muted-foreground px-2">{t.chapterReader.chapterCount.replace("{count}", String(chapters.length))}</p>
         </div>
         <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+          <div className="p-2 flex flex-col gap-1">
             {chapters.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-xs">
-                <FileTextIcon className="size-8 mx-auto mb-2 opacity-50" />
+              <div className="text-center py-8 text-muted-foreground text-xs flex flex-col items-center gap-2">
+                <FileTextIcon className="size-8 opacity-50" />
                 <p>{t.chapterReader.noChapters}</p>
-                <p className="mt-1">{t.chapterReader.requestChapter}</p>
+                <p>{t.chapterReader.requestChapter}</p>
               </div>
             ) : (
               chapters.map((ch) => (
@@ -60,9 +65,9 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
                       : "hover:bg-muted"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-1">
                     <span className="truncate">{t.chapterReader.chapterPrefix.replace("{number}", String(ch.number))} {ch.title}</span>
-                    <Badge variant="outline" className="text-[10px] ml-1">
+                    <Badge variant="outline" className="text-[10px]">
                       {ch.word_count}
                     </Badge>
                   </div>
@@ -73,7 +78,7 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
         </ScrollArea>
       </div>
 
-      {/* Main Content */}
+      {/* 主内容 */}
       <div className="flex-1 flex flex-col">
         {selectedChapter ? (
           <>

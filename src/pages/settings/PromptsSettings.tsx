@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -26,10 +27,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
 import { PlusIcon, MoreVerticalIcon, PencilIcon, Trash2Icon, MessageSquareIcon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { usePrompts } from "@/hooks/usePrompts";
+import { useI18n } from "@/shared/i18n";
+import { usePrompts } from "@/features/settings/hooks/usePrompts";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
 
 const CATEGORIES = ["general", "writing", "character", "world", "dialogue", "style"];
 
@@ -77,13 +86,13 @@ export function PromptsSettings() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t.settings.prompts}</h1>
-          <p className="text-sm text-muted-foreground">{t.settings.promptsDesc}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>{t.settings.prompts}</PageTitle>
+          <PageDescription>{t.settings.promptsDesc}</PageDescription>
+        </PageHeading>
+        <PageActions>
           <Select value={filterCategory} onValueChange={setFilterCategory}>
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -149,59 +158,58 @@ export function PromptsSettings() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
 
       {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="size-6" />
-        </div>
+        <LoadingState label={t.common.loading} />
       ) : prompts.length === 0 ? (
-        <div className="rounded-lg border bg-card">
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <MessageSquareIcon className="size-12 mb-4 opacity-30" />
-            <p className="text-lg font-medium">{t.prompts.empty}</p>
-            <p className="text-sm mt-1">{t.prompts.create}</p>
-            <Button onClick={openCreate} className="mt-4">
-              <PlusIcon data-icon="inline-start" />
-              {t.prompts.create}
-            </Button>
-          </div>
-        </div>
+        <EmptyState
+          icon={<MessageSquareIcon className="size-6" />}
+          title={t.prompts.empty}
+          description={t.prompts.create}
+        >
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.prompts.create}
+          </Button>
+        </EmptyState>
       ) : (
-        <div className="rounded-lg border bg-card divide-y">
-          {prompts.map((prompt) => (
-            <div key={prompt.id} className="px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{prompt.name}</span>
-                  <Badge variant="secondary" className="text-xs">{prompt.category}</Badge>
+        <Card className="py-0 gap-0">
+          <CardContent className="divide-y px-0">
+            {prompts.map((prompt) => (
+              <div key={prompt.id} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-muted/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{prompt.name}</span>
+                    <Badge variant="secondary" className="text-xs">{prompt.category}</Badge>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-sm">
+                        <MoreVerticalIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openEdit(prompt)}>
+                        <PencilIcon />
+                        <span>{t.common.edit}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(prompt.id)} className="text-destructive">
+                        <Trash2Icon />
+                        <span>{t.common.delete}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-sm">
-                      <MoreVerticalIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEdit(prompt)}>
-                      <PencilIcon />
-                      <span>{t.common.edit}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDelete(prompt.id)} className="text-destructive">
-                      <Trash2Icon />
-                      <span>{t.common.delete}</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <p className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
+                  {prompt.content}
+                </p>
               </div>
-              <p className="line-clamp-3 text-xs text-muted-foreground whitespace-pre-wrap">
-                {prompt.content}
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
-    </div>
+    </PageContainer>
   );
 }

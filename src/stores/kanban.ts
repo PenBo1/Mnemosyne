@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { KanbanTask, KanbanState, CreateKanbanTaskRequest, UpdateKanbanTaskRequest, KanbanTaskStatus } from "@/types";
-import * as kanbanService from "@/services/kanban";
+import type { KanbanTask, KanbanState, CreateKanbanTaskRequest, UpdateKanbanTaskRequest, KanbanTaskStatus } from "@/shared/types";
+import * as kanbanService from "@/features/kanban/services";
 import { toast } from "sonner";
 
 export const useKanbanStore = create<KanbanState>((set, _get) => ({

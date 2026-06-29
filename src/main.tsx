@@ -1,8 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { ThemeProvider } from "./components/providers/Theme";
-import { I18nProvider } from "./lib/i18n";
+import { ThemeProvider } from "./shared/theme";
+import { I18nProvider } from "./shared/i18n";
 import "./styles/index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

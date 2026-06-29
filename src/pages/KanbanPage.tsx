@@ -1,12 +1,20 @@
 import { useState, useCallback } from "react";
-import { useI18n } from "@/lib/i18n";
-import { useKanban } from "@/hooks/useKanban";
+import { useI18n } from "@/shared/i18n";
+import { useKanban } from "@/features/kanban/hooks/useKanban";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { KanbanBoard } from "@/components/kanban/KanbanBoard";
-import { KanbanTaskDialog } from "@/components/kanban/KanbanTaskDialog";
+import { KanbanBoard } from "@/features/kanban/components/KanbanBoard";
+import { KanbanTaskDialog } from "@/features/kanban/components/KanbanTaskDialog";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import type { CreateKanbanTaskRequest, UpdateKanbanTaskRequest } from "@/types";
+import type { CreateKanbanTaskRequest, UpdateKanbanTaskRequest } from "@/shared/types";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
 
 export default function KanbanPage() {
   const { t } = useI18n();
@@ -35,33 +43,35 @@ export default function KanbanPage() {
 
   if (!activeNovelId) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        {t.kanban?.empty?.board ?? "Select a novel first"}
-      </div>
+      <PageContainer>
+        <EmptyState
+          title={t.kanban?.empty?.board ?? "Select a novel first"}
+        />
+      </PageContainer>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <h1 className="text-lg font-semibold">{t.kanban?.title ?? "Kanban Board"}</h1>
-        <div className="flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>{t.kanban?.title ?? "Kanban Board"}</PageTitle>
+        </PageHeading>
+        <PageActions>
           <Button
             variant="outline"
             size="sm"
             onClick={() => setDialogOpen(true)}
           >
-            <Plus className="h-4 w-4 mr-1" />
+            <Plus data-icon="inline-start" />
             {t.kanban?.newTask ?? "New Task"}
           </Button>
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            Loading...
-          </div>
+          <LoadingState />
         ) : (
           <KanbanBoard
             tasks={tasks}
@@ -89,6 +99,6 @@ export default function KanbanPage() {
         }
         novelId={activeNovelId}
       />
-    </div>
+    </PageContainer>
   );
 }

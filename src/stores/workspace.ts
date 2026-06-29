@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-import type { WorkspaceState, Workspace } from "@/types";
-import * as workspaceService from "@/services/workspaces";
+import type { WorkspaceState, Workspace } from "@/shared/types";
+import * as workspaceService from "@/features/workspace/services";
 
-// Optimistic update helper
+// 乐观更新辅助函数
 function generateTempId(): string {
   return `temp_ws_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -25,7 +25,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
     }
   },
 
-  // Optimistic add workspace (P2 - immediate UI update)
+  // 乐观添加 workspace（P2 - 立即更新 UI）
   addWorkspace: async (name: string, path?: string) => {
     const tempId = generateTempId();
     const optimisticWorkspace: Workspace = {
@@ -36,7 +36,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
       updated_at: new Date().toISOString(),
     };
 
-    // Optimistic update: immediately show in UI
+    // 乐观更新：立即在 UI 中显示
     set((state) => ({
       workspaces: [optimisticWorkspace, ...state.workspaces],
       error: null,
@@ -44,14 +44,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
 
     try {
       const workspace = await workspaceService.createWorkspace({ name, path });
-      // Replace optimistic data with real data
+      // 用真实数据替换乐观数据
       set((state) => ({
         workspaces: state.workspaces.map((ws) =>
           ws.id === tempId ? workspace : ws
         ),
       }));
     } catch (err) {
-      // Rollback optimistic update
+      // 回滚乐观更新
       set((state) => ({
         workspaces: state.workspaces.filter((ws) => ws.id !== tempId),
         error: err instanceof Error ? err.message : "Failed to create workspace",
@@ -61,9 +61,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
     }
   },
 
-  // Optimistic remove workspace (P2 - immediate UI update)
+  // 乐观移除 workspace（P2 - 立即更新 UI）
   removeWorkspace: async (id: string) => {
-    // Optimistic update: immediately remove from UI
+    // 乐观更新：立即从 UI 中移除
     const previousWorkspaces = _get().workspaces;
     const previousActiveId = _get().activeWorkspaceId;
 
@@ -77,7 +77,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
     try {
       await workspaceService.deleteWorkspace(id);
     } catch (err) {
-      // Rollback on failure
+      // 失败时回滚
       set({
         workspaces: previousWorkspaces,
         activeWorkspaceId: previousActiveId,

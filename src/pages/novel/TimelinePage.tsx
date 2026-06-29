@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
+import { parseTags } from "@/shared/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +25,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
 import {
   ClockIcon,
   PlusIcon,
@@ -31,12 +42,12 @@ import {
   NetworkIcon,
   ListIcon,
 } from "lucide-react";
-import { useTimelineEvents } from "@/hooks/useTimelineEvents";
-import type { TimelineEvent, TimelineEventType } from "@/types";
+import { useTimelineEvents } from "@/features/story/hooks";
+import type { TimelineEvent, TimelineEventType } from "@/shared/types";
 
 export function TimelinePage() {
   const { t } = useI18n();
-  const { activeWorkspaceId } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const { events, loading, create, update, remove } = useTimelineEvents(activeWorkspaceId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -68,7 +79,7 @@ export function TimelinePage() {
   const handleSave = async () => {
     if (!formTitle.trim()) return;
     const chapterNum = formChapterNumber ? parseInt(formChapterNumber) : null;
-    const tags = formTags.split(",").map((s) => s.trim()).filter(Boolean);
+    const tags = parseTags(formTags);
 
     if (isEditing && selected) {
       await update({
@@ -92,23 +103,28 @@ export function TimelinePage() {
     if (selected?.id === id) setSelected(null);
   };
 
-  const sorted = [...events].sort((a, b) => a.sort_order - b.sort_order);
+  const sorted = useMemo(
+    () => [...events].sort((a, b) => a.sort_order - b.sort_order),
+    [events],
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <ClockIcon />
             {t.timeline.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.timeline.description}</p>
-        </div>
-        <Button onClick={openCreate}>
-          <PlusIcon data-icon="inline-start" />
-          {t.timeline.create}
-        </Button>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.timeline.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.timeline.create}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       <Tabs value={view} onValueChange={(v) => setView(v as "list" | "chart")}>
         <TabsList>
@@ -118,16 +134,13 @@ export function TimelinePage() {
       </Tabs>
 
       {loading ? (
-        <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
+        <LoadingState label={t.common.loading} />
       ) : events.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <ClockIcon className="size-12 mx-auto mb-4 opacity-50" />
-          <p>{t.timeline.empty}</p>
-        </div>
+        <EmptyState icon={<ClockIcon />} title={t.timeline.empty} />
       ) : (
         <div className="relative">
           <div className="absolute left-[72px] top-0 bottom-0 w-px bg-border" />
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             {sorted.map((ev) => (
               <div
                 key={ev.id}
@@ -139,12 +152,12 @@ export function TimelinePage() {
                 </div>
                 <div className="relative z-10 mt-2">
                   <div className={`size-3 rounded-full border-2 ${
-                    ev.event_type === "turning_point" ? "bg-red-500 border-red-500" :
-                    ev.event_type === "milestone" ? "bg-yellow-500 border-yellow-500" :
+                    ev.event_type === "turning_point" ? "bg-destructive border-destructive" :
+                    ev.event_type === "milestone" ? "bg-muted-foreground border-muted-foreground" :
                     "bg-primary border-primary"
                   }`} />
                 </div>
-                <div className={`flex-1 rounded-lg border p-3 transition-colors ${
+                <div className={`flex flex-col gap-2 flex-1 rounded-lg border p-3 transition-colors ${
                   selected?.id === ev.id ? "border-primary bg-primary/5" : "hover:bg-muted"
                 }`}>
                   <div className="flex items-center justify-between">
@@ -156,18 +169,18 @@ export function TimelinePage() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(ev.id); }}
-                      className="opacity-0 group-hover:opacity-100 hover:text-destructive"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
                     >
                       <Trash2Icon className="size-3" />
                     </button>
                   </div>
                   {ev.description && (
-                    <p className="text-xs text-muted-foreground mt-1">{ev.description}</p>
+                    <p className="text-xs text-muted-foreground">{ev.description}</p>
                   )}
                   {ev.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="flex flex-wrap gap-1">
                       {ev.tags.map((tag) => (
-                        <span key={tag} className="text-[10px] bg-muted px-1.5 py-0.5 rounded">{tag}</span>
+                        <Badge key={tag} variant="outline">{tag}</Badge>
                       ))}
                     </div>
                   )}
@@ -226,6 +239,6 @@ export function TimelinePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

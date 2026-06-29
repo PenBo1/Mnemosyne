@@ -1,12 +1,10 @@
 import { useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +12,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -29,200 +26,281 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlusIcon, MoreVerticalIcon, PencilIcon, Trash2Icon, DatabaseIcon, SearchIcon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useMemory } from "@/hooks/useMemory";
-import type { Memory } from "@/types";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { EmptyState, LoadingState } from "@/components/shared/state";
+import {
+  PlusIcon,
+  MoreVerticalIcon,
+  PencilIcon,
+  Trash2Icon,
+  DatabaseIcon,
+  SearchIcon,
+} from "lucide-react";
+import { useI18n } from "@/shared/i18n";
+import { parseTags } from "@/shared/utils";
+import { useWorkspaceStore } from "@/stores/workspace";
+import { useMemory } from "@/features/memory/hooks";
+import type { MemoryEntry, MemoryType } from "@/shared/types/memory";
 
 export function MemoryPage() {
   const { t } = useI18n();
-  const { memories, filterCategory, setFilterCategory, searchQuery, setSearchQuery, categories, create, update, remove } = useMemory();
+  const activeBookId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const {
+    memories,
+    stats,
+    loading,
+    filterEntryType,
+    setFilterEntryType,
+    searchQuery,
+    setSearchQuery,
+    create,
+    update,
+    remove,
+    types,
+  } = useMemory(activeBookId);
+
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
-  const [title, setTitle] = useState("");
+  const [editingMemory, setEditingMemory] = useState<MemoryEntry | null>(null);
   const [content, setContent] = useState("");
-  const [category, setCategory] = useState("character");
+  const [entryType, setEntryType] = useState<MemoryType>("fact");
+  const [chapterInput, setChapterInput] = useState("");
   const [tagsInput, setTagsInput] = useState("");
+
+  if (!activeBookId) {
+    return (
+      <PageContainer>
+        <EmptyState icon={<DatabaseIcon />} title={t.memory.empty} />
+      </PageContainer>
+    );
+  }
+
+  if (loading && memories.length === 0) {
+    return (
+      <PageContainer>
+        <LoadingState />
+      </PageContainer>
+    );
+  }
 
   function openCreate() {
     setEditingMemory(null);
-    setTitle("");
     setContent("");
-    setCategory("character");
+    setEntryType("fact");
+    setChapterInput("");
     setTagsInput("");
     setDialogOpen(true);
   }
 
-  function openEdit(memory: Memory) {
+  function openEdit(memory: MemoryEntry) {
     setEditingMemory(memory);
-    setTitle(memory.title);
     setContent(memory.content);
-    setCategory(memory.category);
+    setEntryType(memory.entry_type);
+    setChapterInput(memory.chapter?.toString() ?? "");
     setTagsInput(memory.tags.join(", "));
     setDialogOpen(true);
   }
 
-  function handleSave() {
-    const tags = tagsInput
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+  async function handleSave() {
+    const tags = parseTags(tagsInput);
+    const chapterNum = chapterInput.trim() ? Number(chapterInput) : null;
+    const chapter = chapterNum != null && !Number.isNaN(chapterNum) ? chapterNum : null;
 
     if (editingMemory) {
-      update(editingMemory.id, { title, content, category, tags });
+      await update(editingMemory.id, content, tags);
     } else {
-      create({ title, content, category, tags });
+      await create({ content, entryType, chapter, tags });
     }
     setDialogOpen(false);
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 py-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t.memory.title}</h1>
-          <p className="text-sm text-muted-foreground">{t.memory.description}</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreate}>
-              <PlusIcon data-icon="inline-start" />
-              <span>{t.memory.create}</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{editingMemory ? t.memory.edit : t.memory.create}</DialogTitle>
-              <DialogDescription>{t.memory.description}</DialogDescription>
-            </DialogHeader>
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="memoryTitle">{t.memory.title_label}</Label>
-                <Input id="memoryTitle" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t.memory.titlePlaceholder} />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="memoryContent">{t.memory.content}</Label>
-                <Textarea id="memoryContent" value={content} onChange={(e) => setContent(e.target.value)} placeholder={t.memory.contentPlaceholder} rows={6} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="memoryCategory">{t.memory.category}</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger id="memoryCategory">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {t.memory.categories[cat as keyof typeof t.memory.categories]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="memoryTags">{t.memory.tags}</Label>
-                  <Input id="memoryTags" value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder={t.memory.tagsPlaceholder} />
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                {t.memory.cancel}
-              </Button>
-              <Button onClick={handleSave} disabled={!title || !content}>
-                {editingMemory ? t.memory.update : t.memory.save}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-      <Separator />
-      <ScrollArea className="flex-1">
-        <div className="p-6">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="relative flex-1 max-w-sm">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder={t.memory.search}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t.memory.allCategories}</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {t.memory.categories[cat as keyof typeof t.memory.categories]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+    <PageContainer>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
+            <DatabaseIcon />
+            {t.memory.title}
+          </PageTitle>
+          <PageDescription>{t.memory.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.memory.create}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
-          {memories.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <DatabaseIcon className="size-12 mb-4" />
-              <p>{t.memory.empty}</p>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {memories.map((memory) => (
-                <Card key={memory.id}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <CardTitle className="truncate text-base">{memory.title}</CardTitle>
-                        <CardDescription className="mt-1 flex items-center gap-2">
-                          <Badge variant="secondary">
-                            {t.memory.categories[memory.category as keyof typeof t.memory.categories]}
-                          </Badge>
-                        </CardDescription>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon-sm">
-                            <MoreVerticalIcon />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(memory)}>
-                            <PencilIcon />
-                            <span>{t.common.edit}</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => remove(memory.id)} className="text-destructive">
-                            <Trash2Icon />
-                            <span>{t.common.delete}</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="line-clamp-3 text-sm text-muted-foreground whitespace-pre-wrap">
-                      {memory.content}
-                    </p>
-                    {memory.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        {memory.tags.map((tag) => (
-                          <Badge key={tag} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+      {stats && (
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>
+            {t.memory.stats.main}: <strong>{stats.main}</strong>
+          </span>
+          <span>
+            {t.memory.stats.archival}: <strong>{stats.archival}</strong>
+          </span>
         </div>
-      </ScrollArea>
-    </div>
+      )}
+
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder={t.memory.search}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select
+          value={filterEntryType}
+          onValueChange={(v) => setFilterEntryType(v as MemoryType | "all")}
+        >
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t.memory.allTypes}</SelectItem>
+            {types.map((tp) => (
+              <SelectItem key={tp} value={tp}>
+                {t.memory.types[tp]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {memories.length === 0 ? (
+        <EmptyState icon={<DatabaseIcon />} title={t.memory.empty} />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {memories.map((memory) => (
+            <Card key={memory.id} className="transition-shadow hover:shadow-md">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <CardTitle className="truncate text-base">
+                      {memory.content.split("\n")[0] || memory.content.slice(0, 50)}
+                    </CardTitle>
+                    <CardDescription className="flex items-center gap-2">
+                      <Badge variant="secondary">
+                        {t.memory.types[memory.entry_type]}
+                      </Badge>
+                      {memory.chapter != null && (
+                        <Badge variant="outline">Ch.{memory.chapter}</Badge>
+                      )}
+                    </CardDescription>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-sm">
+                        <MoreVerticalIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openEdit(memory)}>
+                        <PencilIcon />
+                        <span>{t.common.edit}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => remove(memory.id)}
+                        className="text-destructive"
+                      >
+                        <Trash2Icon />
+                        <span>{t.common.delete}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="line-clamp-3 text-sm text-muted-foreground whitespace-pre-wrap">
+                  {memory.content}
+                </p>
+                {memory.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {memory.tags.map((tag) => (
+                      <Badge key={tag} variant="outline" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingMemory ? t.memory.edit : t.memory.create}</DialogTitle>
+            <DialogDescription>{t.memory.description}</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>{t.memory.content}</FieldLabel>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder={t.memory.contentPlaceholder}
+                rows={6}
+              />
+            </Field>
+            <div className="grid grid-cols-3 gap-4">
+              <Field>
+                <FieldLabel>{t.memory.entryType}</FieldLabel>
+                <Select value={entryType} onValueChange={(v) => setEntryType(v as MemoryType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {types.map((tp) => (
+                      <SelectItem key={tp} value={tp}>
+                        {t.memory.types[tp]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>{t.memory.chapter}</FieldLabel>
+                <Input
+                  value={chapterInput}
+                  onChange={(e) => setChapterInput(e.target.value)}
+                  placeholder={t.memory.chapterPlaceholder}
+                  type="number"
+                  min={1}
+                />
+              </Field>
+              <Field>
+                <FieldLabel>{t.memory.tags}</FieldLabel>
+                <Input
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  placeholder={t.memory.tagsPlaceholder}
+                />
+              </Field>
+            </div>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              {t.memory.cancel}
+            </Button>
+            <Button onClick={handleSave} disabled={!content.trim()}>
+              {editingMemory ? t.memory.update : t.memory.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </PageContainer>
   );
 }

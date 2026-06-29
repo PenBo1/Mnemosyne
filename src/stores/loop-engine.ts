@@ -4,8 +4,8 @@ import type {
   LoopEngineState,
   CreateLoopStateRequest,
   LoopConfig,
-} from "@/types";
-import * as loopService from "@/services/loop-engine";
+} from "@/shared/types";
+import * as loopService from "@/features/loop/services";
 import { toast } from "sonner";
 
 export const useLoopEngineStore = create<LoopEngineState>((set, _get) => ({

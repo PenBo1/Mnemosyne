@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
@@ -28,11 +29,20 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState } from "@/components/shared/state";
 import { PuzzleIcon, RefreshCwIcon, WrenchIcon, PlusIcon, PencilIcon, Trash2Icon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useSkills } from "@/hooks/useSkills";
-import { SKILL_CATEGORIES } from "@/types";
-import type { SkillMeta, Skill } from "@/types";
+import { useI18n } from "@/shared/i18n";
+import { useSkills } from "@/features/skill/hooks/useSkills";
+import { SKILL_CATEGORIES } from "@/shared/types";
+import type { SkillMeta, Skill } from "@/shared/types";
 
 export function SkillsPage() {
   const { t } = useI18n();
@@ -66,7 +76,7 @@ export function SkillsPage() {
       setSkillContent(fullSkill.content);
       setDialogOpen(true);
     } catch {
-      // Error handled by hook
+      // 错误由 hook 处理
     }
   }
 
@@ -87,7 +97,7 @@ export function SkillsPage() {
       }
       setDialogOpen(false);
     } catch {
-      // Error handled by hook
+      // 错误由 hook 处理
     } finally {
       setSaving(false);
     }
@@ -98,21 +108,21 @@ export function SkillsPage() {
       await remove(name);
       setDeleteConfirm(null);
     } catch {
-      // Error handled by hook
+      // 错误由 hook 处理
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <PuzzleIcon />
             {t.skills.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.skills.description}</p>
-        </div>
-        <div className="flex items-center gap-2">
+          </PageTitle>
+          <PageDescription>{t.skills.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
           <Select value={filterCategory} onValueChange={setFilterCategory}>
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -129,17 +139,15 @@ export function SkillsPage() {
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-            <Button size="sm" onClick={openCreateDialog}>
-              <PlusIcon data-icon="inline-start" />
-              {t.skills.add}
-            </Button>
-        </div>
-      </div>
+          <Button size="sm" onClick={openCreateDialog}>
+            <PlusIcon data-icon="inline-start" />
+            {t.skills.add}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="size-6" />
-        </div>
+        <LoadingState label={t.common.loading} />
       ) : skills.length === 0 ? (
         <Empty>
           <EmptyHeader>
@@ -159,12 +167,12 @@ export function SkillsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {skills.map((skill) => (
-            <Card key={skill.name}>
+            <Card key={skill.name} className="group transition-shadow hover:shadow-md">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <CardTitle className="truncate text-base">{skill.name}</CardTitle>
-                    <CardDescription className="mt-1 flex items-center gap-2">
+                    <CardDescription className="flex items-center gap-2">
                       <Badge variant="secondary">
                         {t.skills.categories[skill.category as keyof typeof t.skills.categories] || skill.category}
                       </Badge>
@@ -174,16 +182,21 @@ export function SkillsPage() {
                     <Button variant="ghost" size="icon-sm" onClick={() => openEditDialog(skill)}>
                       <PencilIcon className="size-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon-sm" onClick={() => setDeleteConfirm(skill.name)} className="text-destructive hover:text-destructive">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setDeleteConfirm(skill.name)}
+                      className="text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
                       <Trash2Icon className="size-3.5" />
                     </Button>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex flex-col gap-3">
                 <p className="line-clamp-2 text-sm text-muted-foreground">{skill.description}</p>
                 {skill.requires_tools.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1">
                     {skill.requires_tools.map((tool) => (
                       <Badge key={tool} variant="outline" className="text-[10px] gap-1">
                         <WrenchIcon className="size-2.5" />
@@ -198,7 +211,7 @@ export function SkillsPage() {
         </div>
       )}
 
-      {/* Create/Edit Dialog */}
+      {/* 创建/编辑对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -238,11 +251,11 @@ export function SkillsPage() {
             </Field>
             <Field>
               <FieldLabel>{t.skills.content}</FieldLabel>
-              <textarea
+              <Textarea
                 value={skillContent}
                 onChange={(e) => setSkillContent(e.target.value)}
                 placeholder="# Skill Instructions&#10;&#10;Write your skill instructions here..."
-                className="min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                className="min-h-[200px] font-mono"
               />
             </Field>
           </FieldGroup>
@@ -258,7 +271,7 @@ export function SkillsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* 删除确认对话框 */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
           <DialogHeader>
@@ -277,6 +290,6 @@ export function SkillsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

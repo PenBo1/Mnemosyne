@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -35,7 +35,15 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Spinner } from "@/components/ui/spinner";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState } from "@/components/shared/state";
 import {
   BookOpenIcon,
   PlusIcon,
@@ -45,9 +53,10 @@ import {
   MoreVerticalIcon,
   TagIcon,
 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useKnowledge } from "@/hooks/useKnowledge";
-import type { KnowledgeEntry } from "@/types";
+import { useI18n } from "@/shared/i18n";
+import { parseTags } from "@/shared/utils";
+import { useKnowledge } from "@/features/knowledge/hooks/useKnowledge";
+import type { KnowledgeEntry } from "@/shared/types";
 
 const KNOWLEDGE_CATEGORIES = [
   "writing",
@@ -101,10 +110,7 @@ export function KnowledgePage() {
   }
 
   function handleSave() {
-    const tags = tagsInput
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+    const tags = parseTags(tagsInput);
     const params = { title, content, category, tags };
 
     if (editingEntry) {
@@ -119,31 +125,35 @@ export function KnowledgePage() {
     remove(id);
   }
 
-  const categoryCounts = allEntries.reduce(
-    (acc, entry) => {
-      acc[entry.category] = (acc[entry.category] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
+  const categoryCounts = useMemo(
+    () =>
+      allEntries.reduce(
+        (acc, entry) => {
+          acc[entry.category] = (acc[entry.category] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      ),
+    [allEntries],
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <BookOpenIcon />
             {t.knowledge.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {t.knowledge.description}
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <PlusIcon data-icon="inline-start" />
-          {t.knowledge.create}
-        </Button>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.knowledge.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.knowledge.create}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
@@ -163,7 +173,7 @@ export function KnowledgePage() {
             onClick={() => setFilterCategory("all")}
           >
             {t.knowledge.allCategories}
-            <Badge variant="outline" className="ml-1.5 size-5 justify-center text-xs">
+            <Badge variant="outline" className="size-5 justify-center text-xs">
               {allEntries.length}
             </Badge>
           </Button>
@@ -178,7 +188,7 @@ export function KnowledgePage() {
                 onClick={() => setFilterCategory(filterCategory === cat ? "all" : cat)}
               >
                 {t.knowledge.categories[cat as keyof typeof t.knowledge.categories]}
-                <Badge variant="outline" className="ml-1.5 size-5 justify-center text-xs">
+                <Badge variant="outline" className="size-5 justify-center text-xs">
                   {count}
                 </Badge>
               </Button>
@@ -188,9 +198,7 @@ export function KnowledgePage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Spinner className="size-6" />
-        </div>
+        <LoadingState label={t.common.loading} />
       ) : entries.length === 0 ? (
         <Empty>
           <EmptyHeader>
@@ -216,18 +224,18 @@ export function KnowledgePage() {
                   key={entry.id}
                   className="flex items-start gap-4 px-4 py-3 hover:bg-muted/50 transition-colors"
                 >
-                  <div className="flex-1 min-w-0">
+                  <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{entry.title}</span>
                       <Badge variant="secondary" className="shrink-0 text-xs">
                         {t.knowledge.categories[entry.category as keyof typeof t.knowledge.categories]}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground line-clamp-2 whitespace-pre-wrap">
+                    <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-wrap">
                       {entry.content}
                     </p>
                     {entry.tags.length > 0 && (
-                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <TagIcon className="size-3 text-muted-foreground" />
                         {entry.tags.map((tag) => (
                           <Badge key={tag} variant="outline" className="text-xs">
@@ -272,27 +280,27 @@ export function KnowledgePage() {
             </DialogTitle>
             <DialogDescription>{t.knowledge.description}</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label>{t.knowledge.title_label}</Label>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>{t.knowledge.title_label}</FieldLabel>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={t.knowledge.titlePlaceholder}
               />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>{t.knowledge.content}</Label>
+            </Field>
+            <Field>
+              <FieldLabel>{t.knowledge.content}</FieldLabel>
               <Textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 placeholder={t.knowledge.contentPlaceholder}
                 rows={8}
               />
-            </div>
+            </Field>
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>{t.knowledge.category}</Label>
+              <Field>
+                <FieldLabel>{t.knowledge.category}</FieldLabel>
                 <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger>
                     <SelectValue />
@@ -305,17 +313,17 @@ export function KnowledgePage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label>{t.knowledge.tags}</Label>
+              </Field>
+              <Field>
+                <FieldLabel>{t.knowledge.tags}</FieldLabel>
                 <Input
                   value={tagsInput}
                   onChange={(e) => setTagsInput(e.target.value)}
                   placeholder={t.knowledge.tagsPlaceholder}
                 />
-              </div>
+              </Field>
             </div>
-          </div>
+          </FieldGroup>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               {t.knowledge.cancel}
@@ -326,6 +334,6 @@ export function KnowledgePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

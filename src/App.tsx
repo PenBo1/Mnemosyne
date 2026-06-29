@@ -1,4 +1,4 @@
-import { AppProvider } from "@/lib/app-context";
+import { AppProvider } from "@/shared/app-context";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 

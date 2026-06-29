@@ -1,7 +1,7 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "./AppSidebar";
-import { Router } from "@/router";
+import { Router } from "@/routes";
 
 export function AppLayout() {
   return (

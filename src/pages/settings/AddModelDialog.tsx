@@ -18,8 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2Icon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import { useModelSettings } from "@/hooks/useModelSettings";
+import { useI18n } from "@/shared/i18n";
+import { useModelSettings } from "@/features/settings/hooks";
 
 const PROVIDER_OPTIONS = ["openai", "ollama", "agnes"] as const;
 
@@ -55,7 +55,7 @@ export function AddModelDialog({ open, onOpenChange }: AddModelDialogProps) {
       setApiKey("");
       setBaseUrl("");
     } catch {
-      // Error handled by hook
+      // 错误由 hook 处理
     } finally {
       setSaving(false);
     }

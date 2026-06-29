@@ -1,5 +1,5 @@
-import { useTheme } from "@/components/providers/Theme";
-import { useI18n } from "@/lib/i18n";
+import { useTheme } from "@/shared/theme";
+import { useI18n } from "@/shared/i18n";
 import {
   Select,
   SelectContent,
@@ -8,9 +8,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Card, CardContent } from "@/components/ui/card";
 import { AlertTriangleIcon } from "lucide-react";
-import { useGeneralSettings } from "@/hooks/useGeneralSettings";
-import type { LogLevel } from "@/lib/settings";
+import { useGeneralSettings } from "@/features/settings/hooks";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+} from "@/components/shared/page-layout";
+import type { LogLevel } from "@/shared/settings";
 
 function getLogLevelLabel(t: ReturnType<typeof useI18n>["t"], level: LogLevel): string {
   return t.common.logLevels[level] || level;
@@ -28,15 +36,17 @@ export function GeneralSettings() {
   } = useGeneralSettings();
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t.settings.general}</h1>
-        <p className="text-sm text-muted-foreground">{t.settings.generalDesc}</p>
-      </div>
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>{t.settings.general}</PageTitle>
+          <PageDescription>{t.settings.generalDesc}</PageDescription>
+        </PageHeading>
+      </PageHeader>
 
-      {/* Language */}
-      <div className="rounded-lg border bg-card">
-        <div className="flex items-center justify-between px-4 py-3">
+      {/* 语言 */}
+      <Card>
+        <CardContent className="flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">{t.settings.field.language}</span>
             <span className="text-xs text-muted-foreground">
@@ -52,12 +62,12 @@ export function GeneralSettings() {
               <SelectItem value="zh">中文</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Appearance & Notifications */}
-      <div className="rounded-lg border bg-card">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
+      {/* 外观与通知 */}
+      <Card className="py-0 gap-0">
+        <CardContent className="flex items-center justify-between border-b py-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">{t.settings.field.theme}</span>
             <span className="text-xs text-muted-foreground">
@@ -74,9 +84,8 @@ export function GeneralSettings() {
               <SelectItem value="system">{t.settings.themeSystem}</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="flex items-center justify-between px-4 py-3">
+        </CardContent>
+        <CardContent className="flex items-center justify-between py-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">{t.settings.field.notifications}</span>
             <span className="text-xs text-muted-foreground">
@@ -88,12 +97,12 @@ export function GeneralSettings() {
             checked={notifications}
             onCheckedChange={toggleNotifications}
           />
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Advanced */}
-      <div className="rounded-lg border bg-card">
-        <div className="px-4 py-3">
+      {/* 高级 */}
+      <Card className="py-0 gap-0">
+        <CardContent className="flex flex-col gap-3 py-3">
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">{t.settings.field.logLevel}</span>
@@ -114,13 +123,13 @@ export function GeneralSettings() {
           </div>
 
           {logLevelChanged && (
-            <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 px-3 py-2 rounded-md mt-3">
+            <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
               <AlertTriangleIcon className="size-4 shrink-0" />
               <span>{t.settings.logLevelRestartRequired}</span>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </PageContainer>
   );
 }

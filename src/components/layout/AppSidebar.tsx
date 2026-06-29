@@ -39,11 +39,11 @@ import {
   WrenchIcon,
   CpuIcon,
 } from "lucide-react";
-import { useAppState, useAppDispatch } from "@/lib/app-context";
-import { useI18n } from "@/lib/i18n";
-import { useSidebarWorkspaces } from "@/hooks/useSidebarWorkspaces";
+import { useAppState, useAppDispatch } from "@/shared/app-context";
+import { useI18n } from "@/shared/i18n";
+import { useSidebarWorkspaces } from "@/features/workspace/hooks/useSidebarWorkspaces";
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
-import type { AppPage, SettingsTab, WorkspacePage } from "@/types";
+import type { AppPage, SettingsTab, WorkspacePage } from "@/shared/types";
 
 const WORKSPACE_SUB_ITEMS: { id: WorkspacePage; labelKey: string; icon: typeof FileTextIcon }[] = [
   { id: "overview", labelKey: "overview", icon: BookOpenIcon },
@@ -151,10 +151,10 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={currentPage === "chat" || currentPage === "main-agent"}
                       onClick={() => navigateTo("main-agent")}
-                      tooltip="AI Agent"
+                      tooltip={t.sidebar.aiAgent}
                     >
                       <BotIcon />
-                      <span>AI Agent</span>
+                      <span>{t.sidebar.aiAgent}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem className="group/tools">

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
+import { parseTags } from "@/shared/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +25,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
 import {
   BookmarkIcon,
   PlusIcon,
@@ -31,12 +42,12 @@ import {
   SearchIcon,
   ExternalLinkIcon,
 } from "lucide-react";
-import { useResearchItems } from "@/hooks/useResearchItems";
-import type { ResearchItem, ResearchCategory } from "@/types";
+import { useResearchItems } from "@/features/story/hooks";
+import type { ResearchItem, ResearchCategory } from "@/shared/types";
 
 export function ResearchPage() {
   const { t } = useI18n();
-  const { activeWorkspaceId } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const { items, loading, create, update, remove } = useResearchItems(activeWorkspaceId);
   const [category, setCategory] = useState<ResearchCategory | "all">("all");
   const [search, setSearch] = useState("");
@@ -50,11 +61,14 @@ export function ResearchPage() {
   const [formTags, setFormTags] = useState("");
   const [formSourceUrl, setFormSourceUrl] = useState("");
 
-  const filtered = items.filter((i) => {
-    const matchesCategory = category === "all" || i.category === category;
-    const matchesSearch = i.title.toLowerCase().includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return items.filter((i) => {
+      const matchesCategory = category === "all" || i.category === category;
+      const matchesSearch = i.title.toLowerCase().includes(q);
+      return matchesCategory && matchesSearch;
+    });
+  }, [items, category, search]);
 
   const resetForm = () => {
     setFormTitle(""); setFormContent(""); setFormCategory("note");
@@ -72,7 +86,7 @@ export function ResearchPage() {
 
   const handleSave = async () => {
     if (!formTitle.trim()) return;
-    const tags = formTags.split(",").map((s) => s.trim()).filter(Boolean);
+    const tags = parseTags(formTags);
 
     if (isEditing && selected) {
       await update({
@@ -94,20 +108,22 @@ export function ResearchPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <BookmarkIcon />
             {t.research.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.research.description}</p>
-        </div>
-        <Button onClick={openCreate}>
-          <PlusIcon data-icon="inline-start" />
-          {t.research.create}
-        </Button>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.research.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.research.create}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       <Tabs value={category} onValueChange={(v) => setCategory(v as ResearchCategory | "all")}>
         <TabsList>
@@ -130,24 +146,21 @@ export function ResearchPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
+        <LoadingState label={t.common.loading} />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <BookmarkIcon className="size-12 mx-auto mb-4 opacity-50" />
-          <p>{t.research.empty}</p>
-        </div>
+        <EmptyState icon={<BookmarkIcon />} title={t.research.empty} />
       ) : (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {filtered.map((item) => (
             <div
               key={item.id}
-              className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+              className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors group ${
                 selected?.id === item.id ? "border-primary bg-primary/5" : "hover:bg-muted"
               }`}
               onClick={() => openEdit(item)}
             >
               <BookmarkIcon className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
+              <div className="flex flex-col gap-2 flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{item.title}</span>
                   <span className="text-[10px] text-muted-foreground">
@@ -158,19 +171,19 @@ export function ResearchPage() {
                   )}
                 </div>
                 {item.content && (
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.content}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-2">{item.content}</p>
                 )}
                 {item.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
+                  <div className="flex flex-wrap gap-1">
                     {item.tags.slice(0, 5).map((tag) => (
-                      <span key={tag} className="text-[10px] bg-muted px-1.5 py-0.5 rounded">{tag}</span>
+                      <Badge key={tag} variant="outline">{tag}</Badge>
                     ))}
                   </div>
                 )}
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                className="opacity-0 group-hover:opacity-100 hover:text-destructive shrink-0"
+                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive shrink-0"
               >
                 <Trash2Icon className="size-3" />
               </button>
@@ -227,6 +240,6 @@ export function ResearchPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

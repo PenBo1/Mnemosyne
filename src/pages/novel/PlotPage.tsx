@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +24,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  PageContainer,
+  PageHeader,
+  PageHeading,
+  PageTitle,
+  PageDescription,
+  PageActions,
+} from "@/components/shared/page-layout";
+import { LoadingState, EmptyState } from "@/components/shared/state";
 import {
   GitBranchIcon,
   PlusIcon,
@@ -32,12 +42,12 @@ import {
   ClockIcon,
   TreePineIcon,
 } from "lucide-react";
-import { usePlotPoints } from "@/hooks/usePlotPoints";
-import type { PlotPoint, PlotPointType } from "@/types";
+import { usePlotPoints } from "@/features/story/hooks";
+import type { PlotPoint, PlotPointType } from "@/shared/types";
 
 export function PlotPage() {
   const { t } = useI18n();
-  const { activeWorkspaceId } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const { points, loading, create, update, remove } = usePlotPoints(activeWorkspaceId);
   const [view, setView] = useState<"outline" | "timeline" | "tree">("outline");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -96,24 +106,32 @@ export function PlotPage() {
     if (selected?.id === id) setSelected(null);
   };
 
-  const outlineItems = points.filter((p) => p.type === "act" || p.type === "chapter" || p.type === "scene");
-  const sortedByChapter = [...points].sort((a, b) => (a.chapter_number || 0) - (b.chapter_number || 0));
+  const outlineItems = useMemo(
+    () => points.filter((p) => p.type === "act" || p.type === "chapter" || p.type === "scene"),
+    [points],
+  );
+  const sortedByChapter = useMemo(
+    () => [...points].sort((a, b) => (a.chapter_number || 0) - (b.chapter_number || 0)),
+    [points],
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <PageContainer scrollable={false}>
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>
             <GitBranchIcon />
             {t.plot.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.plot.description}</p>
-        </div>
-        <Button onClick={openCreate}>
-          <PlusIcon data-icon="inline-start" />
-          {t.plot.create}
-        </Button>
-      </div>
+          </PageTitle>
+          <PageDescription>{t.plot.description}</PageDescription>
+        </PageHeading>
+        <PageActions>
+          <Button onClick={openCreate}>
+            <PlusIcon data-icon="inline-start" />
+            {t.plot.create}
+          </Button>
+        </PageActions>
+      </PageHeader>
 
       <Tabs value={view} onValueChange={(v) => setView(v as "outline" | "timeline" | "tree")}>
         <TabsList>
@@ -124,18 +142,15 @@ export function PlotPage() {
       </Tabs>
 
       {loading ? (
-        <div className="text-center py-8 text-muted-foreground">{t.common.loading}</div>
+        <LoadingState label={t.common.loading} />
       ) : points.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <GitBranchIcon className="size-12 mx-auto mb-4 opacity-50" />
-          <p>{t.plot.empty}</p>
-        </div>
+        <EmptyState icon={<GitBranchIcon />} title={t.plot.empty} />
       ) : view === "outline" ? (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {outlineItems.map((p) => (
             <div
               key={p.id}
-              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors group ${
                 selected?.id === p.id ? "border-primary bg-primary/5" : "hover:bg-muted"
               }`}
               style={{ paddingLeft: `${(p.type === "act" ? 0 : p.type === "chapter" ? 1 : 2) * 24 + 12}px` }}
@@ -148,19 +163,22 @@ export function PlotPage() {
                   <span className="font-medium truncate">{p.title}</span>
                 </div>
                 {p.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{p.description}</p>
+                  <p className="text-xs text-muted-foreground truncate">{p.description}</p>
                 )}
               </div>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                p.status === "completed" ? "bg-green-100 text-green-700" :
-                p.status === "in_progress" ? "bg-yellow-100 text-yellow-700" :
-                "bg-muted text-muted-foreground"
-              }`}>
+              <Badge
+                variant="outline"
+                className={
+                  p.status === "completed"
+                    ? "border-transparent bg-primary/10 text-primary"
+                    : "border-transparent bg-muted text-muted-foreground"
+                }
+              >
                 {t.plot.statuses[p.status as keyof typeof t.plot.statuses]}
-              </span>
+              </Badge>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
-                className="opacity-0 group-hover:opacity-100 hover:text-destructive shrink-0"
+                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive shrink-0"
               >
                 <Trash2Icon className="size-3" />
               </button>
@@ -168,11 +186,11 @@ export function PlotPage() {
           ))}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {sortedByChapter.map((p) => (
             <div
               key={p.id}
-              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors group ${
                 selected?.id === p.id ? "border-primary bg-primary/5" : "hover:bg-muted"
               }`}
               onClick={() => openEdit(p)}
@@ -184,12 +202,12 @@ export function PlotPage() {
               <div className="flex-1 min-w-0">
                 <span className="font-medium">{p.title}</span>
                 {p.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{p.description}</p>
+                  <p className="text-xs text-muted-foreground truncate">{p.description}</p>
                 )}
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
-                className="opacity-0 group-hover:opacity-100 hover:text-destructive shrink-0"
+                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive shrink-0"
               >
                 <Trash2Icon className="size-3" />
               </button>
@@ -261,6 +279,6 @@ export function PlotPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }
