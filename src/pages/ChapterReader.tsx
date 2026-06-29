@@ -3,12 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
-<<<<<<< Updated upstream
-import { useI18n } from "@/lib/i18n";
-=======
 import { useI18n } from "@/shared/i18n";
-import MainAgentPage from "@/pages/MainAgentPage";
->>>>>>> Stashed changes
 
 interface Chapter {
   id: string;

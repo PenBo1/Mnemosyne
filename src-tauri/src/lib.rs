@@ -57,21 +57,7 @@ pub fn run() {
             tracing::info!(path = %db_path.display(), "Opening state database");
             let database = tauri::async_runtime::block_on(Database::new(db_path.to_str().unwrap()))
                 .expect("failed to open state database");
-<<<<<<< Updated upstream
-            // Initialize AI logs schema
-            if let Err(e) = database.init_ai_logs() {
-                tracing::error!(error = %e, "Failed to init AI logs schema");
-            }
-            tracing::info!("State database initialized");
-
-            let feedback_db_path = data_dir.feedback_db_path();
-            tracing::info!(path = %feedback_db_path.display(), "Opening feedback database");
-            let feedback_db = tauri::async_runtime::block_on(Database::new_feedback(feedback_db_path.to_str().unwrap()))
-                .expect("failed to open feedback database");
-            tracing::info!("Feedback database initialized");
-=======
             tracing::info!("State database initialized (migrations applied)");
->>>>>>> Stashed changes
 
             let provider_registry = ProviderRegistry::new(&data_dir);
             tracing::info!(count = provider_registry.list_providers().len(), "Providers loaded");
@@ -116,146 +102,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-<<<<<<< Updated upstream
-            app::commands::greet::greet,
-            app::commands::settings::set_window_theme,
-            app::commands::settings::get_log_level,
-            app::commands::settings::set_log_level,
-            app::commands::prompts::create_prompt,
-            app::commands::prompts::list_prompts,
-            app::commands::prompts::get_prompt,
-            app::commands::prompts::update_prompt,
-            app::commands::prompts::delete_prompt,
-            app::commands::trends::create_trend,
-            app::commands::trends::list_trends,
-            app::commands::trends::delete_trend,
-            app::commands::novels::create_novel,
-            app::commands::novels::update_novel,
-            app::commands::novels::list_novels,
-            app::commands::novels::delete_novel,
-            app::commands::stats::get_stats,
-            app::commands::stats::get_daily_activity,
-            app::commands::workspaces::create_workspace,
-            app::commands::workspaces::list_workspaces,
-            app::commands::workspaces::get_workspace,
-            app::commands::workspaces::delete_workspace,
-            app::commands::sessions::session_create,
-            app::commands::sessions::session_list,
-            app::commands::sessions::session_get,
-            app::commands::sessions::session_delete,
-            app::commands::sessions::session_messages,
-            app::commands::providers::provider_list,
-            app::commands::providers::provider_models,
-            app::commands::providers::provider_test_connection,
-            app::commands::providers::provider_refresh,
-            app::commands::skills::skill_list,
-            app::commands::skills::skill_get,
-            app::commands::skills::skill_create,
-            app::commands::skills::skill_update,
-            app::commands::skills::skill_delete,
-            app::commands::skills::skill_index,
-            app::commands::skills::skill_refresh,
-            app::commands::novels_pipeline::novel_create,
-            app::commands::novels_pipeline::novel_write_next,
-            app::commands::novels_pipeline::novel_plan,
-            app::commands::novels_pipeline::novel_audit,
-            app::commands::novels_pipeline::novel_revise,
-            app::commands::notifications::send_notification,
-            app::commands::radar::radar_scan,
-            app::commands::radar::radar_history,
-            app::commands::radar::radar_delete,
-            app::commands::sandbox::sandbox_status,
-            app::commands::sandbox::sandbox_validate_file,
-            app::commands::sandbox::sandbox_validate_command,
-            app::commands::sandbox::sandbox_validate_network,
-            app::commands::sandbox::sandbox_get_policy,
-            app::commands::agent::agent_send_message,
-            app::commands::agent::agent_approve_tool,
-            app::commands::agent::agent_cancel,
-            app::commands::agent::agent_compact,
-            app::commands::agent::agent_restart,
-            app::commands::agent_session::session_send_message,
-            app::commands::agent_session::session_cancel,
-            app::commands::agent_session::session_get_status,
-            app::commands::agent_session::session_shutdown,
-            app::commands::agent_session::session_write_next_chapter,
-            app::commands::agent_session::session_create_book,
-            app::commands::agent_session::session_approve_tool,
-            app::commands::agent_session::session_reject_tool,
-            app::commands::agent_config::list_agents,
-            app::commands::agent_config::update_agent,
-            app::commands::agent_config::toggle_agent_status,
-            app::commands::agent_config::get_agent_identity,
-            app::commands::agent_config::update_agent_identity,
-            app::commands::novels_pipeline::novel_observe,
-            app::commands::novels_pipeline::novel_reflect,
-            app::commands::novel_sources::novel_source_list,
-            app::commands::novel_sources::novel_search,
-            app::commands::novel_sources::novel_download,
-            app::commands::novel_sources::novel_list_local,
-            app::commands::scheduler::scheduler_init,
-            app::commands::scheduler::scheduler_write_cycle,
-            app::commands::scheduler::scheduler_status,
-            app::commands::scheduler::scheduler_list_tasks,
-            app::commands::scheduler::scheduler_pause,
-            app::commands::scheduler::scheduler_resume,
-            app::commands::scheduler::scheduler_stop,
-            app::commands::scheduler::scheduler_search_rag,
-            app::commands::scheduler::scheduler_search_memory,
-            app::commands::scheduler::scheduler_get_lessons,
-            app::commands::scheduler::scheduler_restore_checkpoint,
-            app::commands::mcp::mcp_handle_request,
-            app::commands::mcp::mcp_server_info,
-            app::commands::mcp::mcp_check_tool_safety,
-            app::commands::ai_logs::ai_log_llm_calls,
-            app::commands::ai_logs::ai_log_tool_executions,
-            app::commands::ai_logs::ai_log_token_usage,
-            app::commands::ai_logs::ai_log_sandbox_violations,
-            app::commands::main_agent::main_agent_execute,
-            app::commands::main_agent::main_agent_respond,
-            app::commands::main_agent::main_agent_list_sessions,
-            app::commands::main_agent::main_agent_cancel,
-            // Wiki commands
-            app::commands::wiki::wiki_list_entries,
-            app::commands::wiki::wiki_get_entry,
-            app::commands::wiki::wiki_create_entry,
-            app::commands::wiki::wiki_update_entry,
-            app::commands::wiki::wiki_delete_entry,
-            app::commands::wiki::wiki_get_graph,
-            app::commands::wiki::wiki_create_link,
-            app::commands::wiki::wiki_delete_link,
-            app::commands::wiki::wiki_search,
-            // Version commands
-            app::commands::version::version_list,
-            app::commands::version::version_get,
-            app::commands::version::version_get_latest,
-            app::commands::version::version_diff,
-            app::commands::version::version_diff_latest,
-            app::commands::version::version_restore,
-            app::commands::version::version_save,
-            // Kanban commands
-            app::commands::kanban::kanban_create_task,
-            app::commands::kanban::kanban_get_tasks,
-            app::commands::kanban::kanban_update_task,
-            app::commands::kanban::kanban_delete_task,
-            app::commands::kanban::kanban_reorder_tasks,
-            app::commands::kanban::kanban_get_columns,
-            app::commands::kanban::kanban_create_column,
-            app::commands::kanban::kanban_update_column,
-            app::commands::kanban::kanban_delete_column,
-            // Loop Engineering commands
-            app::commands::loop_engine::loop_create_state,
-            app::commands::loop_engine::loop_get_states,
-            app::commands::loop_engine::loop_update_state,
-            app::commands::loop_engine::loop_delete_state,
-            app::commands::loop_engine::loop_run_cycle,
-            app::commands::loop_engine::loop_get_run_logs,
-            app::commands::loop_engine::loop_get_patterns,
-            app::commands::loop_engine::loop_upsert_pattern,
-            app::commands::loop_engine::loop_pause,
-            app::commands::loop_engine::loop_resume,
-            app::commands::loop_engine::loop_get_budget_status,
-=======
             ipc::commands::greet::greet,
             ipc::commands::settings::set_window_theme,
             ipc::commands::settings::get_log_level,
@@ -400,7 +246,6 @@ pub fn run() {
             ipc::commands::memory::memory_create,
             ipc::commands::memory::memory_update,
             ipc::commands::memory::memory_delete,
->>>>>>> Stashed changes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

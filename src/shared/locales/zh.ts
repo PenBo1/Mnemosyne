@@ -750,6 +750,7 @@ export default {
     requestChapter: "在对话中请求创建章节",
     chapterPrefix: "第{number}章",
     wordCount: "{count} 字",
+    selectChapter: "选择一个章节开始阅读",
     aiAssistant: "AI 创作助手",
     aiAssistantDesc: "与 AI 对话来创作和管理章节",
     startChat: "开始与 AI 对话来创作你的故事",

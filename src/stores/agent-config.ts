@@ -1,14 +1,8 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-<<<<<<< Updated upstream
-import type { Agent, AgentIdentity } from "@/types";
-import { AVAILABLE_MODELS } from "@/constants";
-import * as agentService from "@/services/agent";
-=======
 import type { Agent } from "@/shared/types";
 import { AVAILABLE_MODELS } from "@/shared/constants";
 import * as agentService from "@/features/chat/services";
->>>>>>> Stashed changes
 
 interface AgentConfigState {
   agents: Agent[];
@@ -17,8 +11,6 @@ interface AgentConfigState {
   loadAgents: () => Promise<void>;
   updateAgent: (id: string, updates: Partial<Agent>) => Promise<void>;
   toggleAgentStatus: (id: string) => Promise<void>;
-  getIdentity: (role: string) => Promise<AgentIdentity | null>;
-  updateIdentity: (role: string, updates: { soul?: string; context?: string; memory?: string }) => Promise<AgentIdentity | null>;
 }
 
 export const useAgentConfigStore = create<AgentConfigState>((set) => ({
@@ -61,28 +53,6 @@ export const useAgentConfigStore = create<AgentConfigState>((set) => ({
       const message = err instanceof Error ? err.message : "Failed to toggle agent status";
       set({ error: message });
       toast.error(message);
-    }
-  },
-
-  getIdentity: async (role) => {
-    try {
-      return await agentService.getAgentIdentity(role);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load identity";
-      toast.error(message);
-      return null;
-    }
-  },
-
-  updateIdentity: async (role, updates) => {
-    try {
-      const updated = await agentService.updateAgentIdentity(role, updates);
-      toast.success("Identity updated");
-      return updated;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update identity";
-      toast.error(message);
-      return null;
     }
   },
 }));

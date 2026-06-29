@@ -3,18 +3,20 @@ import { useMainAgent } from "@/features/chat/hooks";
 import { useI18n } from "@/shared/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronRight,
+  Circle,
   Loader2,
   Send,
   StopCircle,
   XCircle,
   Zap,
 } from "lucide-react";
-<<<<<<< Updated upstream
-import type { MainAgentEvent } from "@/types/main-agent";
-=======
 import type { MainAgentMessage, MainAgentSession, PlanStep } from "@/shared/types/main-agent";
 
 // ── 布局常量 ──────────────────────────────────────────
@@ -22,7 +24,6 @@ const SIDE_PANEL_WIDTH = 360;
 const TEXTAREA_MIN_HEIGHT = 60;
 const MESSAGE_BUBBLE_MAX_WIDTH = 80; // 百分比
 const STEP_RESULT_PREVIEW_LIMIT = 100; // 步骤结果预览字符数
->>>>>>> Stashed changes
 
 export default function MainAgentPage() {
   const { t } = useI18n();
@@ -37,28 +38,10 @@ export default function MainAgentPage() {
   const [goal, setGoal] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-<<<<<<< Updated upstream
-  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
-
-  useEffect(() => {
-    const unlisten = listenToMainAgentEvents((event: MainAgentEvent) => {
-      handleEvent(event);
-    });
-    return () => {
-      unlisten();
-    };
-  }, [handleEvent]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-=======
   // 新消息时自动滚动到底部
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
->>>>>>> Stashed changes
   }, [activeSession?.messages]);
 
   const handleSubmit = useCallback(async () => {
@@ -81,24 +64,6 @@ export default function MainAgentPage() {
   const isWaiting = activeSession?.status === "WaitingForConfirmation";
 
   return (
-<<<<<<< Updated upstream
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="border-b px-4 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Zap className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-semibold">Main Agent</h1>
-        </div>
-        {activeSession && loading && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={cancelExecution}
-          >
-            <StopCircle className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-=======
     <div className="flex h-full">
       {/* 左侧：聊天/执行面板 */}
       <div className="flex-1 flex flex-col border-r">
@@ -151,69 +116,8 @@ export default function MainAgentPage() {
             onApprove={() => respondToConfirmation(true)}
             onReject={() => respondToConfirmation(false)}
           />
->>>>>>> Stashed changes
         )}
-      </div>
 
-<<<<<<< Updated upstream
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-auto md-scrollbar">
-        <div className="p-4 space-y-4">
-          {activeSession ? (
-            activeSession.messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-20">
-              <Zap className="h-12 w-12 mb-4 opacity-50" />
-              <p className="text-lg font-medium">Main Agent</p>
-              <p className="text-sm">
-                Enter a goal and the agent will autonomously plan and execute
-                it.
-              </p>
-            </div>
-          )}
-
-          {loading && activeSession?.status !== "WaitingForConfirmation" && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">{activeSession?.status ?? "Starting..."}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Confirmation bar */}
-      {activeSession?.confirmation && (
-        <ConfirmationBar
-          confirmation={activeSession.confirmation}
-          onApprove={() => respondToConfirmation(true)}
-          onReject={() => respondToConfirmation(false)}
-        />
-      )}
-
-      {/* Input */}
-      <div className="border-t p-4 shrink-0">
-        <div className="flex gap-2">
-          <Textarea
-            ref={textareaRef}
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Enter a goal for the agent..."
-            className="min-h-[60px] resize-none"
-            disabled={loading}
-          />
-          <Button
-            onClick={handleSubmit}
-            disabled={!goal.trim() || loading}
-            size="lg"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-=======
         {/* 输入区 */}
         <div className="border-t p-4">
           <div className="flex gap-2">
@@ -261,22 +165,13 @@ export default function MainAgentPage() {
           </div>
         </ScrollArea>
       </aside>
->>>>>>> Stashed changes
     </div>
   );
 }
 
-<<<<<<< Updated upstream
-function MessageBubble({
-  message,
-}: {
-  message: { role: string; content: string; timestamp: string };
-}) {
-=======
 // ── 子组件 ──────────────────────────────────────────
 
 function MessageBubble({ message }: { message: MainAgentMessage }) {
->>>>>>> Stashed changes
   const isUser = message.role === "user";
   const bubbleClass = isUser
     ? "bg-primary text-primary-foreground"
@@ -345,8 +240,6 @@ function ConfirmationBar({
     </div>
   );
 }
-<<<<<<< Updated upstream
-=======
 
 function PlanView({
   plan,
@@ -481,4 +374,3 @@ function StepCard({ step, isCurrent }: { step: PlanStep; isCurrent: boolean }) {
     </div>
   );
 }
->>>>>>> Stashed changes

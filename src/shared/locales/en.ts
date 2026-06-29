@@ -750,6 +750,7 @@ export default {
     requestChapter: "Request chapter creation in chat",
     chapterPrefix: "Chapter {number}",
     wordCount: "{count} words",
+    selectChapter: "Select a chapter to read",
     aiAssistant: "AI Writing Assistant",
     aiAssistantDesc: "Chat with AI to create and manage chapters",
     startChat: "Start a conversation with AI to write your story",
