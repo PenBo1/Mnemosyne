@@ -27,7 +27,7 @@ export function KanbanColumnComponent({
   return (
     <div
       className={cn(
-        "flex flex-col min-w-[260px] w-[260px] bg-muted/50 rounded-lg border",
+        "flex flex-col min-w-[260px] w-[260px] bg-[var(--bg-overlay-l2)] rounded-[var(--radius-6)] border",
         isWipExceeded && "border-destructive"
       )}
       onDragOver={onDragOver}
@@ -51,7 +51,7 @@ export function KanbanColumnComponent({
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]">
         {tasks.length === 0 ? (
-          <div className="flex items-center justify-center h-20 text-xs text-muted-foreground border border-dashed rounded-md">
+          <div className="flex items-center justify-center h-20 text-xs text-muted-foreground border border-dashed rounded-[var(--radius-4)]">
             Drop tasks here
           </div>
         ) : (

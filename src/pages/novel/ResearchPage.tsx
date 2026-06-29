@@ -154,8 +154,8 @@ export function ResearchPage() {
           {filtered.map((item) => (
             <div
               key={item.id}
-              className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors group ${
-                selected?.id === item.id ? "border-primary bg-primary/5" : "hover:bg-muted"
+              className={`flex items-start gap-3 rounded-[var(--radius-6)] border p-3 cursor-pointer transition-colors group ${
+                selected?.id === item.id ? "border-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
               }`}
               onClick={() => openEdit(item)}
             >

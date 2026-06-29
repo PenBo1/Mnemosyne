@@ -22,7 +22,7 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
     : logs;
 
   return (
-    <div className="border rounded-lg">
+    <div className="border rounded-[var(--radius-6)]">
       <div className="px-3 py-2 border-b">
         <span className="text-sm font-medium">{t.loop.runLogs}</span>
       </div>
@@ -35,7 +35,7 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
         ) : (
           <div className="divide-y">
             {filteredLogs.map((log) => (
-              <div key={log.id} className="flex flex-col gap-1 px-3 py-2 hover:bg-muted/50">
+              <div key={log.id} className="flex flex-col gap-1 px-3 py-2 hover:bg-[var(--bg-overlay-l2)]">
                 <div className="flex items-center gap-2">
                   {STATUS_ICONS[log.status]}
                   <span className="text-xs font-medium">
@@ -72,7 +72,7 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
                 )}
 
                 {log.escalations.length > 0 && (
-                  <div className="text-[10px] text-orange-600">
+                  <div className="text-[10px] text-[var(--status-warning-default)]">
                     ⚠ {log.escalations.length} {t.loop.metrics.escalations}
                   </div>
                 )}

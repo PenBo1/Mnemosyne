@@ -63,7 +63,7 @@ export function MessageList({
               />
             )}
             {error && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <div className="flex items-center gap-2 rounded-[var(--radius-6)] border border-destructive/30 bg-[var(--status-error-surface-l1)] px-3 py-2 text-xs text-destructive">
                 <AlertCircle className="size-3.5 shrink-0" />
                 <span>{error}</span>
               </div>

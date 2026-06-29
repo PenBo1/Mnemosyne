@@ -89,27 +89,27 @@ export function OverviewPage() {
 
       {storyState && (
         <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <div className="flex flex-col gap-1 rounded-[var(--radius-6)] border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.title_label}</div>
             <div className="text-lg font-medium">{novel.title}</div>
           </div>
-          <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <div className="flex flex-col gap-1 rounded-[var(--radius-6)] border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.genre}</div>
             <div className="text-lg font-medium capitalize">{novel.genre}</div>
           </div>
-          <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <div className="flex flex-col gap-1 rounded-[var(--radius-6)] border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.status}</div>
             <div className="text-lg font-medium capitalize">{novel.status}</div>
           </div>
-          <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <div className="flex flex-col gap-1 rounded-[var(--radius-6)] border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.wordCount}</div>
             <div className="text-lg font-medium">{novel.word_count.toLocaleString()}</div>
           </div>
-          <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <div className="flex flex-col gap-1 rounded-[var(--radius-6)] border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.chapterCount}</div>
             <div className="text-lg font-medium">{novel.chapter_count}</div>
           </div>
-          <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <div className="flex flex-col gap-1 rounded-[var(--radius-6)] border p-4">
             <div className="text-sm text-muted-foreground">{t.overview.createdAt}</div>
             <div className="text-lg font-medium">{new Date(novel.created_at).toLocaleDateString()}</div>
           </div>

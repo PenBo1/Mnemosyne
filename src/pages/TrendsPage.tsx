@@ -36,7 +36,7 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
 
 function RecommendationCard({ rec }: { rec: RadarRecommendation }) {
   return (
-    <div className="rounded-lg border bg-card p-5 flex flex-col gap-3 transition-shadow">
+    <div className="rounded-[var(--radius-6)] border bg-card p-5 flex flex-col gap-3 transition-shadow">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -100,7 +100,7 @@ export function TrendsPage() {
 
       {currentResult && (
         <div className="flex flex-col gap-6">
-          <div className="rounded-lg border bg-card p-5 flex flex-col gap-3">
+          <div className="rounded-[var(--radius-6)] border bg-card p-5 flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <TrendingUpIcon className="size-4 text-muted-foreground" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -129,7 +129,7 @@ export function TrendsPage() {
       )}
 
       {history.length > 0 && (
-        <div className="rounded-lg border bg-card p-5 flex flex-col gap-3">
+        <div className="rounded-[var(--radius-6)] border bg-card p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <ClockIcon className="size-4 text-muted-foreground" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -141,7 +141,7 @@ export function TrendsPage() {
               <div key={scan.id} className="flex items-center gap-2">
                 <button
                   onClick={() => viewHistoryItem(scan)}
-                  className="flex-1 rounded-md border border-border/40 px-3 py-2 text-left text-xs hover:bg-muted/30 transition-colors flex flex-col gap-1"
+                  className="flex-1 rounded-[var(--radius-4)] border border-[var(--border-neutral-l1)] px-3 py-2 text-left text-xs hover:bg-[var(--bg-overlay-l2)] transition-colors flex flex-col gap-1"
                 >
                   <div className="font-medium text-foreground">
                     {new Date(scan.created_at).toLocaleString()}

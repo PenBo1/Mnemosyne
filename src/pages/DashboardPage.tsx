@@ -99,7 +99,7 @@ export function DashboardPage() {
         {statCards.map((card) => (
           <Card key={card.label}>
             <CardContent className="flex items-center gap-3 py-4">
-              <div className="rounded-md bg-muted p-2">
+              <div className="rounded-[var(--radius-4)] bg-muted p-2">
                 <card.icon className="size-4 text-primary" />
               </div>
               <div>

@@ -150,8 +150,8 @@ export function PlotPage() {
           {outlineItems.map((p) => (
             <div
               key={p.id}
-              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors group ${
-                selected?.id === p.id ? "border-primary bg-primary/5" : "hover:bg-muted"
+              className={`flex items-center gap-3 rounded-[var(--radius-6)] border p-3 cursor-pointer transition-colors group ${
+                selected?.id === p.id ? "border-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
               }`}
               style={{ paddingLeft: `${(p.type === "act" ? 0 : p.type === "chapter" ? 1 : 2) * 24 + 12}px` }}
               onClick={() => openEdit(p)}
@@ -190,8 +190,8 @@ export function PlotPage() {
           {sortedByChapter.map((p) => (
             <div
               key={p.id}
-              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors group ${
-                selected?.id === p.id ? "border-primary bg-primary/5" : "hover:bg-muted"
+              className={`flex items-center gap-3 rounded-[var(--radius-6)] border p-3 cursor-pointer transition-colors group ${
+                selected?.id === p.id ? "border-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
               }`}
               onClick={() => openEdit(p)}
             >

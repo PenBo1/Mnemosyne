@@ -182,7 +182,7 @@ function MessageBubble({ message }: { message: MainAgentMessage }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`rounded-lg px-4 py-2 flex flex-col gap-1 ${bubbleClass}`}
+        className={`rounded-[var(--radius-6)] px-4 py-2 flex flex-col gap-1 ${bubbleClass}`}
         style={{ maxWidth: `${MESSAGE_BUBBLE_MAX_WIDTH}%` }}
       >
         <p className="whitespace-pre-wrap text-sm">{message.content}</p>
@@ -343,7 +343,7 @@ function StepCard({ step, isCurrent }: { step: PlanStep; isCurrent: boolean }) {
 
   return (
     <div
-      className={`rounded-lg border p-3 text-sm ${
+      className={`rounded-[var(--radius-6)] border p-3 text-sm ${
         isCurrent ? "border-primary bg-primary/5" : ""
       } ${step.status === "Skipped" ? "opacity-50" : ""}`}
     >

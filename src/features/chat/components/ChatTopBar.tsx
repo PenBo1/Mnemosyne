@@ -22,7 +22,7 @@ export function ChatTopBar({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex items-center justify-between border-b border-border bg-card/50 px-4 py-2.5">
+    <div className="flex items-center justify-between border-b border-border bg-[var(--bg-overlay-l1)] px-4 py-2.5">
       <div className="flex items-center gap-2">
         <div className="flex size-6 items-center justify-center rounded-md bg-primary/10">
           <BotIcon className="size-3.5 text-primary" />

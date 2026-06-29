@@ -45,7 +45,7 @@ export function LoopDashboard({
 
   if (states.length === 0) {
     return (
-      <div className="flex items-center justify-center h-40 text-muted-foreground border border-dashed rounded-lg">
+      <div className="flex items-center justify-center h-40 text-muted-foreground border border-dashed rounded-[var(--radius-6)]">
         {t.loop.common.noLoops}
       </div>
     );
@@ -63,7 +63,7 @@ export function LoopDashboard({
           <div
             key={ls.id}
             className={cn(
-              "border rounded-lg p-3 cursor-pointer transition-shadow flex flex-col gap-2",
+              "border rounded-[var(--radius-6)] p-3 cursor-pointer transition-shadow flex flex-col gap-2",
               selectedStateId === ls.id && "ring-2 ring-primary"
             )}
             onClick={() => onSelect(ls.id)}

@@ -28,7 +28,7 @@ export function CodeBlock({
   };
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-[var(--border-neutral-l1)] bg-[var(--bg-base-tertiary)] dark:bg-[var(--bg-base-tertiary)]">
+    <div className="my-3 overflow-hidden rounded-lg border border-[var(--border-neutral-l1)] bg-[var(--bg-base-tertiary)]">
       <div className="flex items-center justify-between border-b border-[var(--border-neutral-l1)] px-3 py-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
           {language ?? "text"}

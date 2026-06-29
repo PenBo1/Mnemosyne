@@ -148,7 +148,7 @@ export function NovelDownloadPage() {
       {searching && <LoadingState label={t.common.loading} />}
 
       {!searching && results.length > 0 && (
-        <div className="border rounded-lg">
+        <div className="border rounded-[var(--radius-6)]">
           <Table>
             <TableHeader>
               <TableRow>
@@ -161,7 +161,7 @@ export function NovelDownloadPage() {
             </TableHeader>
             <TableBody>
               {results.map((result) => (
-                <TableRow key={result.url} className="transition-colors hover:bg-muted/50">
+                <TableRow key={result.url} className="transition-colors hover:bg-[var(--bg-overlay-l2)]">
                   <TableCell className="font-medium">{result.book_name}</TableCell>
                   <TableCell>{result.author}</TableCell>
                   <TableCell>

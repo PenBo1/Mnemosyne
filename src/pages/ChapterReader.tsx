@@ -54,10 +54,10 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
                 <button
                   key={ch.id}
                   onClick={() => setSelectedChapter(ch)}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`w-full text-left px-3 py-2 rounded-[var(--radius-4)] text-sm transition-colors ${
                     selectedChapter?.id === ch.id
-                      ? "bg-primary/10 text-primary"
-                      : "hover:bg-muted"
+                      ? "bg-[var(--bg-overlay-l2)] text-primary"
+                      : "hover:bg-[var(--bg-overlay-l2)]"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -89,7 +89,7 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
               </div>
             </div>
             <ScrollArea className="flex-1 p-6">
-              <div className="prose prose-sm dark:prose-invert max-w-none">
+              <div className="prose prose-sm max-w-none">
                 {selectedChapter.content.split("\n").map((paragraph, i) => (
                   <p key={i}>{paragraph}</p>
                 ))}

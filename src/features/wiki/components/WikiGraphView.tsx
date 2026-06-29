@@ -111,7 +111,7 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
         <button
           onClick={() => setFilterCategory("all")}
           className={cn(
-            "text-xs px-2 py-1 rounded-md transition-colors",
+            "text-xs px-2 py-1 rounded-[var(--radius-4)] transition-colors",
             filterCategory === "all"
               ? "bg-primary text-primary-foreground"
               : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -124,7 +124,7 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
             key={cat}
             onClick={() => setFilterCategory(cat)}
             className={cn(
-              "text-xs px-2 py-1 rounded-md transition-colors",
+              "text-xs px-2 py-1 rounded-[var(--radius-4)] transition-colors",
               filterCategory === cat
                 ? "bg-primary text-primary-foreground"
                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -134,7 +134,7 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
           </button>
         ))}
       </div>
-      <div className="flex-1 rounded-lg border bg-background overflow-hidden">
+      <div className="flex-1 rounded-[var(--radius-6)] border bg-background overflow-hidden">
         <ReactFlow
           nodes={filteredNodes}
           edges={filteredEdges}

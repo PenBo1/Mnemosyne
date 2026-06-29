@@ -157,8 +157,8 @@ export function TimelinePage() {
                     "bg-primary border-primary"
                   }`} />
                 </div>
-                <div className={`flex flex-col gap-2 flex-1 rounded-lg border p-3 transition-colors ${
-                  selected?.id === ev.id ? "border-primary bg-primary/5" : "hover:bg-muted"
+                <div className={`flex flex-col gap-2 flex-1 rounded-[var(--radius-6)] border p-3 transition-colors ${
+                  selected?.id === ev.id ? "border-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
                 }`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">

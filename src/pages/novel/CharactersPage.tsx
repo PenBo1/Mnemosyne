@@ -156,8 +156,8 @@ export function CharactersPage() {
               tabIndex={0}
               onClick={() => openEdit(c)}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(c); } }}
-              className={`flex flex-col gap-2 text-left rounded-lg border p-4 transition-colors group cursor-pointer ${
-                selected?.id === c.id ? "border-primary bg-primary/5" : "hover:bg-muted"
+              className={`flex flex-col gap-2 text-left rounded-[var(--radius-6)] border p-4 transition-colors group cursor-pointer ${
+                selected?.id === c.id ? "border-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
               }`}
             >
               <div className="flex items-center justify-between">

@@ -10,7 +10,7 @@ interface DiffViewProps {
 
 const LINE_COLORS: Record<DiffLineType, string> = {
   added: "bg-[var(--status-success-default)]/10 border-l-2 border-[var(--status-success-default)]",
-  removed: "bg-destructive/10 dark:bg-destructive/20 border-l-2 border-destructive",
+  removed: "bg-destructive/10 border-l-2 border-destructive",
   context: "bg-transparent",
 };
 
@@ -65,7 +65,7 @@ function DiffHunkView({ hunk: hunk }: { hunk: DiffHunk }) {
   return (
     <div className="border-b last:border-b-0">
       {/* Hunk 头部 */}
-      <div className="bg-muted/50 px-2 py-1 text-xs text-muted-foreground sticky top-0">
+      <div className="bg-[var(--bg-overlay-l2)] px-2 py-1 text-xs text-muted-foreground sticky top-0">
         @@ -{hunk.old_start},{hunk.old_lines} +{hunk.new_start},{hunk.new_lines} @@
       </div>
       {/* Hunk 行 */}
