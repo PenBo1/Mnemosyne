@@ -48,6 +48,12 @@ pub fn run() {
             let data_dir = DataDir::new(app_dir.clone());
             data_dir.initialize().expect("failed to initialize data directory");
 
+            // 业务级初始化（agent 身份文件、内置 novel sources）。
+            // 必须在 data_dir.initialize() 之后调用，因为它需要 agents_dir/ 和 book_sources_dir/ 已存在。
+            // 上提到 core 层是为了避免 infrastructure 反向依赖 features/ 和 core/agent/。
+            crate::core::init::initialize_app_business_state(&data_dir)
+                .expect("failed to initialize app business state");
+
             crate::infrastructure::middleware::logging::init(&data_dir.logs_dir(), &data_dir);
 
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Mnemosyne starting");

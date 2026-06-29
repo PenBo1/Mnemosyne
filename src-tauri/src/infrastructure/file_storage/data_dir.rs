@@ -41,7 +41,12 @@ impl DataDir {
         Self { root }
     }
 
-    /// 初始化所有目录和默认 config 文件。
+    /// 初始化所有目录结构和默认 config.json。
+    ///
+    /// 注意：本方法只负责基础设施级初始化（目录 + config.json）。
+    /// 业务级初始化（agent 身份文件、内置 novel sources）由
+    /// `core::init::initialize_app_business_state` 编排，避免 infrastructure
+    /// 反向依赖 features/ 和 core/agent/。
     pub fn initialize(&self) -> Result<(), AppError> {
         std::fs::create_dir_all(&self.root)
             .map_err(|e| AppError::internal(format!("Failed to create data root: {}", e)))?;
@@ -53,10 +58,10 @@ impl DataDir {
             .map_err(|e| AppError::internal(format!("Failed to create skills dir: {}", e)))?;
         std::fs::create_dir_all(self.book_sources_dir())
             .map_err(|e| AppError::internal(format!("Failed to create book sources dir: {}", e)))?;
+        std::fs::create_dir_all(self.agents_dir())
+            .map_err(|e| AppError::internal(format!("Failed to create agents dir: {}", e)))?;
 
         self.ensure_config_json()?;
-        self.ensure_default_book_sources()?;
-        self.ensure_agent_identities()?;
 
         Ok(())
     }
@@ -153,50 +158,6 @@ impl DataDir {
         std::fs::write(&path, content)
             .map_err(|e| AppError::internal(format!("Failed to write config: {}", e)))?;
         tracing::info!(path = %path.display(), "Created default config.json");
-        Ok(())
-    }
-
-    fn ensure_default_book_sources(&self) -> Result<(), AppError> {
-        let dir = self.book_sources_dir();
-        crate::features::novel::source::extract_builtin_sources_to_dir(&dir)?;
-        Ok(())
-    }
-
-    /// 为每个 agent 角色创建默认 identity 文件（SOUL.md、CONTEXT.md、MEMORY.md）。
-    /// 已存在的文件不会被覆盖。
-    fn ensure_agent_identities(&self) -> Result<(), AppError> {
-        let agents_dir = self.agents_dir();
-        std::fs::create_dir_all(&agents_dir)
-            .map_err(|e| AppError::internal(format!("Failed to create agents dir: {}", e)))?;
-
-        for role in AGENT_ROLES {
-            let role_dir = agents_dir.join(role);
-            std::fs::create_dir_all(&role_dir)
-                .map_err(|e| AppError::internal(format!("Failed to create agent dir {}: {}", role, e)))?;
-
-            let soul_path = role_dir.join("SOUL.md");
-            if !soul_path.exists() {
-                let default = crate::core::agent::identity::default_soul(role);
-                std::fs::write(&soul_path, default)
-                    .map_err(|e| AppError::internal(format!("Failed to write default SOUL.md for {}: {}", role, e)))?;
-            }
-
-            let context_path = role_dir.join("CONTEXT.md");
-            if !context_path.exists() {
-                let default = crate::core::agent::identity::default_context(role);
-                std::fs::write(&context_path, default)
-                    .map_err(|e| AppError::internal(format!("Failed to write default CONTEXT.md for {}: {}", role, e)))?;
-            }
-
-            let memory_path = role_dir.join("MEMORY.md");
-            if !memory_path.exists() {
-                std::fs::write(&memory_path, "# Agent Memory\n\n<!-- Agent accumulates learning notes here across pipeline runs. -->\n")
-                    .map_err(|e| AppError::internal(format!("Failed to write default MEMORY.md for {}: {}", role, e)))?;
-            }
-
-            tracing::debug!(role = role, "Ensured agent identity files");
-        }
-
         Ok(())
     }
 }
