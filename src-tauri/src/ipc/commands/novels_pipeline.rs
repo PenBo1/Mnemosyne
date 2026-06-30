@@ -22,6 +22,7 @@ fn build_runner(
         memory_store,
         data_dir,
         user_profile: None,
+        fallback_model: None,
     };
     Ok(PipelineRunner::new(config))
 }

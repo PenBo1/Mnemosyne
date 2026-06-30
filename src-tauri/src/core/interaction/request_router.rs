@@ -59,6 +59,7 @@ mod tests {
             memory_store: None,
             data_dir: crate::infrastructure::file_storage::data_dir::DataDir::new(std::path::PathBuf::from("/tmp")),
             user_profile: None,
+            fallback_model: None,
         });
         let result = route_interaction_request(&req, &pipeline).unwrap();
         assert!(matches!(result, RouteResult::Passthrough));

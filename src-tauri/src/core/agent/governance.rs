@@ -27,22 +27,10 @@ pub struct ContextSource {
     pub excerpt: Option<String>,
 }
 
-/// Wiki entry reference for AI context
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WikiContextEntry {
-    pub id: String,
-    pub title: String,
-    pub category: String,
-    pub importance: u32,
-    pub excerpt: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPackage {
     pub chapter: u32,
     pub selected_context: Vec<ContextSource>,
-    /// Wiki knowledge entries relevant to this chapter
-    pub wiki_entries: Vec<WikiContextEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,7 +139,6 @@ mod tests {
                 ContextSource { source: "outline/story_frame.md".into(), reason: "World foundation".into(), excerpt: None },
                 ContextSource { source: "story/current_state.md".into(), reason: "Current state".into(), excerpt: Some("test".into()) },
             ],
-            wiki_entries: vec![],
         };
         assert_eq!(pkg.selected_context.len(), 2);
         assert!(pkg.selected_context[0].excerpt.is_none());

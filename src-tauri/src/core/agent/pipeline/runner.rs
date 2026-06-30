@@ -30,6 +30,8 @@ pub struct PipelineConfig {
     pub data_dir: crate::infrastructure::file_storage::data_dir::DataDir,
     /// User profile for tailoring agent output
     pub user_profile: Option<Arc<tokio::sync::Mutex<crate::features::user_profile::UserProfileStore>>>,
+    /// Fallback model for RecoveryStrategy::FallbackModel (None = no fallback, fail explicitly)
+    pub fallback_model: Option<String>,
 }
 
 pub struct PipelineRunner {
@@ -222,7 +224,11 @@ impl PipelineRunner {
         let chapter_number = get_next_chapter_number(&book_dir)?;
 
         // Initialize recovery manager (P14.26) — now uses ErrorClassifier
-        let mut recovery_manager = RecoveryManager::new(RecoveryConfig::default());
+        let recovery_config = RecoveryConfig {
+            fallback_model: self.config.fallback_model.clone(),
+            ..RecoveryConfig::default()
+        };
+        let mut recovery_manager = RecoveryManager::new(recovery_config);
 
         // Initialize verification pipeline (P14.38)
         let verification_pipeline = VerificationPipeline::new();
@@ -277,9 +283,14 @@ impl PipelineRunner {
                         planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await?
                     }
                     Some(RecoveryStrategy::FallbackModel) => {
-                        tracing::info!("Falling back to alternative model");
-                        // TODO: 切换到备用模型
-                        planner.plan_chapter(&planner_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await?
+                        let fallback = self.config.fallback_model.as_ref()
+                            .ok_or_else(|| AppError::internal(
+                                "Fallback model requested by recovery manager but none configured"
+                            ))?;
+                        tracing::info!(fallback_model = %fallback, "Switching to fallback model");
+                        let mut fallback_ctx = planner_ctx.clone();
+                        fallback_ctx.model = fallback.clone();
+                        planner.plan_chapter(&fallback_ctx, &book_dir, chapter_number, None, &self.config.data_dir).await?
                     }
                     _ => return Err(e),
                 }

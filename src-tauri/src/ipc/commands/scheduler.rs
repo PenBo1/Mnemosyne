@@ -35,6 +35,7 @@ pub async fn scheduler_init(
         memory_store: Some(memory_store.clone()),
         data_dir: state.data_dir.clone(),
         user_profile: None,
+        fallback_model: None,
     });
 
     let config = SchedulerConfig::default();

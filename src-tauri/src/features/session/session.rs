@@ -567,6 +567,7 @@ async fn handle_write_next_chapter(
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
+            fallback_model: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -630,6 +631,7 @@ async fn handle_create_book(
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
+            fallback_model: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -686,6 +688,7 @@ async fn handle_plan_chapter(
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
+            fallback_model: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -746,6 +749,7 @@ async fn handle_audit_chapter(
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
+            fallback_model: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -806,6 +810,7 @@ async fn handle_revise_chapter(
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
+            fallback_model: None,
         };
         PipelineRunner::new(pipeline_config)
     };
