@@ -21,10 +21,14 @@ pub async fn create_workspace(
         return Err(AppError::missing_field("path"));
     }
 
-    let path_buf = std::path::PathBuf::from(&path);
-    if path.contains("..") || path.contains('/') && path.starts_with('/') || path.contains('\\') && path.len() > 2 && path.as_bytes()[1] == b':' {
+    // path 由前端文件夹选择器返回，必然是用户主动选择的绝对路径（Windows 盘符路径或 Unix 根路径），
+    // 不应被当作 path_traversal 拦截。这里只拒绝显式包含 ".." 的相对穿越序列作为防御。
+    // 原实现把所有绝对路径都误判为 traversal，导致 Windows 下创建工作区必然失败。
+    if path.contains("..") {
         return Err(AppError::path_traversal());
     }
+
+    let path_buf = std::path::PathBuf::from(&path);
     std::fs::create_dir_all(&path_buf)
         .map_err(|e| {
             tracing::error!(error = %e, path = %path, "Failed to create workspace directory");
