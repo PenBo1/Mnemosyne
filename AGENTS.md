@@ -51,7 +51,54 @@ Capabilities are defined in `src-tauri/capabilities/*.json`. Only declared comma
 - Use first principles: define goals, constraints, and facts before deriving implementation paths.
 - Never decide based on "that's how it was done before." State core assumptions and tradeoffs.
 - Prefer minimal necessary complexity. Avoid unnecessary abstraction and over-engineering.
-- Challenge user assumptions when something doesn't make sense. User may not fully understand the codebase — ask questions to uncover true intent. ## Layered architecture
+- Challenge user assumptions when something doesn't make sense. User may not fully understand the codebase — ask questions to uncover true intent.
+
+## Engineering principles
+
+These nine principles govern all code generation and modification in this repository. They apply in addition to the project goals and decision methodology above.
+
+### 1. Read Before You Code
+- Read the file you are about to change before touching it. Mirror existing patterns, study the imports, and understand what the project actually depends on.
+- This is not a quick glance — genuinely understand the existing code. Do not guess (e.g. assuming `axios` when the project uses `fetch`).
+
+### 2. Think Before You Code
+- Know what you are doing before you start. Decompose complex tasks first (e.g. "add auth" is actually several different things — list the tradeoffs).
+- If you don't understand, stop and ask. Do not paper over the gap with code that looks plausible but crashes on the first run.
+
+### 3. Simplicity
+- Write the least code that solves the problem in front of you, not the least code that solves every future version.
+- Test: if the only reason something is abstracted is "just in case", it is over-engineered.
+
+### 4. Surgical Changes
+- The diff should be as small as the task. Don't touch what you weren't asked to touch, match the existing code style, and don't reformat along the way.
+- A formatter run will bury the three lines that matter under three hundred unrelated changes.
+- Test: can you tie every line of the diff directly to the user's need? If not, revert it.
+
+### 5. Verification
+- Between "I think it runs" and "it actually runs" lies the chasm called testing.
+- When fixing a bug, do not edit code first. First "record" the bug — write a test that reproduces it stably. Then fix it.
+- Run the test after the fix; only when it passes is the bug really fixed — not when you "feel" it is fixed.
+- Test the scenarios that will actually explode in front of the user, not trivia. If something cannot be tested, don't skip it — that is a design problem, not a testing problem.
+
+### 6. Goal-Driven Execution
+- Before writing code, state clearly what "done" looks like — and it must be verifiable, not "just make it work".
+- For example, "add validation" is too vague and the agent will improvise. Translate it to: "if the user's email is empty or malformed, show a clear error, and both cases must be tested."
+- For multi-step work, lay out the plan first — don't grind for an hour only to find the direction was wrong.
+
+### 7. Debugging
+- When something is broken, investigate — don't guess.
+- Read the full error message and stack trace, reproduce the problem before changing anything, and change one thing at a time.
+
+### 8. Dependencies
+- Every dependency is permanent code you cannot control.
+- Before adding one, ask: can the standard library handle it? (e.g. `crypto.randomUUID()` vs a `uuid` package.)
+- If you add it, state why — make the choice visible, don't sneak it into the manifest.
+
+### 9. Communication
+- Say what you did and why — don't just drop a chunk of code.
+- Describe uncertainty precisely: "I'm not sure this library supports streaming" is good communication; "I think this should work" is not.
+
+## Layered architecture
 
 Both the renderer process (frontend) and main process (backend) follow a five-layer architecture: **core / features / infrastructure / ipc (or shared) / shared**.
 
