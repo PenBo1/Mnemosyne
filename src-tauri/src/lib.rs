@@ -65,6 +65,12 @@ pub fn run() {
                 .expect("failed to open state database");
             tracing::info!("State database initialized (migrations applied)");
 
+            // 种子化内置 Loop Pattern 到 DB（幂等，启动时同步执行）
+            tauri::async_runtime::block_on(
+                crate::core::init::seed_builtin_loop_patterns(&database),
+            )
+            .expect("failed to seed builtin loop patterns");
+
             let provider_registry = ProviderRegistry::new(&data_dir);
             tracing::info!(count = provider_registry.list_providers().len(), "Providers loaded");
 
@@ -185,7 +191,6 @@ pub fn run() {
             ipc::commands::scheduler::scheduler_init,
             ipc::commands::scheduler::scheduler_write_cycle,
             ipc::commands::scheduler::scheduler_status,
-            ipc::commands::scheduler::scheduler_list_tasks,
             ipc::commands::scheduler::scheduler_pause,
             ipc::commands::scheduler::scheduler_resume,
             ipc::commands::scheduler::scheduler_stop,
@@ -252,6 +257,9 @@ pub fn run() {
             ipc::commands::memory::memory_create,
             ipc::commands::memory::memory_update,
             ipc::commands::memory::memory_delete,
+            // FS 命令
+            ipc::commands::fs::fs_read_file,
+            ipc::commands::fs::fs_list_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

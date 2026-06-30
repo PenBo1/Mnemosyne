@@ -19,7 +19,7 @@ impl AnthropicProvider {
         }
     }
 
-    fn build_request(&self, model: &str, system: &str, messages: &[Message], stream: bool) -> serde_json::Value {
+    fn build_request(&self, model: &str, system: &str, messages: &[Message], tools: &[ToolSpec], stream: bool) -> serde_json::Value {
         let mut msgs = Vec::new();
         for m in messages {
             if m.role == "system" {
@@ -31,9 +31,17 @@ impl AnthropicProvider {
             }));
         }
 
+        // max_tokens 按模型能力提升：Claude 3.7+ / Sonnet 4 支持 64k 输出，
+        // 旧的 4096 写死值会导致写作 agent 输出被截断。
+        let max_tokens = if model.starts_with("claude-sonnet-4") || model.starts_with("claude-3-7") {
+            16_384
+        } else {
+            4_096
+        };
+
         let mut body = serde_json::json!({
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
             "messages": msgs,
             "stream": stream,
         });
@@ -41,6 +49,17 @@ impl AnthropicProvider {
         // 仅当 system 非空且数组中无 system 消息时才设置
         if !system.is_empty() && !messages.iter().any(|m| m.role == "system") {
             body["system"] = serde_json::Value::String(system.to_string());
+        }
+
+        // Anthropic 工具格式：name/description/input_schema（不是 OpenAI 的 parameters）
+        if !tools.is_empty() {
+            body["tools"] = serde_json::json!(
+                tools.iter().map(|t| serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.parameters,
+                })).collect::<Vec<_>>()
+            );
         }
 
         body
@@ -62,7 +81,7 @@ impl Provider for AnthropicProvider {
     }
 
     async fn complete(&self, model: &str, system: &str, messages: &[Message]) -> Result<String, AppError> {
-        let body = self.build_request(model, system, messages, false);
+        let body = self.build_request(model, system, messages, &[], false);
         let resp = self.client.post(format!("{}/v1/messages", self.base_url))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -75,8 +94,8 @@ impl Provider for AnthropicProvider {
             .ok_or_else(|| AppError::internal(format!("No content in response: {}", json)))
     }
 
-    async fn stream(&self, model: &str, system: &str, messages: &[Message], _tools: &[ToolSpec]) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = StreamEvent> + Send>>, AppError> {
-        let body = self.build_request(model, system, messages, true);
+    async fn stream(&self, model: &str, system: &str, messages: &[Message], tools: &[ToolSpec]) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = StreamEvent> + Send>>, AppError> {
+        let body = self.build_request(model, system, messages, tools, true);
         let resp = self.client.post(format!("{}/v1/messages", self.base_url))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -98,6 +117,13 @@ impl Provider for AnthropicProvider {
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
                             match json["type"].as_str() {
                                 Some("content_block_delta") => {
+                                    // Anthropic thinking_delta 与 text_delta 在同一事件下，按字段区分。
+                                    // thinking_delta 事件 delta.text 是 None，不会误判为正文。
+                                    if let Some(thinking) = json["delta"]["thinking"].as_str() {
+                                        if !thinking.is_empty() {
+                                            events.push(StreamEvent::ReasoningDelta { content: thinking.to_string() });
+                                        }
+                                    }
                                     if let Some(text) = json["delta"]["text"].as_str() {
                                         if !text.is_empty() {
                                             events.push(StreamEvent::TextDelta { content: text.to_string() });

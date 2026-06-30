@@ -1,11 +1,14 @@
 use std::sync::Arc;
 use futures::StreamExt;
 use crate::shared::errors::{AppError, IpcResponse};
-use crate::infrastructure::llm_client::types::{Message, StreamEvent, FinishReason};
+use crate::infrastructure::llm_client::types::{Message, StreamEvent, FinishReason, ToolCallRequest};
 use crate::infrastructure::file_storage::fs_utils::validate_id_component;
 use crate::core::agent::chat_loop::{
     build_system_prompt, agent_tool_specs, execute_tool, load_history,
     compact_history, compact_messages_simple,
+};
+use crate::core::agent::context_compressor::{
+    ContextCompressor, CompressorConfig, CompressibleMessage, ToolCallRef,
 };
 use crate::core::state::AgentSessionState;
 use crate::AppState;
@@ -20,7 +23,12 @@ const DEFAULT_CONTEXT_WINDOW: u32 = 128_000;
 pub enum AgentEvent {
     TurnStarted { session_id: String },
     StreamDelta { session_id: String, content: String },
+    /// 模型推理过程增量（reasoning_content / thinking_delta），与正文分离。
+    ReasoningDelta { session_id: String, content: String },
     ToolCallBegin { session_id: String, tool_call_id: String, tool: String, args: String },
+    /// 工具调用参数增量（streaming args）。
+    /// 与 StreamDelta/ReasoningDelta 同范式：前端累积 args_delta 还原完整 args。
+    ToolCallDelta { session_id: String, tool_call_id: String, args_delta: String },
     ToolCallEnd { session_id: String, tool_call_id: String, output: String, is_error: bool },
     TurnCompleted { session_id: String, input_tokens: u32, output_tokens: u32 },
     Error { session_id: String, error: String },
@@ -92,15 +100,60 @@ pub async fn agent_send_message(
         .map(|m| crate::infrastructure::ai_services::token_budget::estimate_tokens(&m.content))
         .sum();
     if budget.needs_compaction(total_history_tokens) {
-        let max_msgs = budget.max_messages_after_compact(200);
-        if compact_history(&mut all_messages, max_msgs) {
-            let _ = state.app_handle.emit("agent-event", AgentEvent::CompactionTriggered {
-                session_id: session_id.clone(),
-            });
+        // 升级：用 LLM 摘要中间消息（保留最近 N 条），而非粗暴丢旧消息。
+        // 失败时显式降级到 compact_history 并打 warning，不静默吞错。
+        let compressible: Vec<CompressibleMessage> = all_messages.iter().map(|m| CompressibleMessage {
+            role: m.role.clone(),
+            content: m.content.clone(),
+            tool_calls: m.tool_calls.as_ref().map(|tcs| tcs.iter().map(|tc| ToolCallRef {
+                id: tc.id.clone(),
+                name: tc.name.clone(),
+                arguments: tc.arguments.clone(),
+            }).collect()),
+            tool_call_id: m.tool_call_id.clone(),
+        }).collect();
+
+        let mut compressor = ContextCompressor::new(CompressorConfig::default());
+        match compressor.compress(&compressible, provider.as_ref(), &model, DEFAULT_CONTEXT_WINDOW as usize).await {
+            Ok(compressed) => {
+                all_messages = compressed.iter().map(|m| Message {
+                    role: m.role.clone(),
+                    content: m.content.clone(),
+                    tool_calls: m.tool_calls.as_ref().map(|tcs| tcs.iter().map(|tc| ToolCallRequest {
+                        id: tc.id.clone(),
+                        name: tc.name.clone(),
+                        arguments: tc.arguments.clone(),
+                    }).collect()),
+                    tool_call_id: m.tool_call_id.clone(),
+                }).collect();
+                let _ = state.app_handle.emit("agent-event", AgentEvent::CompactionTriggered {
+                    session_id: session_id.clone(),
+                });
+                tracing::info!(
+                    session_id = %session_id,
+                    original = compressible.len(),
+                    compressed = all_messages.len(),
+                    "Context compressed via LLM summary"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    session_id = %session_id,
+                    "Context compression failed, falling back to simple truncation"
+                );
+                let max_msgs = budget.max_messages_after_compact(200);
+                if compact_history(&mut all_messages, max_msgs) {
+                    let _ = state.app_handle.emit("agent-event", AgentEvent::CompactionTriggered {
+                        session_id: session_id.clone(),
+                    });
+                }
+            }
         }
     }
 
     let mut full_response = String::new();
+    let mut last_reasoning = String::new();
     let mut total_input: u32 = 0;
     let mut total_output: u32 = 0;
 
@@ -118,6 +171,8 @@ pub async fn agent_send_message(
         let stream = provider.stream(&model, &system_prompt, &all_messages, &tools).await?;
 
         let mut text_buf = String::new();
+        // 当前 turn 的 reasoning 累积。turn 结束后写入 DB 并清空。
+        let mut reasoning_buf = String::new();
         let mut tool_calls: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
         let mut finish_reason = FinishReason::Stop;
 
@@ -127,6 +182,13 @@ pub async fn agent_send_message(
                 StreamEvent::TextDelta { content } => {
                     text_buf.push_str(&content);
                     let _ = state.app_handle.emit("agent-event", AgentEvent::StreamDelta {
+                        session_id: session_id.clone(),
+                        content,
+                    });
+                }
+                StreamEvent::ReasoningDelta { content } => {
+                    reasoning_buf.push_str(&content);
+                    let _ = state.app_handle.emit("agent-event", AgentEvent::ReasoningDelta {
                         session_id: session_id.clone(),
                         content,
                     });
@@ -144,6 +206,12 @@ pub async fn agent_send_message(
                     if let Some(entry) = tool_calls.get_mut(&id) {
                         entry.1.push_str(&args_delta);
                     }
+                    // 转发增量 args 给前端，让 UI 可以流式渲染工具调用参数
+                    let _ = state.app_handle.emit("agent-event", AgentEvent::ToolCallDelta {
+                        session_id: session_id.clone(),
+                        tool_call_id: id,
+                        args_delta,
+                    });
                 }
                 StreamEvent::ToolCallEnd { id } => {
                     if let Some((name, args)) = tool_calls.get(&id) {
@@ -166,13 +234,9 @@ pub async fn agent_send_message(
                         if let Some(entry) = tool_calls.get_mut(&id) {
                             entry.1 = valid_args;
                         }
-                        let _ = state.app_handle.emit("agent-event", AgentEvent::ToolCallEnd {
-                            session_id: session_id.clone(),
-                            tool_call_id: id.clone(),
-                            output: String::new(),
-                            is_error: false,
-                        });
-                        tracing::info!(tool = %name, args_len, "Tool call collected");
+                        // 不在此处 emit ToolCallEnd —— 实际执行后的 emit (line ~320) 才携带真实 output。
+                        // 此处双 emit 会让前端先看到"空成功"再被"真实失败/成功"覆盖，语义矛盾。
+                        tracing::info!(tool = %name, args_len, "Tool call args collected");
                     }
                 }
                 StreamEvent::Finish { reason, usage } => {
@@ -209,7 +273,20 @@ pub async fn agent_send_message(
             });
 
             let tc_json = serde_json::to_string(&tool_call_requests).unwrap_or_default();
-            let _ = state.db.create_message(&session_id, "assistant", &text_buf, Some(&tc_json), None).await;
+            let reasoning_for_meta = if reasoning_buf.is_empty() { None } else { Some(reasoning_buf.as_str()) };
+            let _ = state.db.create_message_with_meta(
+                &session_id, "assistant", &text_buf, Some(&tc_json), None,
+                Some(crate::infrastructure::db::MessageMeta {
+                    thinking_content: reasoning_for_meta,
+                    model: Some(&model),
+                    provider: Some(provider.name()),
+                    input_tokens: total_input,
+                    output_tokens: total_output,
+                    latency_ms: Some(llm_start.elapsed().as_millis() as u64),
+                }),
+            ).await;
+            // 已写入 DB，下一轮重新累积
+            reasoning_buf.clear();
 
             let sandbox = state.sandbox.lock().await;
             let pve_validator = crate::infrastructure::sandbox::security::InjectionValidator::new();
@@ -265,11 +342,23 @@ pub async fn agent_send_message(
         }
 
         full_response = text_buf;
+        last_reasoning = reasoning_buf;
         break;
     }
 
     if !full_response.is_empty() {
-        let _ = state.db.create_message(&session_id, "assistant", &full_response, None, None).await;
+        let reasoning_for_meta = if last_reasoning.is_empty() { None } else { Some(last_reasoning.as_str()) };
+        let _ = state.db.create_message_with_meta(
+            &session_id, "assistant", &full_response, None, None,
+            Some(crate::infrastructure::db::MessageMeta {
+                thinking_content: reasoning_for_meta,
+                model: Some(&model),
+                provider: Some(provider.name()),
+                input_tokens: total_input,
+                output_tokens: total_output,
+                latency_ms: None,
+            }),
+        ).await;
     }
 
     if let Ok(Some(mut session)) = state.db.get_session(&session_id).await {

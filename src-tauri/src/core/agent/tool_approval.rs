@@ -53,7 +53,7 @@ impl Default for ToolApprovalConfig {
 
         // Destructive 工具 — 需要确认并警告
         for tool in &[
-            "terminal", "exec_command", "execute_code",
+            "terminal", "bash", "execute_code",
             "delete_file", "move_file",
         ] {
             tool_risk_levels.insert(tool.to_string(), ToolRiskLevel::Destructive);
@@ -220,7 +220,7 @@ mod tests {
         let config = ToolApprovalConfig::default();
         assert_eq!(config.risk_level("read_file"), ToolRiskLevel::ReadOnly);
         assert_eq!(config.risk_level("write_file"), ToolRiskLevel::Mutative);
-        assert_eq!(config.risk_level("exec_command"), ToolRiskLevel::Destructive);
+        assert_eq!(config.risk_level("bash"), ToolRiskLevel::Destructive);
         assert_eq!(config.risk_level("unknown_tool"), ToolRiskLevel::Mutative);
     }
 
@@ -229,7 +229,7 @@ mod tests {
         let config = ToolApprovalConfig::default();
         assert!(!config.requires_approval("read_file"));
         assert!(config.requires_approval("write_file"));
-        assert!(config.requires_approval("exec_command"));
+        assert!(config.requires_approval("bash"));
     }
 
     #[test]
@@ -237,7 +237,7 @@ mod tests {
         let mut config = ToolApprovalConfig::default();
         config.add_auto_approve("write_file");
         assert!(!config.requires_approval("write_file"));
-        assert!(config.requires_approval("exec_command"));
+        assert!(config.requires_approval("bash"));
     }
 
     #[test]
@@ -245,7 +245,7 @@ mod tests {
         let mut config = ToolApprovalConfig::default();
         config.set_approval_enabled(false);
         assert!(!config.requires_approval("write_file"));
-        assert!(!config.requires_approval("exec_command"));
+        assert!(!config.requires_approval("bash"));
     }
 
     #[test]

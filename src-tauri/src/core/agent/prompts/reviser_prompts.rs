@@ -1,4 +1,5 @@
 use crate::core::agent::reviser::ReviseMode;
+use crate::core::agent::prompts::shared_sections::{assemble_with_identity, output_discipline};
 
 pub fn build_system_prompt(mode: &ReviseMode, language: &str, identity_prefix: Option<&str>) -> String {
     let mode_desc = match mode {
@@ -65,10 +66,8 @@ Return the full revised chapter text wrapped in === REVISED_CONTENT === markers.
         }
     };
 
-    match identity_prefix {
-        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
-        _ => task_prompt.to_string(),
-    }
+    let body = format!("{}\n\n{}", task_prompt, output_discipline(language));
+    assemble_with_identity(identity_prefix, &body)
 }
 
 pub fn build_user_message(

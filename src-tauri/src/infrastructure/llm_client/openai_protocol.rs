@@ -37,6 +37,8 @@ pub fn build_request(
     let mut body = serde_json::json!({ "model": model, "messages": msgs, "stream": stream });
     if !tools.is_empty() {
         body["tools"] = serde_json::json!(build_tools_payload(tools));
+        // 显式 tool_choice=auto，避免部分模型默认走 none 导致 agent 无法调工具。
+        body["tool_choice"] = serde_json::json!("auto");
     }
     body
 }

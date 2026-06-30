@@ -82,20 +82,6 @@ pub async fn scheduler_status(
     Ok(IpcResponse::ok(status_str))
 }
 
-/// 列出所有已调度的任务。
-#[tauri::command]
-pub async fn scheduler_list_tasks(
-    state: State<'_, AppState>,
-) -> Result<IpcResponse<Vec<crate::core::agent::pipeline::scheduler::ScheduledTask>>, AppError> {
-    let scheduler = {
-        let s = state.scheduler.lock().await;
-        s.as_ref().ok_or_else(|| AppError::internal("Scheduler not initialized"))?.clone()
-    };
-
-    let tasks = scheduler.list_tasks().await;
-    Ok(IpcResponse::ok(tasks))
-}
-
 /// 暂停 scheduler。
 #[tauri::command]
 pub async fn scheduler_pause(

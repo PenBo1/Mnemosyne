@@ -49,38 +49,6 @@ pub enum SchedulerStatus {
     Error(String),
 }
 
-/// A single scheduled task.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ScheduledTask {
-    pub id: String,
-    pub name: String,
-    pub book_id: String,
-    pub task_type: TaskType,
-    pub status: TaskStatus,
-    pub last_run: Option<String>,
-    pub next_run: Option<String>,
-    pub error_count: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub enum TaskType {
-    WriteCycle,
-    ObserveAndArchive,
-    FeedbackCheck,
-    SnapshotGc,
-    RAGIndex,
-    StateCheckpoint,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub enum TaskStatus {
-    Pending,
-    Running,
-    Completed,
-    Failed,
-    Skipped,
-}
-
 /// The Scheduler orchestrates all modules:
 /// - Write cycles (full pipeline)
 /// - Memory archiving (after observe)
@@ -92,7 +60,6 @@ pub struct Scheduler {
     pipeline: PipelineRunner,
     config: SchedulerConfig,
     status: Arc<RwLock<SchedulerStatus>>,
-    tasks: Arc<Mutex<Vec<ScheduledTask>>>,
     // Shared stores
     memory_store: Arc<MemoryStore>,
     feedback_store: Arc<Mutex<FeedbackStore>>,
@@ -113,7 +80,6 @@ impl Scheduler {
             pipeline,
             config,
             status: Arc::new(RwLock::new(SchedulerStatus::Idle)),
-            tasks: Arc::new(Mutex::new(Vec::new())),
             memory_store,
             feedback_store: Arc::new(Mutex::new(feedback_store)),
             rag_store: Arc::new(Mutex::new(VectorStore::new())),
@@ -159,60 +125,6 @@ impl Scheduler {
 
     pub async fn status(&self) -> SchedulerStatus {
         self.status.read().await.clone()
-    }
-
-    // ── Task registration ──────────────────────────────────────
-
-    pub async fn register_book(&self, book_id: &str) {
-        let mut tasks = self.tasks.lock().await;
-        let book_id = book_id.to_string();
-
-        // Write cycle task
-        tasks.push(ScheduledTask {
-            id: format!("write_{}", book_id),
-            name: format!("Write cycle for {}", &book_id[..8.min(book_id.len())]),
-            book_id: book_id.clone(),
-            task_type: TaskType::WriteCycle,
-            status: TaskStatus::Pending,
-            last_run: None,
-            next_run: None,
-            error_count: 0,
-        });
-
-        // Observe + Archive task
-        tasks.push(ScheduledTask {
-            id: format!("observe_{}", book_id),
-            name: format!("Observe & archive for {}", &book_id[..8.min(book_id.len())]),
-            book_id: book_id.clone(),
-            task_type: TaskType::ObserveAndArchive,
-            status: TaskStatus::Pending,
-            last_run: None,
-            next_run: None,
-            error_count: 0,
-        });
-
-        // RAG index task
-        tasks.push(ScheduledTask {
-            id: format!("rag_{}", book_id),
-            name: format!("RAG index for {}", &book_id[..8.min(book_id.len())]),
-            book_id: book_id.clone(),
-            task_type: TaskType::RAGIndex,
-            status: TaskStatus::Pending,
-            last_run: None,
-            next_run: None,
-            error_count: 0,
-        });
-
-        tracing::info!(book_id = %book_id, "Registered book tasks");
-    }
-
-    pub async fn unregister_book(&self, book_id: &str) {
-        let mut tasks = self.tasks.lock().await;
-        tasks.retain(|t| t.book_id != book_id);
-    }
-
-    pub async fn list_tasks(&self) -> Vec<ScheduledTask> {
-        self.tasks.lock().await.clone()
     }
 
     // ── Write cycle execution ──────────────────────────────────
@@ -399,7 +311,7 @@ impl Scheduler {
         let checkpoints = store.list();
         let latest = checkpoints.iter()
             .filter(|c| c.starts_with(book_id))
-            .max_by_key(|c| c.clone())
+            .max_by_key(|c| c.as_str())
             .cloned();
 
         match latest {

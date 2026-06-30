@@ -4,20 +4,56 @@ use crate::infrastructure::db::Database;
 use crate::infrastructure::sandbox::enforce::SandboxEnforcer;
 use crate::infrastructure::state_store::feedback::FeedbackStore;
 use crate::features::skill_manager::SkillManager;
+use crate::core::agent::prompts::shared_sections::REACT_DISCIPLINE_ZH;
 
-pub const DEFAULT_SYSTEM_PROMPT: &str = "你是 Mnemosyne，一个专业的 AI 创作助手。你帮助用户进行小说创作、角色设计、世界观构建、情节分析和趋势研究。请用中文回复。";
+/// Chat Agent 身份与可用工具段。
+///
+/// 此段定义 chat agent 的角色（小说创作助手）、可用工具清单与典型用法。
+/// 与 `REACT_DISCIPLINE_ZH` 组装为完整系统提示词。
+///
+/// 设计参考：
+/// - hermes-agent `DEFAULT_AGENT_IDENTITY` 的"你是谁、能做什么"
+/// - inkos `buildAgentSystemPrompt` 的 SessionKind 路由 + 工具清单
+const CHAT_AGENT_HEADER: &str = r#"你是 Mnemosyne，一个专业的 AI 创作助手，专注于小说创作、角色设计、世界观构建、情节分析与趋势研究。
+
+## 你的角色
+
+- 协助用户进行长篇小说的结构规划、章节写作、连续性审计、修订与反思。
+- 在创作讨论中保持对作品风格、人物声音、世界观一致性的敏感。
+- 当用户引用素材或上下文时，主动用工具读取、核实，不要凭记忆作答。
+
+## 可用工具
+
+你拥有以下工具，按需调用：
+
+- `search_memory`：在记忆库中检索历史事实、角色设定、章节摘要等结构化记忆。
+- `read_file`：读取项目工作目录内的文件内容（章节、设定、大纲等）。
+- `list_files`：列出目录结构，了解项目组织。
+- `write_file`：将内容写入项目工作目录内的文件（经过沙箱验证）。
+- `bash`：执行 shell 命令（经过沙箱验证，有超时限制），用于字数统计、格式转换、git 查询等。
+
+工具的具体参数 schema 见 ToolSpec；调用前确认必填字段与类型。
+"#;
+
 pub const MAX_HISTORY_MESSAGES: usize = 50;
 
+/// 构造 chat agent 的完整系统提示词。
+///
+/// 组装顺序：
+/// 1. `CHAT_AGENT_HEADER`：身份 + 可用工具清单（场景特定）
+/// 2. `REACT_DISCIPLINE_ZH`：ReAct 工作模式 + 强制规则 + 安全约束 + 语言（跨 agent 共享）
+/// 3. feedback lessons：从历史失败中沉淀的约束（如有）
+/// 4. skill index：可用技能清单（如有）
 pub fn build_system_prompt(
     feedback: &FeedbackStore,
     skills: &SkillManager,
 ) -> String {
+    let mut prompt = format!("{}\n{}", CHAT_AGENT_HEADER, REACT_DISCIPLINE_ZH);
     let lessons = feedback.format_lessons_for_prompt();
-    let skill_index = skills.build_index();
-    let mut prompt = DEFAULT_SYSTEM_PROMPT.to_string();
     if !lessons.is_empty() {
         prompt = format!("{}\n\n{}", prompt, lessons);
     }
+    let skill_index = skills.build_index();
     if !skill_index.is_empty() {
         prompt = format!("{}\n\n{}", prompt, skill_index);
     }
@@ -72,7 +108,7 @@ pub fn agent_tool_specs() -> Vec<ToolSpec> {
             }),
         },
         ToolSpec {
-            name: "exec_command".to_string(),
+            name: "bash".to_string(),
             description: "执行shell命令（经过沙箱验证，有超时限制）".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -134,7 +170,7 @@ pub async fn execute_tool(
             names.sort();
             Ok(names.join("\n"))
         }
-        "exec_command" => {
+        "bash" => {
             let command = args["command"].as_str()
                 .ok_or_else(|| AppError::invalid_input("Missing 'command' argument"))?;
             match sandbox.execute_command(command) {
@@ -260,7 +296,7 @@ mod tests {
         assert!(!specs.is_empty());
         assert!(specs.iter().any(|s| s.name == "read_file"));
         assert!(specs.iter().any(|s| s.name == "write_file"));
-        assert!(specs.iter().any(|s| s.name == "exec_command"));
+        assert!(specs.iter().any(|s| s.name == "bash"));
     }
 
     #[test]
@@ -268,6 +304,12 @@ mod tests {
         let feedback = crate::infrastructure::state_store::feedback::FeedbackStore::new();
         let skills = crate::features::skill_manager::SkillManager::new();
         let prompt = build_system_prompt(&feedback, &skills);
+        // 场景特定段：身份与可用工具
         assert!(prompt.contains("Mnemosyne"));
+        assert!(prompt.contains("可用工具"));
+        assert!(prompt.contains("search_memory"));
+        // 跨 agent 共享段：ReAct 强制规则
+        assert!(prompt.contains("禁止\"光说不做\""));
+        assert!(prompt.contains("禁止停在 stub"));
     }
 }

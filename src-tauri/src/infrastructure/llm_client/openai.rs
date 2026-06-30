@@ -79,6 +79,10 @@ impl Provider for OpenAiProvider {
                                             if let Some(content) = delta["content"].as_str() {
                                                 if !content.is_empty() { events.push(StreamEvent::TextDelta { content: content.to_string() }); }
                                             }
+                                            // OpenAI 兼容协议的推理增量字段（DeepSeek R1 / Qwen QwQ / Doubao / 智谱 等）
+                                            if let Some(reasoning) = delta["reasoning_content"].as_str() {
+                                                if !reasoning.is_empty() { events.push(StreamEvent::ReasoningDelta { content: reasoning.to_string() }); }
+                                            }
                                             if let Some(tool_calls) = delta["tool_calls"].as_array() {
                                                 for tc in tool_calls {
                                                     let id = tc["id"].as_str().unwrap_or("");

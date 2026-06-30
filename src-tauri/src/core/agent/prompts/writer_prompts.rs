@@ -1,3 +1,5 @@
+use crate::core::agent::prompts::shared_sections::{assemble_with_identity, output_discipline};
+
 pub fn build_creative_system_prompt(
     language: &str,
     target_words: u32,
@@ -56,10 +58,8 @@ pub fn build_creative_system_prompt(
         }
     };
 
-    match identity_prefix {
-        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
-        _ => task_prompt,
-    }
+    let body = format!("{}\n\n{}", task_prompt, output_discipline(language));
+    assemble_with_identity(identity_prefix, &body)
 }
 
 pub fn build_creative_user_prompt(

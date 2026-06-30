@@ -14,6 +14,9 @@ use crate::core::agent::error_classifier::classify_api_error;
 use crate::core::agent::lesson_tracker::{LessonTracker, append_lessons_to_memory, load_lessons_from_memory};
 use crate::core::agent::task_lifecycle::TaskManager;
 use crate::core::agent::tools::{ReadFileTool, WriteFileTool, ListFilesTool, BashTool, SearchMemoryTool, ArchiveMemoryTool};
+use crate::core::agent::observer::ObserverAgent;
+use crate::core::agent::reflector::ReflectorAgent;
+use crate::features::session::state::manager::StateManager;
 use crate::infrastructure::sandbox::SandboxEnforcer;
 use crate::infrastructure::sandbox::policy::SandboxPolicy;
 use std::sync::Arc;
@@ -233,9 +236,6 @@ impl PipelineRunner {
         // Initialize verification pipeline (P14.38)
         let verification_pipeline = VerificationPipeline::new();
 
-        // ── 创建共享的 Agent 上下文（包含 IterationBudget + ToolGuardrails + ContextCompressor）──
-        let shared_ctx = self.agent_ctx_for("pipeline", Some(book_id)).await;
-
         // 1. Plan (with recovery + budget + guardrails)
         tracing::info!(chapter = chapter_number, "Stage: Plan");
         let planner_ctx = self.agent_ctx_for("planner", Some(book_id)).await;
@@ -363,17 +363,6 @@ impl PipelineRunner {
                 }
             }
         };
-
-        // ── 上下文压缩检查（写入完成后检查是否需要压缩）──
-        if let Ok(token_estimate) = estimate_content_tokens(&write_output.content) {
-            let compressor = shared_ctx.context_compressor.lock().await;
-            if compressor.should_compress(token_estimate, 200000) {
-                tracing::info!(
-                    estimated_tokens = token_estimate,
-                    "Content approaching context limit, compression recommended for next chapter"
-                );
-            }
-        }
 
         // 3.5. Verification Gates (P14.38)
         tracing::info!(chapter = chapter_number, "Stage: Verification");
@@ -503,6 +492,78 @@ impl PipelineRunner {
 
         // 6. Save chapter index
         save_chapter_index(&book_dir, chapter_number, &write_output.title, final_word_count, &audit)?;
+
+        // 6.5. Reflect — Observer 提取事实 + Reflector 合并为状态增量，持久化到 StoryState
+        tracing::info!(chapter = chapter_number, "Stage: Reflect");
+        let reflector_ctx = self.agent_ctx_for("reflector", Some(book_id)).await;
+        if !reflector_ctx.iteration_budget.consume() {
+            tracing::warn!("Iteration budget exhausted before Reflect stage, skipping reflect");
+        } else {
+            reflector_ctx.tool_guardrails.lock().await.reset_for_turn();
+
+            let observer = ObserverAgent::new();
+            let observations = match observer.observe_chapter(
+                &reflector_ctx, chapter_number, &write_output.title, &final_content,
+                &book.language, &self.config.data_dir,
+            ).await {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    tracing::warn!(error = %e, "Observer failed, skipping Reflect state update");
+                    None
+                }
+            };
+
+            if let Some(observations) = observations {
+                let state_manager = StateManager::new(self.config.project_root.clone());
+                let current_state = state_manager.load_state(book_id).unwrap_or_default();
+
+                let reflector = ReflectorAgent::new();
+                match reflector.reflect_chapter(
+                    &reflector_ctx, chapter_number, &write_output.title, &final_content,
+                    &observations, &current_state, &book.language, &self.config.data_dir,
+                ).await {
+                    Ok(delta) => {
+                        let mut new_state = current_state.clone();
+                        // updated_hooks：按 hook_id upsert
+                        for hook in &delta.updated_hooks {
+                            if let Some(pos) = new_state.hooks.iter().position(|h| h.hook_id == hook.hook_id) {
+                                new_state.hooks[pos] = hook.clone();
+                            } else {
+                                new_state.hooks.push(hook.clone());
+                            }
+                        }
+                        if let Some(summary) = &delta.chapter_summary {
+                            // 替换同章节的旧摘要（如果有）
+                            new_state.summaries.retain(|s| s.chapter != summary.chapter);
+                            new_state.summaries.push(summary.clone());
+                        }
+                        // new_facts：按 fact_id upsert
+                        for fact in &delta.new_facts {
+                            if let Some(pos) = new_state.facts.iter().position(|f| f.fact_id == fact.fact_id) {
+                                new_state.facts[pos] = fact.clone();
+                            } else {
+                                new_state.facts.push(fact.clone());
+                            }
+                        }
+                        new_state.current_chapter = new_state.current_chapter.max(chapter_number);
+
+                        if let Err(e) = state_manager.save_state(book_id, &new_state) {
+                            tracing::warn!(error = %e, "Failed to persist updated StoryState");
+                        } else {
+                            tracing::info!(
+                                hooks_updated = delta.updated_hooks.len(),
+                                facts_added = delta.new_facts.len(),
+                                has_summary = delta.chapter_summary.is_some(),
+                                "Reflect stage completed, StoryState updated"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Reflector failed, skipping state update");
+                    }
+                }
+            }
+        }
 
         // 7. Self-evolution: record audit issues and generate constraint lessons
         //    Aligned with Hermes Agent's feedback loop: error events → lessons → prompt injection
@@ -770,11 +831,4 @@ fn save_snapshot(book_dir: &std::path::Path, chapter_number: u32) -> Result<(), 
     let json = serde_json::to_string_pretty(&snapshot)?;
     std::fs::write(snapshots_dir.join(format!("{:04}.json", chapter_number)), json)?;
     Ok(())
-}
-
-/// 估算文本内容的大致 token 数（中文约 1.5 字符/token，英文约 4 字符/token）
-fn estimate_content_tokens(content: &str) -> Result<usize, AppError> {
-    // 粗略估算：混合中英文场景，取中间值
-    let chars = content.len();
-    Ok(chars / 3)
 }

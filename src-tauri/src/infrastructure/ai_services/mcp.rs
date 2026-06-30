@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 use crate::shared::errors::AppError;
 
@@ -87,18 +87,13 @@ pub struct PromptArgument {
     pub required: Option<bool>,
 }
 
-/// MCP server session state
-struct McpSession {
-    initialized: bool,
-    client_info: Option<serde_json::Value>,
-}
-
 /// MCP Server that handles protocol requests
 pub struct McpServer {
     tools: Vec<McpToolDef>,
     resources: Vec<McpResourceDef>,
     prompts: Vec<McpPromptDef>,
-    sessions: RwLock<HashMap<String, McpSession>>,
+    /// Set of session IDs that have sent `notifications/initialized`.
+    initialized_sessions: RwLock<HashSet<String>>,
     tool_executors: HashMap<String, Box<dyn ToolExecutor + Send + Sync>>,
 }
 
@@ -113,7 +108,7 @@ impl McpServer {
             tools: Vec::new(),
             resources: Vec::new(),
             prompts: Vec::new(),
-            sessions: RwLock::new(HashMap::new()),
+            initialized_sessions: RwLock::new(HashSet::new()),
             tool_executors: HashMap::new(),
         }
     }
@@ -177,11 +172,8 @@ impl McpServer {
     }
 
     async fn handle_initialized(&self, session_id: &str) {
-        let mut sessions = self.sessions.write().await;
-        sessions.insert(session_id.to_string(), McpSession {
-            initialized: true,
-            client_info: None,
-        });
+        let mut sessions = self.initialized_sessions.write().await;
+        sessions.insert(session_id.to_string());
     }
 
     async fn handle_tools_list(&self) -> Result<serde_json::Value, McpError> {

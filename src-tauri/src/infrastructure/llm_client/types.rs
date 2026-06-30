@@ -37,6 +37,9 @@ pub struct ToolSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StreamEvent {
     TextDelta { content: String },
+    /// 模型推理过程增量（OpenAI 协议的 reasoning_content / Anthropic 的 thinking_delta）。
+    /// 与正文分离，便于前端独立渲染思考流。
+    ReasoningDelta { content: String },
     ToolCallStart { id: String, name: String },
     ToolCallDelta { id: String, args_delta: String },
     ToolCallEnd { id: String },

@@ -8,6 +8,7 @@
 
 use crate::shared::errors::AppError;
 use crate::infrastructure::file_storage::data_dir::{DataDir, AGENT_ROLES};
+use crate::infrastructure::db::Database;
 
 /// 执行业务级初始化（在 data_dir.initialize() 之后调用）。
 ///
@@ -19,6 +20,38 @@ use crate::infrastructure::file_storage::data_dir::{DataDir, AGENT_ROLES};
 pub fn initialize_app_business_state(data_dir: &DataDir) -> Result<(), AppError> {
     ensure_builtin_book_sources(data_dir)?;
     ensure_agent_identities(data_dir)?;
+    Ok(())
+}
+
+/// 种子化内置 Loop Pattern 到 DB（应用启动时调用，幂等）。
+///
+/// 把 `PatternRegistry::built_in_patterns()` 中的 7 个 pattern upsert 到 DB，
+/// 让前端 `loop_get_patterns` 能直接列出。已存在的 pattern 会被更新（用户编辑仍可能被覆盖，
+/// 因为 built-in pattern 是项目契约；如需保留用户改动，后续应改成"仅 insert 不存在者"）。
+pub async fn seed_builtin_loop_patterns(db: &Database) -> Result<(), AppError> {
+    use crate::infrastructure::db::models::UpsertLoopPatternRequest;
+
+    let patterns = crate::core::agent::loop_engine::PatternRegistry::built_in_patterns();
+    for p in patterns {
+        db.upsert_loop_pattern(
+            Some(&p.id),
+            UpsertLoopPatternRequest {
+                name: p.name,
+                description: Some(p.description),
+                goal: Some(p.goal),
+                cadence: Some(p.cadence),
+                risk_level: Some(p.risk_level),
+                phases: Some(p.phases),
+                human_gates: Some(p.human_gates),
+                cost_config: Some(p.cost_config),
+                skills_required: Some(p.skills_required),
+                state_schema: Some(p.state_schema),
+                is_active: Some(p.is_active),
+            },
+        )
+        .await?;
+    }
+    tracing::info!(count = 7, "Seeded builtin loop patterns");
     Ok(())
 }
 

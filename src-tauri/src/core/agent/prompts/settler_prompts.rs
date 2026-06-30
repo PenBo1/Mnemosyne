@@ -10,6 +10,7 @@
 // - Reflector (temperature 0.3)：保守地把观察结果合并为状态增量
 
 use crate::features::story::{StoryState, ChapterSummary};
+use crate::core::agent::prompts::shared_sections::{assemble_with_identity, output_discipline};
 
 /// 构建 Reflector 的 system prompt。
 ///
@@ -117,10 +118,8 @@ pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> Str
         }
     };
 
-    match identity_prefix {
-        Some(prefix) if !prefix.is_empty() => format!("{}\n\n{}", prefix, task_prompt),
-        _ => task_prompt.to_string(),
-    }
+    let body = format!("{}\n\n{}", task_prompt, output_discipline(language));
+    assemble_with_identity(identity_prefix, &body)
 }
 
 /// 构建 Reflector 的 user prompt。

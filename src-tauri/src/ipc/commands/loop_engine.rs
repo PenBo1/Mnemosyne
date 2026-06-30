@@ -85,25 +85,68 @@ pub async fn loop_run_cycle(
         return Err(AppError::internal("Token budget exceeded for this loop"));
     }
 
-    tracing::info!(state_id = %state_id, pattern_id = %pattern_id, "loop_run_cycle");
-
-    // 委派给 LoopEngine 执行真实循环。
-    // 当前 LoopEngine::run_cycle 返回 not_implemented 错误（见 engine.rs 文档），
-    // 前端应 catch 此错误并显示"功能开发中"。
-    // 完整实现后，此处会写入 loop_run_log + 更新 loop_state 的 token_usage_today。
-    let log = crate::core::agent::loop_engine::LoopEngine::run_cycle(&ls)?;
-
-    state.db.create_loop_run_log(&log).await?;
+    // 先标记 running，确保后续无论 Ok/Err 都会更新到 idle/failed（避免状态分裂）
     state.db.update_loop_state(&state_id, UpdateLoopStateRequest {
-        status: Some("idle".to_string()),
-        last_run_at: Some(chrono::Utc::now().to_rfc3339()),
-        last_run_result: Some(serde_json::json!({
-            "findings": log.findings,
-            "actions": log.actions_taken,
-            "escalations": log.escalations
-        })),
+        status: Some("running".to_string()),
         ..Default::default()
     }).await?;
+
+    tracing::info!(state_id = %state_id, pattern_id = %pattern_id, "loop_run_cycle");
+
+    // 查找 pattern：DB 优先，回退到内置 registry（应对 DB 未种子化的情况）
+    let pattern = match state.db.get_loop_patterns().await?.into_iter().find(|p| p.id == pattern_id) {
+        Some(p) => p,
+        None => crate::core::agent::loop_engine::PatternRegistry::built_in_patterns()
+            .into_iter()
+            .find(|p| p.id == pattern_id)
+            .ok_or_else(|| AppError::not_found(format!("Loop pattern not found: {}", pattern_id)))?,
+    };
+
+    let now_rfc = chrono::Utc::now().to_rfc3339();
+
+    // 调用 engine；用 match 保证无论 Ok/Err 都会写 log + 更新 state
+    let log = match crate::core::agent::loop_engine::LoopEngine::run_cycle(&ls, &pattern) {
+        Ok(log) => {
+            // 成功：写 log，更新 state 为 idle
+            state.db.create_loop_run_log(&log).await?;
+            state.db.update_loop_state(&state_id, UpdateLoopStateRequest {
+                status: Some("idle".to_string()),
+                last_run_at: Some(now_rfc.clone()),
+                last_run_result: Some(serde_json::json!({
+                    "findings": log.findings,
+                    "actions": log.actions_taken,
+                    "escalations": log.escalations
+                })),
+                ..Default::default()
+            }).await?;
+            log
+        }
+        Err(e) => {
+            // 失败：仍写一条 failed log，更新 state 为 failed（避免状态分裂）
+            let failed_log = crate::infrastructure::db::models::LoopRunLog {
+                id: uuid::Uuid::new_v4().to_string(),
+                loop_state_id: state_id.clone(),
+                pattern_id: pattern_id.clone(),
+                status: "failed".to_string(),
+                phase_results: vec![],
+                tokens_used: 0,
+                duration_ms: 0,
+                findings: vec![],
+                actions_taken: vec![],
+                escalations: vec![],
+                error_message: Some(e.to_string()),
+                created_at: now_rfc.clone(),
+            };
+            state.db.create_loop_run_log(&failed_log).await?;
+            state.db.update_loop_state(&state_id, UpdateLoopStateRequest {
+                status: Some("failed".to_string()),
+                last_run_at: Some(now_rfc),
+                last_run_result: Some(serde_json::json!({ "error": e.to_string() })),
+                ..Default::default()
+            }).await?;
+            return Err(e);
+        }
+    };
 
     Ok(IpcResponse::ok(log))
 }
