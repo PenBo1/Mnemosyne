@@ -287,6 +287,10 @@ export default {
     acceptEdits: "接受编辑",
     modelVersion: "Opus 4.7",
   },
+  toolCall: {
+    input: "输入",
+    output: "输出",
+  },
   dashboard: {
     title: "仪表盘",
     description: "活动概览与AI分析",
@@ -1021,5 +1025,18 @@ export default {
       Completed: "已完成",
       Failed: "失败",
     },
+  },
+  versionPage: {
+    title: "版本历史",
+    description: "查看与对比章节修订",
+    chapter: "章节：",
+    versionsCount: "版本 ({count})",
+    empty: "暂无版本",
+    emptyDescription: "本章暂无版本历史",
+    diffTitle: "差异：v{from} → v{to}",
+    versionContent: "v{version} 内容",
+    selectPrompt: "请选择版本",
+    selectHint: "点击版本查看内容，或对比两个版本",
+    restore: "恢复",
   },
 } as const;

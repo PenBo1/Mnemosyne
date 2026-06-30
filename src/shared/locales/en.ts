@@ -287,6 +287,10 @@ export default {
     acceptEdits: "Accept edits",
     modelVersion: "Opus 4.7",
   },
+  toolCall: {
+    input: "Input",
+    output: "Output",
+  },
   dashboard: {
     title: "Dashboard",
     description: "Activity overview and AI analytics",
@@ -1021,5 +1025,18 @@ export default {
       Completed: "Completed",
       Failed: "Failed",
     },
+  },
+  versionPage: {
+    title: "Version History",
+    description: "View and compare chapter revisions",
+    chapter: "Chapter:",
+    versionsCount: "Versions ({count})",
+    empty: "No versions",
+    emptyDescription: "No version history for this chapter",
+    diffTitle: "Diff: v{from} → v{to}",
+    versionContent: "v{version} Content",
+    selectPrompt: "Select a version",
+    selectHint: "Click on a version to view content, or compare two versions",
+    restore: "Restore",
   },
 } as const;

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { setWindowTheme } from "@/features/settings/services/general";
 
 type Theme = "light" | "dark" | "system";
 
@@ -42,7 +43,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(resolved);
-    // TODO: 通过 lib/ipc 调用 set_window_theme 命令
+    // 同步到 Rust 后端，让窗口标题栏等原生 UI 跟随主题
+    void setWindowTheme(resolved);
   }, []);
 
   useEffect(() => {

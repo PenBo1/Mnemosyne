@@ -12,15 +12,18 @@ import { PageContainer, PageHeader, PageHeading, PageTitle, PageDescription, Pag
 import { LoadingState, EmptyState } from "@/components/shared/state";
 import { useVersion } from "@/features/version/hooks/useVersion";
 import { VersionTimeline, DiffView } from "@/features/version/components";
+import { useI18n } from "@/shared/i18n";
 import type { ChapterVersion } from "@/shared/types";
 
 export function VersionPage({ novelId }: { novelId: string }) {
+  const { t } = useI18n();
   const {
     versions,
     diffResult,
     loading,
     loadVersions,
     computeDiff,
+    restoreVersion,
   } = useVersion(novelId);
 
   const [chapterNumber, setChapterNumber] = useState<number>(1);
@@ -42,8 +45,9 @@ export function VersionPage({ novelId }: { novelId: string }) {
     await computeDiff(from.id, to.id);
   };
 
-  const handleRestore = async (_version: ChapterVersion) => {
-    // TODO: 恢复操作需要 workspaceId 和 bookId，待后端实现后补全
+  const handleRestore = async (version: ChapterVersion) => {
+    // workspaceId/bookId 复用 novelId（与 routes/index.tsx 中 <VersionPage novelId="default" /> 的 demo 路由一致）
+    await restoreVersion(version.id, novelId, novelId);
   };
 
   return (
@@ -53,14 +57,14 @@ export function VersionPage({ novelId }: { novelId: string }) {
         <PageHeading>
           <PageTitle>
             <HistoryIcon />
-            Version History
+            {t.versionPage.title}
           </PageTitle>
           <PageDescription>
-            View and compare chapter revisions
+            {t.versionPage.description}
           </PageDescription>
         </PageHeading>
         <PageActions>
-          <span className="text-sm text-muted-foreground">Chapter:</span>
+          <span className="text-sm text-muted-foreground">{t.versionPage.chapter}</span>
           <Input
             type="number"
             value={chapterNumber}
@@ -78,7 +82,7 @@ export function VersionPage({ novelId }: { novelId: string }) {
           <CardHeader className="border-b py-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <HistoryIcon className="size-4" />
-              Versions ({versions.length})
+              {t.versionPage.versionsCount.replace("{count}", String(versions.length))}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 p-0 overflow-hidden">
@@ -89,8 +93,8 @@ export function VersionPage({ novelId }: { novelId: string }) {
                 ) : versions.length === 0 ? (
                   <EmptyState
                     icon={<HistoryIcon />}
-                    title="No versions"
-                    description="No version history for this chapter"
+                    title={t.versionPage.empty}
+                    description={t.versionPage.emptyDescription}
                   />
                 ) : (
                   <VersionTimeline
@@ -112,15 +116,15 @@ export function VersionPage({ novelId }: { novelId: string }) {
               {compareFrom && compareTo ? (
                 <>
                   <GitCompareIcon className="size-4" />
-                  Diff: v{compareFrom.version_number} → v{compareTo.version_number}
+                  {t.versionPage.diffTitle.replace("{from}", String(compareFrom.version_number)).replace("{to}", String(compareTo.version_number))}
                 </>
               ) : selectedVersion ? (
                 <>
                   <RotateCwIcon className="size-4" />
-                  v{selectedVersion.version_number} Content
+                  {t.versionPage.versionContent.replace("{version}", String(selectedVersion.version_number))}
                 </>
               ) : (
-                "Select a version"
+                t.versionPage.selectPrompt
               )}
             </CardTitle>
             {selectedVersion && !compareFrom && (
@@ -131,7 +135,7 @@ export function VersionPage({ novelId }: { novelId: string }) {
                 onClick={() => handleRestore(selectedVersion)}
               >
                 <RotateCwIcon className="size-4" />
-                Restore
+                {t.versionPage.restore}
               </Button>
             )}
           </CardHeader>
@@ -147,8 +151,8 @@ export function VersionPage({ novelId }: { novelId: string }) {
                 ) : (
                   <EmptyState
                     icon={<HistoryIcon />}
-                    title="Select a version"
-                    description="Click on a version to view content, or compare two versions"
+                    title={t.versionPage.selectPrompt}
+                    description={t.versionPage.selectHint}
                   />
                 )}
               </div>
