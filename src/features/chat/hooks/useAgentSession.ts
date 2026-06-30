@@ -11,10 +11,13 @@ export function useAgentSession(sessionId: string | null) {
   const messages = useAgentStore((s) => s.messages);
   const streaming = useAgentStore((s) => s.streaming);
   const streamingContent = useAgentStore((s) => s.streamingContent);
+  const streamingReasoning = useAgentStore((s) => s.streamingReasoning);
   const error = useAgentStore((s) => s.error);
   const loading = useAgentStore((s) => s.loading);
   const updateStreamingContent = useAgentStore((s) => s.updateStreamingContent);
   const clearStreamingContent = useAgentStore((s) => s.clearStreamingContent);
+  const updateStreamingReasoning = useAgentStore((s) => s.updateStreamingReasoning);
+  const clearStreamingReasoning = useAgentStore((s) => s.clearStreamingReasoning);
   const setStreaming = useAgentStore((s) => s.setStreaming);
   const setError = useAgentStore((s) => s.setError);
   const appendMessage = useAgentStore((s) => s.appendMessage);
@@ -34,6 +37,7 @@ export function useAgentSession(sessionId: string | null) {
           switch (payload.type) {
             case "TurnStarted":
               setStreaming(true);
+              clearStreamingReasoning();
               break;
 
             case "StreamDelta":
@@ -42,9 +46,16 @@ export function useAgentSession(sessionId: string | null) {
               }
               break;
 
+            case "ReasoningDelta":
+              if (payload.content) {
+                updateStreamingReasoning(payload.content);
+              }
+              break;
+
             case "TurnCompleted":
               setStreaming(false);
               clearStreamingContent();
+              clearStreamingReasoning();
               if (sessionIdRef.current) {
                 loadMessages(sessionIdRef.current);
               }
@@ -76,7 +87,7 @@ export function useAgentSession(sessionId: string | null) {
         unlistenFn();
       }
     };
-  }, [sessionId, updateStreamingContent, clearStreamingContent, setStreaming, setError, loadMessages]);
+  }, [sessionId, updateStreamingContent, clearStreamingContent, updateStreamingReasoning, clearStreamingReasoning, setStreaming, setError, loadMessages]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -135,6 +146,7 @@ export function useAgentSession(sessionId: string | null) {
     messages,
     streaming,
     streamingContent,
+    streamingReasoning,
     error,
     loading,
     sendMessage,

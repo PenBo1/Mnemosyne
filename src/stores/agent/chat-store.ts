@@ -14,6 +14,8 @@ interface AgentState {
   messages: Message[];
   streaming: boolean;
   streamingContent: string;
+  /** 当前 turn 流式累积的推理过程（reasoning_content / thinking_delta），与正文分离 */
+  streamingReasoning: string;
   error: string | null;
   loading: boolean;
   loadSessions: (novelId?: string) => Promise<void>;
@@ -25,6 +27,8 @@ interface AgentState {
   replaceMessages: (messages: Message[]) => void;
   updateStreamingContent: (delta: string) => void;
   clearStreamingContent: () => void;
+  updateStreamingReasoning: (delta: string) => void;
+  clearStreamingReasoning: () => void;
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
   reset: () => void;
@@ -36,6 +40,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
   streaming: false,
   streamingContent: "",
+  streamingReasoning: "",
   error: null,
   loading: false,
 
@@ -75,6 +80,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       currentSessionId: tempId,
       messages: [],
       streamingContent: "",
+      streamingReasoning: "",
       streaming: false,
       error: null,
     }));
@@ -102,7 +108,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   switchSession: async (sessionId: string) => {
-    set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "" });
+    set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "" });
     try {
       const messages = await sessionService.listMessages(sessionId);
       set({ messages, loading: false });
@@ -169,6 +175,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ streamingContent: "" });
   },
 
+  updateStreamingReasoning: (delta: string) => {
+    set((state) => ({
+      streamingReasoning: state.streamingReasoning + delta,
+    }));
+  },
+
+  clearStreamingReasoning: () => {
+    set({ streamingReasoning: "" });
+  },
+
   setStreaming: (streaming: boolean) => {
     set({ streaming });
   },
@@ -182,6 +198,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       messages: [],
       streaming: false,
       streamingContent: "",
+      streamingReasoning: "",
       error: null,
     });
   },

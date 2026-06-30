@@ -23,7 +23,7 @@ export function useChat() {
   const deleteSession = useAgentStore((s) => s.deleteSession);
 
   // 订阅 agent-event + 读 messages/streaming/error；cancel 复用 useAgentSession
-  const { messages, streaming, streamingContent, error, cancel } =
+  const { messages, streaming, streamingContent, streamingReasoning, error, cancel } =
     useAgentSession(currentSessionId);
 
   // 写操作 action（通过 selector，避免整树订阅）
@@ -118,6 +118,7 @@ export function useChat() {
     messages,
     streaming,
     streamingContent,
+    streamingReasoning,
     error,
     loading,
     sendMessage,

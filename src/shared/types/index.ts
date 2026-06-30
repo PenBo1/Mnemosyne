@@ -171,12 +171,13 @@ export interface Message {
 // ── Agent Events / IPC ─────────────────────────────────────
 
 export interface AgentEvent {
-  type: "TurnStarted" | "StreamDelta" | "ToolCallBegin" | "ToolCallEnd" | "TurnCompleted" | "Error" | "CompactionTriggered";
+  type: "TurnStarted" | "StreamDelta" | "ReasoningDelta" | "ToolCallBegin" | "ToolCallDelta" | "ToolCallEnd" | "TurnCompleted" | "Error" | "CompactionTriggered";
   session_id: string;
   content?: string;
   tool_call_id?: string;
   tool?: string;
   args?: string;
+  args_delta?: string;
   output?: string;
   is_error?: boolean;
   input_tokens?: number;
@@ -798,6 +799,16 @@ export interface LoopEngineState {
   pauseLoop: (stateId: string) => Promise<void>;
   resumeLoop: (stateId: string) => Promise<void>;
   loadRunLogs: (stateId: string) => Promise<void>;
+}
+
+// ── File System ─────────────────────────────────────
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  extension: string | null;
+  size: number;
 }
 
 // ── Barrel 导出（子模块类型） ───────────────────────────────

@@ -8,23 +8,25 @@ export function MessageList({
   messages,
   streaming,
   streamingContent,
+  streamingReasoning,
   error,
   scrollRef,
 }: {
   messages: Message[];
   streaming: boolean;
   streamingContent: string;
+  streamingReasoning: string;
   error: string | null;
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
-  // 新消息到达时滚到底部
+  // Scroll to bottom on new messages
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
     container.scrollTop = container.scrollHeight;
   }, [messages.length, scrollRef]);
 
-  // 流式输出：贴近底部则跟随滚动，否则不打断用户查看历史
+  // Follow bottom during streaming if user is near bottom
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
@@ -33,13 +35,13 @@ export function MessageList({
     if (distance < 120) {
       container.scrollTop = container.scrollHeight;
     }
-  }, [streamingContent, scrollRef]);
+  }, [streamingContent, streamingReasoning, scrollRef]);
 
   const isEmpty = messages.length === 0 && !streaming;
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto">
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-6 py-6">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto md-scrollbar">
+      <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-4 px-6 py-6">
         {isEmpty ? (
           <EmptyState />
         ) : (
@@ -60,10 +62,11 @@ export function MessageList({
                   created_at: new Date().toISOString(),
                 }}
                 isStreaming
+                reasoning={streamingReasoning}
               />
             )}
             {error && (
-              <div className="flex items-center gap-2 rounded-[var(--radius-6)] border border-destructive/30 bg-[var(--status-error-surface-l1)] px-3 py-2 text-xs text-destructive">
+              <div className="flex items-center gap-2 rounded-[var(--radius-6)] border border-[var(--status-error-default)]/20 bg-[var(--status-error-surface-l1)] px-3 py-2 text-xs text-[var(--status-error-default)]">
                 <AlertCircle className="size-3.5 shrink-0" />
                 <span>{error}</span>
               </div>

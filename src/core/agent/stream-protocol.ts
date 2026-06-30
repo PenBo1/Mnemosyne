@@ -2,11 +2,12 @@
 // 被 hooks/agent 和 stores/agent 共同依赖，统一两套 agent 系统的流式语义
 //
 // 归约规则：
-// - TurnStarted：重置 turn 累积文本，记录 token 预算
+// - TurnStarted：重置 turn 累积文本与推理，记录 token 预算
 // - StreamDelta：累积到当前 turn 的 content
+// - ReasoningDelta：累积到当前 turn 的 reasoning（与正文分离）
 // - ToolCallBegin：新增一个 pending 工具调用
 // - ToolCallEnd：把对应工具调用标记为 succeeded/failed
-// - TurnCompleted：固化本 turn 结果，累加 token 用量
+// - TurnCompleted：固化本 turn 结果，累加 token 用量（reasoning 不并入正文，由 DB 单独持久化）
 // - Error：记录错误并结束当前 turn
 // - CompactionTriggered：标记上下文已压缩
 
@@ -18,6 +19,8 @@ export interface StreamState {
   content: string;
   /** 当前 turn 正在流式累积的文本（TurnCompleted 后合并到 content） */
   currentTurnContent: string;
+  /** 当前 turn 正在流式累积的推理过程（reasoning_content / thinking_delta），与正文分离 */
+  currentTurnReasoning: string;
   /** 工具调用列表（按触发顺序） */
   toolCalls: ToolCallState[];
   /** 累计 token 用量 */
@@ -34,6 +37,7 @@ export interface StreamState {
 export const initialStreamState: StreamState = {
   content: "",
   currentTurnContent: "",
+  currentTurnReasoning: "",
   toolCalls: [],
   totalInputTokens: 0,
   totalOutputTokens: 0,
@@ -52,6 +56,7 @@ export function streamReducer(state: StreamState, event: AgentEvent): StreamStat
       return {
         ...state,
         currentTurnContent: "",
+        currentTurnReasoning: "",
         isStreaming: true,
         lastError: null,
       };
@@ -62,6 +67,15 @@ export function streamReducer(state: StreamState, event: AgentEvent): StreamStat
       return {
         ...state,
         currentTurnContent: state.currentTurnContent + delta,
+      };
+    }
+
+    case "ReasoningDelta": {
+      if (!state.isStreaming) return state;
+      const delta = event.content ?? "";
+      return {
+        ...state,
+        currentTurnReasoning: state.currentTurnReasoning + delta,
       };
     }
 
@@ -97,6 +111,7 @@ export function streamReducer(state: StreamState, event: AgentEvent): StreamStat
         ...state,
         content: state.content + turnContent,
         currentTurnContent: "",
+        currentTurnReasoning: "",
         isStreaming: false,
         totalInputTokens: state.totalInputTokens + (event.input_tokens ?? 0),
         totalOutputTokens: state.totalOutputTokens + (event.output_tokens ?? 0),

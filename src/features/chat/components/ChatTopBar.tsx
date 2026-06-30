@@ -1,4 +1,4 @@
-import { BotIcon, PlusIcon, Trash2Icon, Loader2 } from "lucide-react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -9,7 +9,6 @@ import { useI18n } from "@/shared/i18n";
 
 export function ChatTopBar({
   title,
-  streaming,
   hasSession,
   onNewSession,
   onDeleteSession,
@@ -22,20 +21,11 @@ export function ChatTopBar({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex items-center justify-between border-b border-border bg-[var(--bg-overlay-l1)] px-4 py-2.5">
+    <div className="flex items-center justify-between border-b border-[var(--border-neutral-l1)] bg-[var(--bg-overlay-l1)] px-4 py-2">
       <div className="flex items-center gap-2">
-        <div className="flex size-6 items-center justify-center rounded-md bg-primary/10">
-          <BotIcon className="size-3.5 text-primary" />
-        </div>
-        <span className="text-sm font-medium">{title}</span>
-        {streaming && (
-          <span className="flex items-center gap-1 text-[11px] text-primary">
-            <Loader2 className="size-2.5 animate-spin" />
-            {t.agentChat.thinking}
-          </span>
-        )}
+        <span className="text-sm font-medium text-[var(--text-default)]">{title}</span>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-sm" onClick={onNewSession}>
@@ -51,7 +41,7 @@ export function ChatTopBar({
                 variant="ghost"
                 size="icon-sm"
                 onClick={onDeleteSession}
-                className="text-muted-foreground hover:text-destructive"
+                className="text-[var(--text-tertiary)] hover:text-[var(--status-error-default)]"
               >
                 <Trash2Icon className="size-3.5" />
               </Button>

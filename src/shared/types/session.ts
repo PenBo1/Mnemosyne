@@ -27,12 +27,13 @@ export interface Message {
 }
 
 export interface AgentEvent {
-  type: "TurnStarted" | "StreamDelta" | "ToolCallBegin" | "ToolCallEnd" | "TurnCompleted" | "Error" | "CompactionTriggered";
+  type: "TurnStarted" | "StreamDelta" | "ReasoningDelta" | "ToolCallBegin" | "ToolCallDelta" | "ToolCallEnd" | "TurnCompleted" | "Error" | "CompactionTriggered";
   session_id: string;
   content?: string;
   tool_call_id?: string;
   tool?: string;
   args?: string;
+  args_delta?: string;
   output?: string;
   is_error?: boolean;
   input_tokens?: number;
