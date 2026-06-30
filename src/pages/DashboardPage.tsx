@@ -40,22 +40,7 @@ export function DashboardPage() {
   const { llmCalls, toolExecutions, tokenUsage, sandboxViolations, loading: aiLoading } =
     useAiAnalytics(currentSessionId);
 
-  if (dashboardLoading || aiLoading) {
-    return (
-      <PageContainer>
-        <Skeleton className="h-8 w-48" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
-        <Skeleton className="h-48" />
-      </PageContainer>
-    );
-  }
-
-  const totalTokens = tokenUsage?.total_tokens ?? 0;
-  const totalToolCalls = tokenUsage?.tools.total_calls ?? 0;
+  // useMemo 必须在任何 early return 之前调用，否则会触发 hooks 顺序不一致
   const toolErrorRate = useMemo(
     () =>
       tokenUsage?.tools.success_rate
@@ -73,6 +58,23 @@ export function DashboardPage() {
         : 0,
     [tokenUsage?.models],
   );
+
+  if (dashboardLoading || aiLoading) {
+    return (
+      <PageContainer>
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-48" />
+      </PageContainer>
+    );
+  }
+
+  const totalTokens = tokenUsage?.total_tokens ?? 0;
+  const totalToolCalls = tokenUsage?.tools.total_calls ?? 0;
 
   const statCards = [
     { icon: BookOpenIcon, label: t.dashboard.stats.novels, value: stats?.novelCount ?? 0 },
