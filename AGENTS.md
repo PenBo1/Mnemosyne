@@ -48,7 +48,7 @@ Capabilities are defined in `src-tauri/capabilities/*.json`. Only declared comma
 
 ## Decision methodology
 
-- Use first principles: define goals, constraints, and facts before deriving implementation paths.
+- Use first principles: define goals, constraints, and facts before deriving implementation paths. Force yourself out of analogical reasoning — do not pattern-match from prior solutions or training data; re-derive the answer from the most basic facts of this problem.
 - Never decide based on "that's how it was done before." State core assumptions and tradeoffs.
 - Prefer minimal necessary complexity. Avoid unnecessary abstraction and over-engineering.
 - Challenge user assumptions when something doesn't make sense. User may not fully understand the codebase — ask questions to uncover true intent.
@@ -88,6 +88,7 @@ These nine principles govern all code generation and modification in this reposi
 ### 7. Debugging
 - When something is broken, investigate — don't guess.
 - Read the full error message and stack trace, reproduce the problem before changing anything, and change one thing at a time.
+- Do not stop at the first plausible surface fix. Trace the symptom to its underlying mechanism — a patch that silences the error without addressing the root cause will resurface later, possibly as a larger failure.
 
 ### 8. Dependencies
 - Every dependency is permanent code you cannot control.
@@ -97,6 +98,13 @@ These nine principles govern all code generation and modification in this reposi
 ### 9. Communication
 - Say what you did and why — don't just drop a chunk of code.
 - Describe uncertainty precisely: "I'm not sure this library supports streaming" is good communication; "I think this should work" is not.
+
+### 10. Adversarial Review
+- Verification (Principle 5) proves the happy path and reproduces known bugs; adversarial review proactively hunts for the paths you didn't imagine.
+- Review from a hostile user's perspective: what inputs would break this? Consider oversized payloads, malformed data, future/invalid timestamps, empty/null values, concurrent writes, and resource exhaustion.
+- Trace each hostile input through the full path from entry to crash, not just the entry point.
+- Before shipping non-trivial features, run an adversarial pass. For complex changes, prefer parallel multi-agent review (e.g. "开启 Ultracode 对本次开发进行对抗式审查").
+- Periodically (every 2-3 weeks) run a project-wide adversarial review covering architecture, dependencies, code quality, and doc/code drift — surface latent tech debt before it surfaces in production.
 
 ## Layered architecture
 
@@ -164,7 +172,7 @@ pages/ (page components) → features/{feature}/hooks/ → features/{feature}/se
   - `features/workspace/` — workspace management (components/, hooks/, services/)
   - `features/story/` — story editing (hooks/, services/)
   - `features/settings/` — settings page (hooks/, services/)
-  - `features/wiki/`, `features/version/`, `features/kanban/`, `features/loop/`, `features/novel/`, `features/radar/`, `features/memory/`, `features/sandbox/`, `features/skill/`, `features/stats/`, `features/session/`, `features/knowledge/`, `features/tools/` — other features
+  - `features/wiki/`, `features/version/`, `features/loop/`, `features/novel/`, `features/radar/`, `features/memory/`, `features/sandbox/`, `features/skill/`, `features/stats/`, `features/session/`, `features/knowledge/`, `features/tools/` — other features
 - `core/` — core layer (UI-independent pure logic)
   - `core/agent/` — AI Agent state machine and decision logic (stream-protocol, tool-protocol, session-lifecycle) — no React/Tauri/IPC dependencies, shared by hooks and stores
   - `core/memory/` — frontend memory management (async action helpers)

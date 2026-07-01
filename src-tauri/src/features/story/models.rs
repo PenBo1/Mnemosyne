@@ -134,6 +134,10 @@ pub struct AuditIssue {
     pub category: String,
     pub description: String,
     pub suggestion: String,
+    /// S6: typed routing hint for the reviser. "local" = wording/paragraph-level
+    /// patch; "structural" = scene/chapter rewrite; None = unknown (reviser decides).
+    #[serde(default)]
+    pub repair_scope: Option<RepairScope>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -144,12 +148,25 @@ pub enum AuditSeverity {
     Info,
 }
 
+/// S6: Repair scope hint for the reviser's auto-routing logic.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RepairScope {
+    Local,
+    Structural,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditResult {
     pub passed: bool,
     pub score: f64,
     pub issues: Vec<AuditIssue>,
     pub summary: String,
+    /// S6: True when the auditor's LLM output could not be parsed as JSON.
+    /// Callers must not auto-revise content from a parse-failed result.
+    #[serde(default)]
+    pub parse_failed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

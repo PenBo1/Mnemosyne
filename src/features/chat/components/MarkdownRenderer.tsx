@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { Separator } from "@/components/ui/separator";
 import { CodeBlock } from "./CodeBlock";
 
 const components: Components = {
@@ -63,7 +64,7 @@ const components: Components = {
   h4: (props) => (
     <h4 {...props} className="mb-1 mt-2 text-sm font-medium first:mt-0" />
   ),
-  hr: () => <hr className="my-4 border-[var(--border-neutral-l1)]" />,
+  hr: () => <Separator className="my-4" />,
   blockquote: (props) => (
     <blockquote
       {...props}

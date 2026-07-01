@@ -21,9 +21,18 @@ export async function createNovelPipeline(
   workspaceId: string,
   title: string,
   genre: string,
-  brief?: string
+  brief?: string,
+  targetChapters?: number,
+  chapterWords?: number
 ): Promise<BookConfig> {
-  return ipc<BookConfig>("novel_create", { workspaceId, title, genre, brief });
+  return ipc<BookConfig>("novel_create", {
+    workspaceId,
+    title,
+    genre,
+    brief,
+    targetChapters,
+    chapterWords,
+  });
 }
 
 export async function writeNextChapter(

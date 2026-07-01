@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-import type { Session, Message } from "@/shared/types";
+import type { Session, Message, PendingConfirmation } from "@/shared/types";
 import * as sessionService from "@/features/session/services";
 
 // 乐观更新辅助函数（P2 来自 AI Engineering 课程）
@@ -18,8 +18,11 @@ interface AgentState {
   streamingReasoning: string;
   error: string | null;
   loading: boolean;
+  /** SafetyGate 触发的待确认工具调用（null 表示无待处理） */
+  pendingConfirmation: PendingConfirmation | null;
+  submittingConfirmation: boolean;
   loadSessions: (novelId?: string) => Promise<void>;
-  createSession: (novelId?: string, title?: string) => Promise<Session>;
+  createSession: (novelId?: string, title?: string, workspaceId?: string) => Promise<Session>;
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   loadMessages: (sessionId: string) => Promise<void>;
@@ -31,6 +34,8 @@ interface AgentState {
   clearStreamingReasoning: () => void;
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
+  setPendingConfirmation: (pending: PendingConfirmation | null) => void;
+  setSubmittingConfirmation: (submitting: boolean) => void;
   reset: () => void;
 }
 
@@ -43,6 +48,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   streamingReasoning: "",
   error: null,
   loading: false,
+  pendingConfirmation: null,
+  submittingConfirmation: false,
 
   loadSessions: async (novelId?: string) => {
     set({ loading: true, error: null });
@@ -57,12 +64,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   // 乐观创建 session（P2 - 立即更新 UI）
-  createSession: async (novelId?: string, title?: string) => {
+  createSession: async (novelId?: string, title?: string, workspaceId?: string) => {
     const tempId = generateTempId();
     const optimisticSession: Session = {
       id: tempId,
       title: title || "New Session",
       novel_id: novelId || null,
+      workspace_id: workspaceId || null,
       session_type: "chat",
       summary: null,
       message_count: 0,
@@ -86,7 +94,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      const session = await sessionService.createSession(novelId, title);
+      const session = await sessionService.createSession(novelId, title, workspaceId);
       // 用真实数据替换乐观数据
       set((state) => ({
         sessions: state.sessions.map((s) =>
@@ -108,7 +116,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   switchSession: async (sessionId: string) => {
-    set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "" });
+    set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "", pendingConfirmation: null, submittingConfirmation: false });
     try {
       const messages = await sessionService.listMessages(sessionId);
       set({ messages, loading: false });
@@ -193,6 +201,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ error });
   },
 
+  setPendingConfirmation: (pending) => {
+    set({ pendingConfirmation: pending, submittingConfirmation: false });
+  },
+
+  setSubmittingConfirmation: (submitting) => {
+    set({ submittingConfirmation: submitting });
+  },
+
   reset: () => {
     set({
       messages: [],
@@ -200,6 +216,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       streamingContent: "",
       streamingReasoning: "",
       error: null,
+      pendingConfirmation: null,
+      submittingConfirmation: false,
     });
   },
 }));

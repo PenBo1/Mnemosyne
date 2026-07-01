@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/shared/i18n";
 import { useCopyFeedback } from "@/hooks/useCopyFeedback";
 
@@ -31,14 +32,10 @@ export function CodeBlock({
         <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
           {language ?? "text"}
         </span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex items-center gap-1 rounded-[var(--radius-4)] px-1.5 py-0.5 text-[11px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
-        >
-          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        <Button variant="ghost" size="xs" onClick={handleCopy}>
+          {copied ? <Check /> : <Copy />}
           <span>{copied ? t.agentChat.copied : t.agentChat.copyCode}</span>
-        </button>
+        </Button>
       </div>
       <pre className="overflow-x-auto p-3 text-[13px] leading-[1.5]">
         <code ref={codeRef} className={className}>

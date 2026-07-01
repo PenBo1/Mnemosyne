@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::features::story::{BookConfig, ChapterMeta, AuditResult, WriteResult};
+use crate::features::story::{BookConfig, ChapterMeta, AuditResult, WriteResult, HookRecord, HookStatus};
 use crate::infrastructure::llm_client::Provider;
 use crate::infrastructure::state_store::gc::utils;
 use crate::core::agent::*;
@@ -25,8 +25,12 @@ pub struct PipelineConfig {
     pub provider: Arc<dyn Provider>,
     pub model: String,
     pub project_root: std::path::PathBuf,
-    /// Per-agent model overrides: agent_name -> model_id
+    /// Per-agent model overrides: agent_name -> model_name_string
     pub model_overrides: std::collections::HashMap<String, String>,
+    /// S9: Per-agent provider overrides: agent_name -> provider Arc
+    /// 与 `model_overrides` 同步填充（来自 `ProviderRegistry::build_agent_routing`）。
+    /// 当某 agent 在此表中存在时，使用该 provider；否则回退到 `provider`。
+    pub agent_providers: std::collections::HashMap<String, Arc<dyn Provider>>,
     /// Shared memory store for cross-chapter persistence
     pub memory_store: Option<Arc<crate::infrastructure::state_store::memory::MemoryStore>>,
     /// App data directory for loading agent identity files (SOUL.md, CONTEXT.md, MEMORY.md)
@@ -35,6 +39,12 @@ pub struct PipelineConfig {
     pub user_profile: Option<Arc<tokio::sync::Mutex<crate::features::user_profile::UserProfileStore>>>,
     /// Fallback model for RecoveryStrategy::FallbackModel (None = no fallback, fail explicitly)
     pub fallback_model: Option<String>,
+    /// S4: 时序记忆库 —— 当提供时，Reflect 阶段会把 facts/summaries 双写到 SQLite
+    /// （story_facts / chapter_summaries 表）。Database 内部是 SqlitePool 的薄包装，
+    /// clone 廉价，无需额外 Arc 包装。
+    pub db: Option<crate::infrastructure::db::Database>,
+    /// S5.4: 上下文预算 —— 当提供时，Composer 阶段会对 compressible 段做 LLM 编译压缩
+    pub context_budget: Option<crate::core::agent::governance::ContextBudget>,
 }
 
 pub struct PipelineRunner {
@@ -92,12 +102,19 @@ impl PipelineRunner {
         }
     }
 
-    /// Get agent context with optional model override.
+    /// Get agent context with optional model + provider override.
     /// All agents receive the standard tool set; per-agent tool filtering is not yet supported.
+    ///
+    /// S9: 路由优先级 ——
+    /// - provider: `agent_providers[agent_name]` > `config.provider`
+    /// - model:    `model_overrides[agent_name]` > `config.model`
     pub async fn agent_ctx_for(&self, agent_name: &str, book_id: Option<&str>) -> AgentContext {
         let model = self.config.model_overrides.get(agent_name)
             .cloned()
             .unwrap_or_else(|| self.config.model.clone());
+        let provider = self.config.agent_providers.get(agent_name)
+            .cloned()
+            .unwrap_or_else(|| self.config.provider.clone());
         let memory = if let (Some(mem_store), Some(bid)) = (&self.config.memory_store, book_id) {
             mem_store.get_or_create(bid, 20).await
         } else {
@@ -117,7 +134,7 @@ impl PipelineRunner {
         tools.register("bash", Box::new(BashTool::new(work_dir.clone(), Some(sandbox))));
 
         AgentContext {
-            provider: self.config.provider.clone(),
+            provider,
             model,
             project_root: self.config.project_root.clone(),
             book_id: book_id.map(|s| s.to_string()),
@@ -142,6 +159,8 @@ impl PipelineRunner {
         title: &str,
         genre: &str,
         brief: Option<&str>,
+        target_chapters: Option<u32>,
+        chapter_words: Option<u32>,
     ) -> Result<BookConfig, AppError> {
         tracing::info!(title, genre, "Creating new book");
         let start = std::time::Instant::now();
@@ -157,8 +176,9 @@ impl PipelineRunner {
             platform: "local".to_string(),
             status: Default::default(),
             language: "zh".to_string(),
-            chapter_words: 3000,
-            target_chapters: 200,
+            // 默认 3000 字/章、200 章；调用方可覆盖（如「100 章每章 3000 字」）
+            chapter_words: chapter_words.unwrap_or(3000),
+            target_chapters: target_chapters.unwrap_or(200),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -308,7 +328,8 @@ impl PipelineRunner {
         composer_ctx.tool_guardrails.lock().await.reset_for_turn();
 
         let composer = ComposerAgent::new();
-        let composed = match composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir).await {
+        let budget = self.config.context_budget;
+        let composed = match composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir, budget).await {
             Ok(composed) => composed,
             Err(e) => {
                 let classified = classify_api_error(&e.to_string(), None, "", "");
@@ -316,11 +337,11 @@ impl PipelineRunner {
                 recovery_manager.reset();
                 match recovery_manager.next_strategy(&e) {
                     Some(RecoveryStrategy::Retry) => {
-                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir).await?
+                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir, budget).await?
                     }
                     Some(RecoveryStrategy::CompressContext) => {
                         tracing::info!("Retrying compose after context compression");
-                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir).await?
+                        composer.compose_chapter(&composer_ctx, &book_dir, chapter_number, &plan, &self.config.data_dir, budget).await?
                     }
                     _ => return Err(e),
                 }
@@ -396,98 +417,96 @@ impl PipelineRunner {
             }
         }
 
-        // 4. Audit (with budget check)
-        tracing::info!(chapter = chapter_number, "Stage: Audit");
+        // 4. Audit + Revise cycle (S6.5: 由 chapter_review_cycle 模块统一编排)
+        tracing::info!(chapter = chapter_number, "Stage: Audit + Revise Cycle");
         let auditor_ctx = self.agent_ctx_for("auditor", Some(book_id)).await;
+        let reviser_ctx = self.agent_ctx_for("reviser", Some(book_id)).await;
+        let normalizer_ctx = self.agent_ctx_for("length_normalizer", Some(book_id)).await;
 
+        // 审计预算检查
         if !auditor_ctx.iteration_budget.consume() {
-            tracing::warn!("Iteration budget exhausted before Audit stage, skipping audit");
-            // 审计失败不阻塞流程，跳过
-        } else {
-            auditor_ctx.tool_guardrails.lock().await.reset_for_turn();
+            tracing::warn!("Iteration budget exhausted before Audit stage, skipping audit+revise cycle");
         }
 
-        let auditor = ContinuityAuditor::new();
-        let audit = if auditor_ctx.iteration_budget.used() > 0 {
-            auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number, &self.config.data_dir).await?
-        } else {
-            // 预算耗尽，跳过审计
-            AuditResult {
-                passed: true,
-                score: 0.0,
-                issues: vec![],
-                summary: "审计已跳过（迭代预算耗尽）".to_string(),
-            }
-        };
-
-        // 5. Revise if needed (with recovery + budget + guardrails)
-        let mut final_content = write_output.content.clone();
-        let mut final_word_count = write_output.word_count;
-        let mut revised = false;
-
-        if !audit.passed {
+        let cycle_result = if auditor_ctx.iteration_budget.used() > 0 {
             recovery_manager.reset();
-            let max_rounds = 3;
-            let mut current_audit = audit.clone();
-            let reviser_ctx = self.agent_ctx_for("reviser", Some(book_id)).await;
+            let max_iterations = 3u32;
 
-            for round in 0..max_rounds {
-                // 检查迭代预算
-                if !reviser_ctx.iteration_budget.consume() {
-                    tracing::warn!(
-                        round,
-                        budget_used = reviser_ctx.iteration_budget.used(),
-                        "Iteration budget exhausted during revision, stopping"
-                    );
-                    break;
-                }
-
-                // 重置工具守卫
-                reviser_ctx.tool_guardrails.lock().await.reset_for_turn();
-
-                if current_audit.issues.iter().any(|i| i.severity == crate::features::story::AuditSeverity::Critical) {
-                    tracing::info!(chapter = chapter_number, round, "Stage: Revise");
-                    let reviser = ReviserAgent::new();
-
-                    match reviser.revise_chapter(
-                        &reviser_ctx, &book_dir, chapter_number,
-                        &final_content, &current_audit, ReviseMode::Auto,
-                        &self.config.data_dir,
-                    ).await {
-                        Ok(revise_output) => {
-                            save_chapter_content(&book_dir, chapter_number, &write_output.title, &revise_output.content)?;
-                            final_content = revise_output.content;
-                            final_word_count = revise_output.word_count;
-                            revised = true;
-
-                            current_audit = auditor.audit_chapter(&auditor_ctx, &book_dir, chapter_number, &self.config.data_dir).await?;
-                        }
-                        Err(e) => {
-                            let classified = classify_api_error(&e.to_string(), None, "", "");
-                            tracing::warn!(error = %e, round, reason = ?classified.reason, "Revise failed");
-                            match recovery_manager.next_strategy(&e) {
-                                Some(RecoveryStrategy::Retry) => {
-                                    tracing::info!("Retrying revision");
-                                    continue;
-                                }
-                                Some(RecoveryStrategy::Simplify) => {
-                                    tracing::info!("Simplifying revision task");
-                                }
-                                Some(RecoveryStrategy::CompressContext) => {
-                                    tracing::info!("Retrying revision after context compression");
-                                    continue;
-                                }
-                                _ => {
-                                    tracing::error!("No recovery strategy available, using current content");
-                                    break;
-                                }
+            // 包装 review cycle：失败则按 recovery 策略重试整个 cycle
+            loop {
+                match crate::core::agent::pipeline::chapter_review_cycle::run_chapter_review_cycle(
+                    &auditor_ctx, &reviser_ctx, &normalizer_ctx,
+                    &book_dir, chapter_number,
+                    &write_output.content, &write_output.title,
+                    Some(book.chapter_words), max_iterations,
+                    &self.config.data_dir,
+                ).await {
+                    Ok(result) => break result,
+                    Err(e) => {
+                        let classified = classify_api_error(&e.to_string(), None, "", "");
+                        tracing::warn!(error = %e, reason = ?classified.reason, "Review cycle failed");
+                        match recovery_manager.next_strategy(&e) {
+                            Some(RecoveryStrategy::Retry) => {
+                                tracing::info!("Retrying review cycle");
+                                continue;
+                            }
+                            Some(RecoveryStrategy::CompressContext) => {
+                                tracing::info!("Retrying review cycle after context compression");
+                                continue;
+                            }
+                            _ => {
+                                tracing::error!("No recovery strategy available, using original write output");
+                                break crate::core::agent::pipeline::chapter_review_cycle::ReviewCycleResult {
+                                    final_content: write_output.content.clone(),
+                                    final_word_count: write_output.word_count,
+                                    revised: false,
+                                    audit_result: AuditResult {
+                                        passed: false,
+                                        score: 0.0,
+                                        issues: vec![],
+                                        summary: "Review cycle failed and was skipped".to_string(),
+                                        parse_failed: false,
+                                    },
+                                    post_revise_count: 0,
+                                    normalize_applied: false,
+                                    final_score: 0.0,
+                                    rolled_back: false,
+                                };
                             }
                         }
                     }
-                } else {
-                    break;
                 }
             }
+        } else {
+            // 预算耗尽，跳过审计 + 修稿
+            crate::core::agent::pipeline::chapter_review_cycle::ReviewCycleResult {
+                final_content: write_output.content.clone(),
+                final_word_count: write_output.word_count,
+                revised: false,
+                audit_result: AuditResult {
+                    passed: true,
+                    score: 0.0,
+                    issues: vec![],
+                    summary: "审计已跳过（迭代预算耗尽）".to_string(),
+                    parse_failed: false,
+                },
+                post_revise_count: 0,
+                normalize_applied: false,
+                final_score: 0.0,
+                rolled_back: false,
+            }
+        };
+
+        let final_content = cycle_result.final_content;
+        let final_word_count = cycle_result.final_word_count;
+        let revised = cycle_result.revised;
+        let audit = cycle_result.audit_result;
+
+        if cycle_result.normalize_applied {
+            tracing::info!(chapter = chapter_number, "Length normalization was applied during review cycle");
+        }
+        if cycle_result.rolled_back {
+            tracing::info!(chapter = chapter_number, "Rolled back to best-scoring snapshot during review cycle");
         }
 
         // 6. Save chapter index
@@ -524,13 +543,35 @@ impl PipelineRunner {
                 ).await {
                     Ok(delta) => {
                         let mut new_state = current_state.clone();
-                        // updated_hooks：按 hook_id upsert
+                        // updated_hooks：按 hook_id upsert（来自 hook_ops.upsert + new_hook_candidates）
                         for hook in &delta.updated_hooks {
                             if let Some(pos) = new_state.hooks.iter().position(|h| h.hook_id == hook.hook_id) {
                                 new_state.hooks[pos] = hook.clone();
                             } else {
                                 new_state.hooks.push(hook.clone());
                             }
+                        }
+                        // hook_resolves：把对应 hook 的 status 改为 Resolved
+                        apply_hook_status_ops(
+                            &mut new_state.hooks,
+                            &delta.hook_resolves,
+                            HookStatus::Resolved,
+                            chapter_number,
+                        );
+                        // hook_defers：把对应 hook 的 status 改为 Deferred
+                        apply_hook_status_ops(
+                            &mut new_state.hooks,
+                            &delta.hook_defers,
+                            HookStatus::Deferred,
+                            chapter_number,
+                        );
+                        // hook_mentions：仅记录到日志，不改 StoryState
+                        // （inkos 中 mention 用于 arbiter 的 stale 检测，本阶段未实现 arbiter）
+                        if !delta.hook_mentions.is_empty() {
+                            tracing::debug!(
+                                mentions = ?delta.hook_mentions,
+                                "Hook mentions recorded (no state change)"
+                            );
                         }
                         if let Some(summary) = &delta.chapter_summary {
                             // 替换同章节的旧摘要（如果有）
@@ -552,10 +593,29 @@ impl PipelineRunner {
                         } else {
                             tracing::info!(
                                 hooks_updated = delta.updated_hooks.len(),
+                                hooks_resolved = delta.hook_resolves.len(),
+                                hooks_deferred = delta.hook_defers.len(),
+                                hooks_mentioned = delta.hook_mentions.len(),
                                 facts_added = delta.new_facts.len(),
                                 has_summary = delta.chapter_summary.is_some(),
                                 "Reflect stage completed, StoryState updated"
                             );
+                        }
+
+                        // S4: 双写到 SQLite 时序记忆库（与 state.json 双写）。
+                        // 失败仅记录日志，不影响主流程——state.json 是主存，
+                        // SQLite 仅用于时序查询（query_facts_at_chapter 等）。
+                        if let Some(db) = &self.config.db {
+                            if !delta.new_facts.is_empty() {
+                                if let Err(e) = db.upsert_story_facts_batch(book_id, &delta.new_facts).await {
+                                    tracing::warn!(error = %e, "Failed to dual-write facts to SQLite");
+                                }
+                            }
+                            if let Some(summary) = &delta.chapter_summary {
+                                if let Err(e) = db.upsert_chapter_summary(book_id, summary).await {
+                                    tracing::warn!(error = %e, "Failed to dual-write chapter summary to SQLite");
+                                }
+                            }
                         }
                     }
                     Err(e) => {
@@ -598,6 +658,7 @@ impl PipelineRunner {
                     matches!(i.severity, crate::features::story::AuditSeverity::Critical)
                 }).cloned().collect(),
                 summary: audit.summary.clone(),
+                parse_failed: audit.parse_failed,
             };
             let new_planner_lessons = planner_tracker.record_audit("planner", &planner_audit);
             if !new_planner_lessons.is_empty() {
@@ -831,4 +892,25 @@ fn save_snapshot(book_dir: &std::path::Path, chapter_number: u32) -> Result<(), 
     let json = serde_json::to_string_pretty(&snapshot)?;
     std::fs::write(snapshots_dir.join(format!("{:04}.json", chapter_number)), json)?;
     Ok(())
+}
+
+/// 把 hook_ops 的 mention/resolve/defer 应用到 StoryState.hooks。
+///
+/// - 找到 hook_id 对应的 hook，更新 status 到目标值
+/// - 同时刷新 last_advanced_chapter（用当前章节号）和 updated_at
+/// - 找不到对应 hook_id 时静默跳过（LLM 可能误报 id；不阻塞流程）
+fn apply_hook_status_ops(
+    hooks: &mut Vec<HookRecord>,
+    hook_ids: &[String],
+    target_status: HookStatus,
+    current_chapter: u32,
+) {
+    let now = chrono::Utc::now().to_rfc3339();
+    for hook_id in hook_ids {
+        if let Some(hook) = hooks.iter_mut().find(|h| h.hook_id == *hook_id) {
+            hook.status = target_status.clone();
+            hook.last_advanced_chapter = hook.last_advanced_chapter.max(current_chapter);
+            hook.updated_at = now.clone();
+        }
+    }
 }

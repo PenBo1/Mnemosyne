@@ -6,6 +6,7 @@ import {
   Loader2,
   Check,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/utils";
 
@@ -34,23 +35,24 @@ export function ThinkingProcess({
   return (
     <div className="mb-2 border-b border-[var(--border-neutral-l1)] pb-2">
       {/* Toggle button */}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start font-medium"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-default)]"
         aria-expanded={open}
       >
         <ChevronDown
           className={cn(
-            "size-3.5 transition-transform duration-200",
+            "transition-transform duration-200",
             open ? "" : "-rotate-90"
           )}
         />
         <span>{t.agentChat.reasoningTitle}</span>
         {isStreaming && (
-          <Loader2 className="size-3 animate-spin text-[var(--status-primary-default)]" />
+          <Loader2 className="animate-spin text-[var(--status-primary-default)]" />
         )}
-      </button>
+      </Button>
 
       {/* Steps */}
       {open && (

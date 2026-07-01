@@ -66,8 +66,8 @@ export function LoopPatternEditor({
           <DialogTitle>{t.loop.newLoop}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
+        <div className="flex flex-col gap-4 py-2">
+          <div className="flex flex-col gap-2">
             <Label>{t.loop.patterns}</Label>
             <Select value={selectedPatternId} onValueChange={setSelectedPatternId}>
               <SelectTrigger>
@@ -91,7 +91,7 @@ export function LoopPatternEditor({
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>{t.loop.readinessLevel}</Label>
               <Select
                 value={readinessLevel}
@@ -110,7 +110,7 @@ export function LoopPatternEditor({
               </Select>
             </div>
 
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>{t.loop.budget.cap}</Label>
               <Input
                 type="number"

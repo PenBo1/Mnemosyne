@@ -17,7 +17,6 @@
 pub mod ai_log_store;
 pub mod connection;
 pub mod error;
-pub mod kanban_store;
 pub mod loop_store;
 pub mod migrate;
 pub mod models;
@@ -25,6 +24,7 @@ pub mod novel_store;
 pub mod prompt_store;
 pub mod session_store;
 pub mod stats_store;
+pub mod story_store;
 pub mod trend_store;
 pub mod version_store;
 pub mod wiki_store;

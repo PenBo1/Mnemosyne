@@ -43,6 +43,7 @@ pub fn analyze_hook_health(params: HookHealthParams) -> Vec<AuditIssue> {
             } else {
                 "优先推进、回收或延后已有伏笔，再继续开新伏笔。".to_string()
             },
+            repair_scope: None,
         });
     }
 
@@ -68,6 +69,7 @@ pub fn analyze_hook_health(params: HookHealthParams) -> Vec<AuditIssue> {
             } else {
                 "先让一个已进入压力区的伏笔发生真实推进，再继续扩展同类债务。".to_string()
             },
+            repair_scope: None,
         });
     }
 
@@ -95,6 +97,7 @@ pub fn analyze_hook_health(params: HookHealthParams) -> Vec<AuditIssue> {
             } else {
                 "下一章优先让一个旧伏笔发生真实推进，而不是继续平行重述。".to_string()
             },
+            repair_scope: None,
         });
     }
 

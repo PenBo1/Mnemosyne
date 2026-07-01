@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   PageContainer,
   PageHeader,
@@ -176,12 +177,9 @@ export function PlotPage() {
               >
                 {t.plot.statuses[p.status as keyof typeof t.plot.statuses]}
               </Badge>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive shrink-0"
-              >
-                <Trash2Icon className="size-3" />
-              </button>
+              <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} className="opacity-0 group-hover:opacity-100 text-destructive">
+                <Trash2Icon />
+              </Button>
             </div>
           ))}
         </div>
@@ -198,19 +196,16 @@ export function PlotPage() {
               <div className="text-xs text-muted-foreground w-16 text-right shrink-0">
                 {p.chapter_number != null ? `${t.plot.chapterNumber} ${p.chapter_number}` : "\u2014"}
               </div>
-              <div className="w-px h-8 bg-border shrink-0" />
+              <Separator orientation="vertical" className="h-8 shrink-0" />
               <div className="flex-1 min-w-0">
                 <span className="font-medium">{p.title}</span>
                 {p.description && (
                   <p className="text-xs text-muted-foreground truncate">{p.description}</p>
                 )}
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive shrink-0"
-              >
-                <Trash2Icon className="size-3" />
-              </button>
+              <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} className="opacity-0 group-hover:opacity-100 text-destructive">
+                <Trash2Icon />
+              </Button>
             </div>
           ))}
         </div>

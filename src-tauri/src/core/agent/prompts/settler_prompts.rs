@@ -16,6 +16,9 @@ use crate::core::agent::prompts::shared_sections::{assemble_with_identity, outpu
 ///
 /// `identity_prefix` 来自 AgentIdentity::build_system_prompt_with_memory，
 /// 包含 SOUL.md / CONTEXT.md / MEMORY.md 内容。
+///
+/// S3 升级：输出格式与 inkos `RuntimeStateDeltaSchema` 对齐，使用 `hook_ops`
+/// 显式区分 upsert / mention / resolve / defer 四种操作。
 pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
     let task_prompt = match language {
         "en" => {
@@ -24,17 +27,29 @@ pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> Str
 ## Output format (strict JSON, no markdown fences)
 
 {
-  "updated_hooks": [
+  "hook_ops": {
+    "upsert": [
+      {
+        "hook_id": "<stable id, reuse existing if advancing, else new like 'hook-<chapter>-<slug>'>",
+        "name": "<short hook name>",
+        "hook_type": "foreshadowing|promise|mystery|relationship|thread",
+        "start_chapter": <number>,
+        "status": "open|progressing|deferred|resolved",
+        "expected_payoff": "<semantic timing: immediate|near-term|mid-arc|slow-burn|endgame>",
+        "last_advanced_chapter": <number or 0>,
+        "core_hook": <true|false>,
+        "notes": "<what changed this chapter>"
+      }
+    ],
+    "mention": ["<hook_id of hooks merely referenced, not advanced>"],
+    "resolve": ["<hook_id of hooks paid off this chapter>"],
+    "defer": ["<hook_id of hooks intentionally deferred>"]
+  },
+  "new_hook_candidates": [
     {
-      "hook_id": "<stable id, reuse existing if advancing, else new like 'hook-<chapter>-<slug>'>",
-      "name": "<short hook name>",
-      "hook_type": "foreshadowing|promise|mystery|relationship|thread",
-      "start_chapter": <number>,
-      "status": "open|progressing|deferred|resolved",
-      "expected_payoff": "<semantic timing: immediate|near-term|mid-arc|slow-burn|endgame>",
-      "last_advanced_chapter": <number or 0>,
-      "core_hook": <true|false>,
-      "notes": "<what changed this chapter>"
+      "type": "foreshadowing|promise|mystery|relationship|thread",
+      "expected_payoff": "<semantic timing>",
+      "notes": "<what kind of hook this would be>"
     }
   ],
   "chapter_summary": {
@@ -62,9 +77,14 @@ pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> Str
 ## Rules
 - Only include CHANGES (delta), not the full state.
 - Do not delete existing facts. Update or recontextualize instead.
-- Reuse existing hook_id when advancing a known hook. Create new hook_id only for genuinely new hooks.
-- "Mentioned again" or "restated" does NOT count as advancing a hook — omit it.
+- Use `hook_ops.upsert` to advance a known hook (reuse existing hook_id) or to create a new hook with explicit id.
+- Use `new_hook_candidates` to suggest a new hook without committing to a specific hook_id (system will assign canonical id).
+- Use `hook_ops.mention` when an existing hook is referenced but NOT advanced (status unchanged).
+- Use `hook_ops.resolve` when an existing hook is paid off this chapter (will be marked resolved).
+- Use `hook_ops.defer` when intentionally delaying a hook's progression.
+- "Mentioned again" or "restated" does NOT count as advancing a hook — put it in `mention`, not `upsert`.
 - Only record what actually happened in the chapter text. No inference, no prediction.
+- All four `hook_ops` arrays are optional; omit empty arrays if desired.
 - Validate JSON schema before output."#
         }
         _ => {
@@ -73,17 +93,29 @@ pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> Str
 ## 输出格式（严格 JSON，不要 markdown 代码围栏）
 
 {
-  "updated_hooks": [
+  "hook_ops": {
+    "upsert": [
+      {
+        "hook_id": "<稳定 ID，推进已有伏笔则复用，新建则用 'hook-<章号>-<slug>'>",
+        "name": "<伏笔简短名称>",
+        "hook_type": "foreshadowing|promise|mystery|relationship|thread",
+        "start_chapter": <章号>,
+        "status": "open|progressing|deferred|resolved",
+        "expected_payoff": "<语义节奏: immediate|near-term|mid-arc|slow-burn|endgame>",
+        "last_advanced_chapter": <章号或 0>,
+        "core_hook": <true|false>,
+        "notes": "<本章变化说明>"
+      }
+    ],
+    "mention": ["<仅被提及、未推进的 hook_id>"],
+    "resolve": ["<本章兑现的 hook_id>"],
+    "defer": ["<有意推迟的 hook_id>"]
+  },
+  "new_hook_candidates": [
     {
-      "hook_id": "<稳定 ID，推进已有伏笔则复用，新建则用 'hook-<章号>-<slug>'>",
-      "name": "<伏笔简短名称>",
-      "hook_type": "foreshadowing|promise|mystery|relationship|thread",
-      "start_chapter": <章号>,
-      "status": "open|progressing|deferred|resolved",
-      "expected_payoff": "<语义节奏: immediate|near-term|mid-arc|slow-burn|endgame>",
-      "last_advanced_chapter": <章号或 0>,
-      "core_hook": <true|false>,
-      "notes": "<本章变化说明>"
+      "type": "foreshadowing|promise|mystery|relationship|thread",
+      "expected_payoff": "<语义节奏>",
+      "notes": "<这是何种伏笔>"
     }
   ],
   "chapter_summary": {
@@ -111,9 +143,14 @@ pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> Str
 ## 规则
 - 只包含变更（增量），不是完整状态
 - 不要删除已有事实，只能更新或重新上下文化
-- 推进已知伏笔时复用已有 hook_id；仅对真正的新伏笔创建新 hook_id
-- "再次提到"或"换种说法重述"不算推进伏笔，应省略
+- 用 `hook_ops.upsert` 推进已知伏笔（复用已有 hook_id）或创建有明确 id 的新伏笔
+- 用 `new_hook_candidates` 提议新伏笔但不指定 hook_id（系统会分配规范 id）
+- 用 `hook_ops.mention` 表示已有伏笔被提及但未推进（status 不变）
+- 用 `hook_ops.resolve` 表示已有伏笔本章兑现（将标记为 resolved）
+- 用 `hook_ops.defer` 表示有意推迟推进某伏笔
+- "再次提到"或"换种说法重述"不算推进伏笔，应放入 `mention`，不放入 `upsert`
 - 只记录正文中实际发生的事，不推断、不预测、不补充大纲内容
+- 四个 `hook_ops` 子数组都是可选的，空数组可省略
 - 输出前验证 JSON 格式"#
         }
     };

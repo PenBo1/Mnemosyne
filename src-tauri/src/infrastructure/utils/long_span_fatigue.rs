@@ -23,6 +23,7 @@ pub fn analyze_long_span_fatigue(params: FatigueParams) -> Vec<AuditIssue> {
                 category: if is_en { "Pacing Monotony" } else { "节奏单调" }.to_string(),
                 description: if is_en { "Recent chapters have identical opening patterns.".into() } else { "近几章的开头模式完全相同。".into() },
                 suggestion: if is_en { "Vary the opening technique.".into() } else { "变化开头手法。".into() },
+                repair_scope: None,
             });
         }
     }
@@ -38,6 +39,7 @@ pub fn analyze_long_span_fatigue(params: FatigueParams) -> Vec<AuditIssue> {
                 category: if is_en { "Paragraph Uniformity" } else { "段落等长" }.to_string(),
                 description: if is_en { "Paragraph lengths are too uniform.".into() } else { "段落长度过于均匀。".into() },
                 suggestion: if is_en { "Vary paragraph lengths.".into() } else { "变化段落长度。".into() },
+                repair_scope: None,
             });
         }
     }

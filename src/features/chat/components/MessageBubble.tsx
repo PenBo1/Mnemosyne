@@ -1,4 +1,5 @@
 import { Check, Copy, ThumbsDown, ThumbsUp, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ThinkingProcess } from "./ThinkingProcess";
 import { useI18n } from "@/shared/i18n";
@@ -106,35 +107,35 @@ export function MessageBubble({
             <span className="mr-auto text-[10px] text-[var(--text-tertiary)]">
               {formatTime(message.created_at)}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={handleCopy}
-              className="flex size-6 items-center justify-center rounded-[var(--radius-4)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
               aria-label={t.agentChat.copyMessage}
             >
-              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            </button>
-            <button
-              type="button"
-              className="flex size-6 items-center justify-center rounded-[var(--radius-4)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
+              {copied ? <Check /> : <Copy />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               aria-label="Thumbs up"
             >
-              <ThumbsUp className="size-3" />
-            </button>
-            <button
-              type="button"
-              className="flex size-6 items-center justify-center rounded-[var(--radius-4)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
+              <ThumbsUp />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               aria-label="Thumbs down"
             >
-              <ThumbsDown className="size-3" />
-            </button>
-            <button
-              type="button"
-              className="flex size-6 items-center justify-center rounded-[var(--radius-4)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
+              <ThumbsDown />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               aria-label={t.agentChat.regenerate}
             >
-              <RotateCcw className="size-3" />
-            </button>
+              <RotateCcw />
+            </Button>
           </div>
         )}
       </div>

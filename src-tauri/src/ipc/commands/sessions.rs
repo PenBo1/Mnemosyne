@@ -8,10 +8,14 @@ use tauri::State;
 pub async fn session_create(
     state: State<'_, AppState>,
     novel_id: Option<String>,
+    workspace_id: Option<String>,
     title: Option<String>,
 ) -> Result<IpcResponse<crate::infrastructure::db::Session>, AppError> {
     if let Some(ref nid) = novel_id {
         validate_id_component(nid, "novel_id")?;
+    }
+    if let Some(ref wid) = workspace_id {
+        validate_id_component(wid, "workspace_id")?;
     }
     if let Some(ref t) = title {
         if t.trim().is_empty() {
@@ -21,8 +25,8 @@ pub async fn session_create(
             return Err(AppError::invalid_input("Session title too long (max 500 chars)"));
         }
     }
-    tracing::info!(novel_id = ?novel_id, title = ?title, "session_create");
-    let session = state.db.create_session(CreateSessionRequest { novel_id, title }).await?;
+    tracing::info!(novel_id = ?novel_id, workspace_id = ?workspace_id, title = ?title, "session_create");
+    let session = state.db.create_session(CreateSessionRequest { novel_id, workspace_id, title }).await?;
     tracing::info!(session_id = %session.id, "Session created");
     Ok(IpcResponse::ok(session))
 }

@@ -287,8 +287,10 @@ mod tests {
                 severity: crate::features::story::AuditSeverity::Critical,
                 description: description.to_string(),
                 suggestion: suggestion.to_string(),
+                repair_scope: None,
             }],
             summary: "Test audit".to_string(),
+            parse_failed: false,
         }
     }
 

@@ -12,16 +12,17 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { cn } from "@/shared/utils";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/shared/i18n";
 import type { WikiGraphView, WikiCategory, WikiEntry } from "@/shared/types";
 
 const CATEGORY_COLORS: Record<WikiCategory, string> = {
+  general: "#6b7280",
   character: "#3b82f6",
   location: "#10b981",
   event: "#f59e0b",
   concept: "#8b5cf6",
-  item: "#ec4899",
-  other: "#6b7280",
+  reference: "#ec4899",
 };
 
 interface WikiGraphViewProps {
@@ -56,11 +57,11 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
       },
     }));
 
-    const edges: Edge[] = graph.links.map((l, i) => ({
+    const edges: Edge[] = graph.edges.map((l, i) => ({
       id: `link-${i}`,
       source: l.source,
       target: l.target,
-      label: l.type,
+      label: l.relation,
       type: "default",
       animated: false,
       style: { stroke: "#94a3b8", strokeWidth: 1.5 },
@@ -108,30 +109,22 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
   return (
     <div className={cn("flex flex-col gap-3 h-full", className)}>
       <div className="flex items-center gap-2 flex-wrap">
-        <button
+        <Button
           onClick={() => setFilterCategory("all")}
-          className={cn(
-            "text-xs px-2 py-1 rounded-[var(--radius-4)] transition-colors",
-            filterCategory === "all"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:bg-muted/80"
-          )}
+          variant={filterCategory === "all" ? "default" : "secondary"}
+          size="xs"
         >
           {t.viz.all}
-        </button>
+        </Button>
         {categories.map((cat) => (
-          <button
+          <Button
             key={cat}
             onClick={() => setFilterCategory(cat)}
-            className={cn(
-              "text-xs px-2 py-1 rounded-[var(--radius-4)] transition-colors",
-              filterCategory === cat
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-muted/80"
-            )}
+            variant={filterCategory === cat ? "default" : "secondary"}
+            size="xs"
           >
-            {cat}
-          </button>
+            {t.wiki.categories[cat]}
+          </Button>
         ))}
       </div>
       <div className="flex-1 rounded-[var(--radius-6)] border bg-background overflow-hidden">
@@ -152,7 +145,7 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
           <MiniMap
             nodeColor={(n) => {
               const category = (n.data as { category?: WikiCategory })?.category;
-              return CATEGORY_COLORS[category || "other"];
+              return CATEGORY_COLORS[category || "general"];
             }}
             maskColor="rgba(0,0,0,0.1)"
           />

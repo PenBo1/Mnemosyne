@@ -8,6 +8,7 @@ import { AgentsSettings } from "./settings/AgentsSettings";
 import { BookSourcesSettings } from "./settings/BookSourcesSettings";
 import { AuditSettings } from "./settings/AuditSettings";
 import { SystemSettings } from "./settings/SystemSettings";
+import { GitSettings } from "./settings/GitSettings";
 
 export function SettingsPage() {
   const { settingsTab } = useAppState();
@@ -35,6 +36,9 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="system" className="mt-0">
           <SystemSettings />
+        </TabsContent>
+        <TabsContent value="git" className="mt-0">
+          <GitSettings />
         </TabsContent>
       </ScrollArea>
     </Tabs>

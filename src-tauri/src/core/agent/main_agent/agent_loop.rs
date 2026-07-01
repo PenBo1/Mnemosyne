@@ -237,7 +237,11 @@ impl AgentLoop {
                         };
 
                         match response {
-                            ConfirmationResponse::Approved => Some(args.clone()),
+                            ConfirmationResponse::Approved | ConfirmationResponse::ApprovedAuto => {
+                                // ApprovedAuto 在 main agent 中等同 Approved
+                                // （auto_approved_tools 机制仅在 chat agent 中实现）
+                                Some(args.clone())
+                            }
                             ConfirmationResponse::Rejected => {
                                 // 用户拒绝：把拒绝信息作为 tool 结果反馈给 LLM
                                 messages.push(Message {

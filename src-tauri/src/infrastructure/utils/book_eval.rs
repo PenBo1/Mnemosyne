@@ -48,8 +48,8 @@ mod tests {
     #[test]
     fn test_evaluate_book_quality() {
         let audits = vec![
-            AuditResult { passed: true, score: 85.0, issues: vec![], summary: String::new() },
-            AuditResult { passed: true, score: 90.0, issues: vec![], summary: String::new() },
+            AuditResult { passed: true, score: 85.0, issues: vec![], summary: String::new(), parse_failed: false },
+            AuditResult { passed: true, score: 90.0, issues: vec![], summary: String::new(), parse_failed: false },
         ];
         let eval = evaluate_book_quality(&audits, 2);
         assert_eq!(eval.avg_score, 87.5);

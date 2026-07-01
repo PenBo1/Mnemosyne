@@ -3,6 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
+import { EmptyState } from "@/components/shared/state";
 import { useI18n } from "@/shared/i18n";
 
 interface Chapter {
@@ -44,20 +45,23 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
         <ScrollArea className="flex-1">
           <div className="p-2 flex flex-col gap-1">
             {chapters.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-xs flex flex-col items-center gap-2">
-                <FileTextIcon className="size-8 opacity-50" />
-                <p>{t.chapterReader.noChapters}</p>
-                <p>{t.chapterReader.requestChapter}</p>
-              </div>
+              <EmptyState
+                icon={<FileTextIcon className="size-8 opacity-50" />}
+                title={t.chapterReader.noChapters}
+                description={t.chapterReader.requestChapter}
+                className="py-8"
+              />
             ) : (
               chapters.map((ch) => (
-                <button
+                <Button
                   key={ch.id}
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setSelectedChapter(ch)}
-                  className={`w-full text-left px-3 py-2 rounded-[var(--radius-4)] text-sm transition-colors ${
+                  className={`w-full justify-start font-normal ${
                     selectedChapter?.id === ch.id
                       ? "bg-[var(--bg-overlay-l2)] text-primary"
-                      : "hover:bg-[var(--bg-overlay-l2)]"
+                      : ""
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -66,7 +70,7 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
                       {ch.word_count}
                     </Badge>
                   </div>
-                </button>
+                </Button>
               ))
             )}
           </div>
@@ -97,12 +101,11 @@ export function ChapterReader({ novelId, novelTitle, onBack }: ChapterReaderProp
             </ScrollArea>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <FileTextIcon className="size-12 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">{t.chapterReader.selectChapter}</p>
-            </div>
-          </div>
+          <EmptyState
+            icon={<FileTextIcon className="size-12 opacity-30" />}
+            title={t.chapterReader.selectChapter}
+            className="flex-1"
+          />
         )}
       </div>
     </div>

@@ -25,17 +25,22 @@ pub async fn scheduler_init(
     let registry = state.provider_registry.lock().await;
     let provider = registry.default()?;
     let model = registry.default_model().to_string();
+    // S9: 构建 per-agent 路由
+    let (model_overrides, agent_providers) = registry.build_agent_routing();
     drop(registry);
 
     let pipeline = crate::core::agent::pipeline::PipelineRunner::new(crate::core::agent::pipeline::PipelineConfig {
         provider,
         model,
         project_root: workspace_path,
-        model_overrides: std::collections::HashMap::new(),
+        model_overrides,
+        agent_providers,
         memory_store: Some(memory_store.clone()),
         data_dir: state.data_dir.clone(),
         user_profile: None,
         fallback_model: None,
+        db: Some(state.db.clone()),
+        context_budget: None,
     });
 
     let config = SchedulerConfig::default();

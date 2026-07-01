@@ -137,6 +137,8 @@ pub async fn session_create_book(
     title: String,
     genre: String,
     brief: Option<String>,
+    target_chapters: Option<u32>,
+    chapter_words: Option<u32>,
 ) -> Result<IpcResponse<String>, AppError> {
     validate_id_component(&session_id, "session_id")?;
     validate_id_component(&workspace_id, "workspace_id")?;
@@ -154,6 +156,9 @@ pub async fn session_create_book(
             return Err(AppError::invalid_input("Brief too long (max 10000 chars)"));
         }
     }
+    // 业务约束：与 novel_create 保持一致
+    let target_chapters = target_chapters.map(|n| n.clamp(1, 10_000));
+    let chapter_words = chapter_words.map(|n| n.clamp(500, 20_000));
 
     state.ensure_session(&session_id).await?;
 
@@ -167,6 +172,8 @@ pub async fn session_create_book(
                 title,
                 genre,
                 brief,
+                target_chapters,
+                chapter_words,
             },
         )).await?
     };

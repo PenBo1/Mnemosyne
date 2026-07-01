@@ -14,6 +14,8 @@ export function useAgentSession(sessionId: string | null) {
   const streamingReasoning = useAgentStore((s) => s.streamingReasoning);
   const error = useAgentStore((s) => s.error);
   const loading = useAgentStore((s) => s.loading);
+  const pendingConfirmation = useAgentStore((s) => s.pendingConfirmation);
+  const submittingConfirmation = useAgentStore((s) => s.submittingConfirmation);
   const updateStreamingContent = useAgentStore((s) => s.updateStreamingContent);
   const clearStreamingContent = useAgentStore((s) => s.clearStreamingContent);
   const updateStreamingReasoning = useAgentStore((s) => s.updateStreamingReasoning);
@@ -22,6 +24,8 @@ export function useAgentSession(sessionId: string | null) {
   const setError = useAgentStore((s) => s.setError);
   const appendMessage = useAgentStore((s) => s.appendMessage);
   const loadMessages = useAgentStore((s) => s.loadMessages);
+  const setPendingConfirmation = useAgentStore((s) => s.setPendingConfirmation);
+  const setSubmittingConfirmation = useAgentStore((s) => s.setSubmittingConfirmation);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -38,6 +42,8 @@ export function useAgentSession(sessionId: string | null) {
             case "TurnStarted":
               setStreaming(true);
               clearStreamingReasoning();
+              // 新 turn 开始时清除上一轮可能残留的确认请求
+              setPendingConfirmation(null);
               break;
 
             case "StreamDelta":
@@ -56,6 +62,7 @@ export function useAgentSession(sessionId: string | null) {
               setStreaming(false);
               clearStreamingContent();
               clearStreamingReasoning();
+              setPendingConfirmation(null);
               if (sessionIdRef.current) {
                 loadMessages(sessionIdRef.current);
               }
@@ -64,8 +71,24 @@ export function useAgentSession(sessionId: string | null) {
             case "Error":
               setStreaming(false);
               setError(payload.error || "Unknown error");
+              setPendingConfirmation(null);
               toast.error(payload.error || "Unknown error");
               break;
+
+            case "ConfirmationRequired": {
+              // SafetyGate 请求用户确认：写入 store 触发对话框
+              if (!payload.tool_call_id || !payload.tool || !payload.risk_level) {
+                break;
+              }
+              setPendingConfirmation({
+                toolCallId: payload.tool_call_id,
+                tool: payload.tool,
+                description: payload.description ?? "",
+                details: payload.details ?? "",
+                riskLevel: payload.risk_level,
+              });
+              break;
+            }
 
             case "ToolCallBegin":
             case "ToolCallEnd":
@@ -87,7 +110,7 @@ export function useAgentSession(sessionId: string | null) {
         unlistenFn();
       }
     };
-  }, [sessionId, updateStreamingContent, clearStreamingContent, updateStreamingReasoning, clearStreamingReasoning, setStreaming, setError, loadMessages]);
+  }, [sessionId, updateStreamingContent, clearStreamingContent, updateStreamingReasoning, clearStreamingReasoning, setStreaming, setError, loadMessages, setPendingConfirmation]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -136,11 +159,44 @@ export function useAgentSession(sessionId: string | null) {
     [setError]
   );
 
+  /**
+   * 响应 SafetyGate 确认请求。提交后立即清空 pendingConfirmation（后端会继续推进 turn）。
+   */
+  const respondConfirmation = useCallback(
+    async (params: {
+      approved: boolean;
+      autoApproveSimilar: boolean;
+      modifiedArgs?: string;
+    }) => {
+      const sid = sessionIdRef.current;
+      if (!sid || !pendingConfirmation) return;
+      setSubmittingConfirmation(true);
+      try {
+        await agentService.respondConfirmation({
+          sessionId: sid,
+          toolCallId: pendingConfirmation.toolCallId,
+          approved: params.approved,
+          autoApproveSimilar: params.autoApproveSimilar,
+          modifiedArgs: params.modifiedArgs,
+        });
+        setPendingConfirmation(null);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to respond";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setSubmittingConfirmation(false);
+      }
+    },
+    [pendingConfirmation, setError, setPendingConfirmation, setSubmittingConfirmation]
+  );
+
   const cancel = useCallback(() => {
     if (!sessionId) return;
     agentService.cancelAgent(sessionId);
     setStreaming(false);
-  }, [sessionId, setStreaming]);
+    setPendingConfirmation(null);
+  }, [sessionId, setStreaming, setPendingConfirmation]);
 
   return {
     messages,
@@ -149,8 +205,11 @@ export function useAgentSession(sessionId: string | null) {
     streamingReasoning,
     error,
     loading,
+    pendingConfirmation,
+    submittingConfirmation,
     sendMessage,
     approveTool,
+    respondConfirmation,
     cancel,
   };
 }

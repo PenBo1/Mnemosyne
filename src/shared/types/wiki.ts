@@ -1,6 +1,12 @@
 // ── Wiki Entry ─────────────────────────────────────────────
+//
+// 字段与 src-tauri/src/features/wiki/models.rs 对齐，
+// WikiCategory 取值与 src-tauri/src/shared/wiki.rs + DB CHECK 约束对齐：
+//   general / character / location / event / concept / reference
 
-export type WikiCategory = "character" | "location" | "event" | "concept" | "item" | "other";
+export type WikiCategory = "general" | "character" | "location" | "event" | "concept" | "reference";
+
+export type WikiSourceType = "manual" | "ai_extracted" | "imported";
 
 export interface WikiEntry {
   id: string;
@@ -8,9 +14,11 @@ export interface WikiEntry {
   title: string;
   content: string;
   category: WikiCategory;
+  source_type: WikiSourceType;
+  source_chapter: number | null;
   tags: string[];
   importance: number;
-  source_chapter: number | null;
+  word_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -38,8 +46,10 @@ export interface WikiEntityLink {
   novel_id: string;
   source_entry_id: string;
   target_entry_id: string;
-  link_type: string;
-  description: string;
+  relation_type: string;
+  relation_desc: string;
+  weight: number;
+  source_chapter: number | null;
   created_at: string;
 }
 
@@ -50,13 +60,14 @@ export interface WikiGraphNode {
   importance: number;
 }
 
-export interface WikiGraphLink {
+export interface WikiGraphEdge {
   source: string;
   target: string;
-  type: string;
+  relation: string;
+  weight: number;
 }
 
 export interface WikiGraphView {
   nodes: WikiGraphNode[];
-  links: WikiGraphLink[];
+  edges: WikiGraphEdge[];
 }

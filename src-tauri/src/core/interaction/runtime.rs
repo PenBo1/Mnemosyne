@@ -25,7 +25,7 @@ impl Runtime {
                 let title = request.title.as_deref().unwrap_or("Untitled");
                 let genre = request.genre.as_deref().unwrap_or("general");
                 let brief = request.instruction.as_deref();
-                let book = pipeline.create_book(title, genre, brief).await?;
+                let book = pipeline.create_book(title, genre, brief, None, None).await?;
                 Ok(RuntimeResult::BookCreated { book_id: book.id })
             }
             crate::core::interaction::intents::InteractionIntentType::WriteNext => {

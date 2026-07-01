@@ -6,3 +6,4 @@ pub mod novel;
 pub mod user_profile;
 pub mod radar;
 pub mod skill_manager;
+pub mod git;

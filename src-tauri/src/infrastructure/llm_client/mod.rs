@@ -10,7 +10,7 @@ pub mod web_search;
 pub mod probe;
 
 pub use types::*;
-pub use registry::{ProviderRegistry, ProviderInfo};
+pub use registry::{ProviderRegistry, ProviderInfo, AiModelConfig};
 pub use openai::OpenAiProvider;
 pub use ollama::OllamaProvider;
 pub use agnes::AgnesProvider;

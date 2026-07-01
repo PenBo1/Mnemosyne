@@ -3,6 +3,7 @@ import type { LoopState, LoopPattern } from "@/shared/types";
 import { cn } from "@/shared/utils";
 import { Play, Pause, PlayCircle, Trash2, Clock, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/shared/state";
 
 interface LoopDashboardProps {
   states: LoopState[];
@@ -45,9 +46,10 @@ export function LoopDashboard({
 
   if (states.length === 0) {
     return (
-      <div className="flex items-center justify-center h-40 text-muted-foreground border border-dashed rounded-[var(--radius-6)]">
-        {t.loop.common.noLoops}
-      </div>
+      <EmptyState
+        title={t.loop.common.noLoops}
+        className="h-40 border border-dashed rounded-[var(--radius-6)]"
+      />
     );
   }
 
@@ -72,8 +74,8 @@ export function LoopDashboard({
               <div className="flex items-center gap-2">
                 <div
                   className={cn(
-                    "w-2.5 h-2.5 rounded-full",
-                    STATUS_STYLES[ls.status] ?? "bg-gray-400"
+                    "size-2.5 rounded-full",
+                    STATUS_STYLES[ls.status] ?? "bg-muted-foreground"
                   )}
                 />
                 <span className="text-sm font-medium">
@@ -86,24 +88,24 @@ export function LoopDashboard({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="size-6"
                       onClick={(e) => {
                         e.stopPropagation();
                         onRun(ls.id);
                       }}
                     >
-                      <Play className="h-3 w-3" />
+                      <Play className="size-3" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="size-6"
                       onClick={(e) => {
                         e.stopPropagation();
                         onPause(ls.id);
                       }}
                     >
-                      <Pause className="h-3 w-3" />
+                      <Pause className="size-3" />
                     </Button>
                   </>
                 )}
@@ -111,36 +113,36 @@ export function LoopDashboard({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6"
+                    className="size-6"
                     onClick={(e) => {
                       e.stopPropagation();
                       onResume(ls.id);
                     }}
                   >
-                    <PlayCircle className="h-3 w-3" />
+                    <PlayCircle className="size-3" />
                   </Button>
                 )}
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 text-destructive"
+                  className="size-6 text-destructive"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete(ls.id);
                   }}
                 >
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="size-3" />
                 </Button>
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
               <div className="flex items-center gap-1.5">
-                <Clock className="h-3 w-3" />
+                <Clock className="size-3" />
                 <span>{getPatternCadence(ls.pattern_id)}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Zap className="h-3 w-3" />
+                <Zap className="size-3" />
                 <span>{getReadinessLabel(ls.readiness_level)}</span>
               </div>
               {ls.last_run_at && (

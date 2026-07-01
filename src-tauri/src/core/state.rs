@@ -7,12 +7,32 @@ use crate::infrastructure::state_store::memory::MemoryStore;
 use crate::infrastructure::state_store::feedback::FeedbackStore;
 use crate::infrastructure::ai_services::mcp::McpServer;
 use crate::core::agent::pipeline::Scheduler;
+use crate::core::agent::sub_agent::SubAgentControl;
 use crate::infrastructure::db::Database;
 use crate::features::session::{Session, SessionConfig, SessionStatus};
 
-/// 每个 session 的 agent 取消状态。
+/// 每个 session 的 chat agent 状态。
+///
+/// 合并 main agent 能力后，chat agent 也支持 SafetyGate 确认流程与
+/// "首次确认后自动通过同类工具"模式。confirmation channel 在 session
+/// 创建时建立，整个 session 生命周期复用。
 pub struct AgentSessionState {
     pub cancelled: Arc<tokio::sync::RwLock<bool>>,
+    /// SafetyGate 确认请求 → agent loop 的响应通道。
+    pub confirmation_tx: tokio::sync::mpsc::UnboundedSender<
+        crate::core::agent::main_agent::ConfirmationResponse,
+    >,
+    /// agent loop 等待用户响应的接收端（用 Mutex 包装以便跨 await 持有）。
+    pub confirmation_rx: Arc<
+        tokio::sync::Mutex<
+            tokio::sync::mpsc::UnboundedReceiver<
+                crate::core::agent::main_agent::ConfirmationResponse,
+            >,
+        >,
+    >,
+    /// 用户在首次确认时选择"自动通过同类工具"的工具名集合。
+    /// 后续同名工具调用直接放行，不再触发确认。
+    pub auto_approved_tools: Arc<tokio::sync::RwLock<std::collections::HashSet<String>>>,
 }
 
 /// 每个 session 的 main agent 状态，包含 channel 句柄。
@@ -39,6 +59,8 @@ pub struct AppState {
     pub agent_states: tokio::sync::Mutex<std::collections::HashMap<String, AgentSessionState>>,
     /// 每个 session 的 main agent 状态（替代静态 MAIN_AGENT_STATES）
     pub main_agent_states: tokio::sync::Mutex<std::collections::HashMap<String, MainAgentSessionState>>,
+    /// 子 Agent 控制器（单实例，全局共享）
+    pub sub_agent_control: Arc<SubAgentControl>,
 }
 
 impl AppState {
@@ -60,12 +82,14 @@ impl AppState {
         }
 
         // 从当前状态构建 session 配置
-        let (provider, model) = {
+        let (provider, model, model_overrides, agent_providers) = {
             let registry = self.provider_registry.lock().await;
             let provider = registry.default()
                 .map_err(|e| crate::shared::errors::AppError::provider_not_found(e.to_string()))?;
             let model = registry.default_model().to_string();
-            (provider, model)
+            // S9: 从 registry 构建 per-agent 路由（model_overrides + agent_providers）
+            let (mo, ap) = registry.build_agent_routing();
+            (provider, model, mo, ap)
         };
 
         let config = SessionConfig {
@@ -82,7 +106,8 @@ impl AppState {
             )),
             memory_store: self.memory_store.clone(),
             feedback_store: self.feedback_store.clone(),
-            model_overrides: std::collections::HashMap::new(),
+            model_overrides,
+            agent_providers,
         };
 
         let session = Session::spawn(config, session_id.to_string());

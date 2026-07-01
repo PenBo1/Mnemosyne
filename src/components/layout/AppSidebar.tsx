@@ -14,6 +14,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
 import {
   SettingsIcon,
   LayersIcon,
@@ -38,6 +39,7 @@ import {
   BotIcon,
   WrenchIcon,
   CpuIcon,
+  NetworkIcon,
 } from "lucide-react";
 import { useAppState, useAppDispatch } from "@/shared/app-context";
 import { useI18n } from "@/shared/i18n";
@@ -54,11 +56,11 @@ const WORKSPACE_SUB_ITEMS: { id: WorkspacePage; labelKey: string; icon: typeof F
   { id: "research", labelKey: "research", icon: BookmarkIcon },
 ];
 
-const TOOLS_SUB_ITEMS: { id: "novels" | "trends" | "kanban" | "loops"; labelKey: string; icon: typeof BookOpenIcon }[] = [
+const TOOLS_SUB_ITEMS: { id: "novels" | "trends" | "loops" | "git"; labelKey: string; icon: typeof BookOpenIcon }[] = [
   { id: "novels", labelKey: "novels", icon: BookOpenIcon },
   { id: "trends", labelKey: "scanTrends", icon: TrendingUpIcon },
-  { id: "kanban", labelKey: "kanban", icon: LayersIcon },
   { id: "loops", labelKey: "loops", icon: CpuIcon },
+  { id: "git", labelKey: "git", icon: GitBranchIcon },
 ];
 
 const SETTINGS_NAV_ITEMS: { id: SettingsTab; labelKey: string; icon: typeof GlobeIcon }[] = [
@@ -150,7 +152,7 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={currentPage === "chat" || currentPage === "main-agent"}
-                      onClick={() => navigateTo("main-agent")}
+                      onClick={() => navigateTo("chat")}
                       tooltip={t.sidebar.aiAgent}
                     >
                       <BotIcon />
@@ -213,6 +215,16 @@ export function AppSidebar() {
                       <span>{t.sidebar.knowledge}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={currentPage === "wiki"}
+                      onClick={() => navigateTo("wiki")}
+                      tooltip={t.sidebar.wiki}
+                    >
+                      <NetworkIcon />
+                      <span>{t.sidebar.wiki}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -259,23 +271,17 @@ export function AppSidebar() {
                           >
                             <FolderIcon />
                             <span className="flex-1 truncate">{ws.name}</span>
-                            <span
-                              role="button"
-                              tabIndex={0}
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 removeWorkspace(ws.id);
                               }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.stopPropagation();
-                                  removeWorkspace(ws.id);
-                                }
-                              }}
-                              className="rounded-md p-0.5 opacity-0 group-hover/menu-item:opacity-100 hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                              className="opacity-0 group-hover/menu-item:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                             >
-                              <Trash2Icon className="size-3" />
-                            </span>
+                              <Trash2Icon />
+                            </Button>
                             {isExpanded ? (
                               <ChevronDownIcon className="size-3.5" />
                             ) : (

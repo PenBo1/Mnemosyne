@@ -109,6 +109,7 @@ pub fn run() {
                 sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 agent_states: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 main_agent_states: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                sub_agent_control: Arc::new(crate::core::agent::sub_agent::SubAgentControl::new()),
             });
 
             Ok(())
@@ -157,6 +158,11 @@ pub fn run() {
             ipc::commands::novels_pipeline::novel_plan,
             ipc::commands::novels_pipeline::novel_audit,
             ipc::commands::novels_pipeline::novel_revise,
+            ipc::commands::novels_pipeline::story_state_get,
+            ipc::commands::novels_pipeline::hook_update_status,
+            ipc::commands::novels_pipeline::query_facts_at_chapter,
+            ipc::commands::novels_pipeline::list_recent_chapter_summaries,
+            ipc::commands::novels_pipeline::list_chapter_summaries_range,
             ipc::commands::notifications::send_notification,
             ipc::commands::radar::radar_scan,
             ipc::commands::radar::radar_history,
@@ -168,6 +174,7 @@ pub fn run() {
             ipc::commands::sandbox::sandbox_get_policy,
             ipc::commands::agent::agent_send_message,
             ipc::commands::agent::agent_approve_tool,
+            ipc::commands::agent::agent_respond_confirmation,
             ipc::commands::agent::agent_cancel,
             ipc::commands::agent::agent_compact,
             ipc::commands::agent::agent_restart,
@@ -182,6 +189,7 @@ pub fn run() {
             ipc::commands::agent_config::list_agents,
             ipc::commands::agent_config::update_agent,
             ipc::commands::agent_config::toggle_agent_status,
+            ipc::commands::agent_config::list_ai_models,
             ipc::commands::novels_pipeline::novel_observe,
             ipc::commands::novels_pipeline::novel_reflect,
             ipc::commands::novel_sources::novel_source_list,
@@ -227,16 +235,6 @@ pub fn run() {
             ipc::commands::version::version_diff_latest,
             ipc::commands::version::version_restore,
             ipc::commands::version::version_save,
-            // Kanban 命令
-            ipc::commands::kanban::kanban_create_task,
-            ipc::commands::kanban::kanban_get_tasks,
-            ipc::commands::kanban::kanban_update_task,
-            ipc::commands::kanban::kanban_delete_task,
-            ipc::commands::kanban::kanban_reorder_tasks,
-            ipc::commands::kanban::kanban_get_columns,
-            ipc::commands::kanban::kanban_create_column,
-            ipc::commands::kanban::kanban_update_column,
-            ipc::commands::kanban::kanban_delete_column,
             // Loop Engineering 命令
             ipc::commands::loop_engine::loop_create_state,
             ipc::commands::loop_engine::loop_get_states,
@@ -260,6 +258,22 @@ pub fn run() {
             // FS 命令
             ipc::commands::fs::fs_read_file,
             ipc::commands::fs::fs_list_directory,
+            // Git 命令
+            ipc::commands::git::git_check_installed,
+            ipc::commands::git::git_install,
+            ipc::commands::git::git_init,
+            ipc::commands::git::git_status,
+            ipc::commands::git::git_log,
+            ipc::commands::git::git_diff,
+            ipc::commands::git::git_stage,
+            ipc::commands::git::git_commit,
+            ipc::commands::git::git_rollback,
+            ipc::commands::git::git_get_config,
+            ipc::commands::git::git_set_config,
+            // Sub-Agent 命令
+            ipc::commands::sub_agent::sub_agent_list,
+            ipc::commands::sub_agent::sub_agent_get,
+            ipc::commands::sub_agent::sub_agent_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

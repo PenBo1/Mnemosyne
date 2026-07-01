@@ -3,6 +3,7 @@
 export interface Session {
   id: string;
   novel_id: string | null;
+  workspace_id: string | null;
   session_type: "chat" | "pipeline" | "review";
   title: string;
   summary: string | null;
@@ -27,7 +28,17 @@ export interface Message {
 }
 
 export interface AgentEvent {
-  type: "TurnStarted" | "StreamDelta" | "ReasoningDelta" | "ToolCallBegin" | "ToolCallDelta" | "ToolCallEnd" | "TurnCompleted" | "Error" | "CompactionTriggered";
+  type:
+    | "TurnStarted"
+    | "StreamDelta"
+    | "ReasoningDelta"
+    | "ToolCallBegin"
+    | "ToolCallDelta"
+    | "ToolCallEnd"
+    | "TurnCompleted"
+    | "Error"
+    | "CompactionTriggered"
+    | "ConfirmationRequired";
   session_id: string;
   content?: string;
   tool_call_id?: string;
@@ -39,6 +50,20 @@ export interface AgentEvent {
   input_tokens?: number;
   output_tokens?: number;
   error?: string;
+  // ConfirmationRequired 专属字段
+  step_id?: number;
+  description?: string;
+  details?: string;
+  risk_level?: string;
+}
+
+// SafetyGate 确认请求（与后端 AgentEvent::ConfirmationRequired 对齐）
+export interface PendingConfirmation {
+  toolCallId: string;
+  tool: string;
+  description: string;
+  details: string;
+  riskLevel: string;
 }
 
 

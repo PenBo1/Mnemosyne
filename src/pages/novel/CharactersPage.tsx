@@ -164,12 +164,9 @@ export function CharactersPage() {
                 <span className="font-medium">{c.name}</span>
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">{c.role}</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
-                  >
-                    <Trash2Icon className="size-3" />
-                  </button>
+                  <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }} className="opacity-0 group-hover:opacity-100 text-destructive">
+                    <Trash2Icon />
+                  </Button>
                 </div>
               </div>
               {c.description && (

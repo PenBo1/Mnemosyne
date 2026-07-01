@@ -139,9 +139,11 @@ export function TrendsPage() {
           <div className="flex flex-col gap-2">
             {history.slice(0, 10).map((scan) => (
               <div key={scan.id} className="flex items-center gap-2">
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => viewHistoryItem(scan)}
-                  className="flex-1 rounded-[var(--radius-4)] border border-[var(--border-neutral-l1)] px-3 py-2 text-left text-xs hover:bg-[var(--bg-overlay-l2)] transition-colors flex flex-col gap-1"
+                  className="flex-1 justify-start text-left flex-col items-start gap-1 h-auto"
                 >
                   <div className="font-medium text-foreground">
                     {new Date(scan.created_at).toLocaleString()}
@@ -149,7 +151,7 @@ export function TrendsPage() {
                   <div className="line-clamp-1 text-muted-foreground">
                     {scan.market_summary || t.common.noSummary}
                   </div>
-                </button>
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" className="size-8 shrink-0">

@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangleIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useGeneralSettings } from "@/features/settings/hooks";
 import {
   PageContainer,
@@ -123,10 +123,9 @@ export function GeneralSettings() {
           </div>
 
           {logLevelChanged && (
-            <div className="flex items-center gap-2 rounded-[var(--radius-4)] bg-muted px-3 py-2 text-sm text-muted-foreground">
-              <AlertTriangleIcon className="size-4 shrink-0" />
-              <span>{t.settings.logLevelRestartRequired}</span>
-            </div>
+            <Alert>
+              <AlertDescription>{t.settings.logLevelRestartRequired}</AlertDescription>
+            </Alert>
           )}
         </CardContent>
       </Card>

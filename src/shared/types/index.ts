@@ -1,7 +1,7 @@
-export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources";
+export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources" | "git";
 
 export type WorkspacePage = "overview" | "characters" | "worldbuilding" | "plot" | "timeline" | "research";
-export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version" | "kanban" | "loops";
+export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version" | "loops" | "git";
 
 // ── Workspace ──────────────────────────────────────────────
 
@@ -141,55 +141,14 @@ export interface Agent {
 }
 
 // ── Session ────────────────────────────────────────────────
+// Session/Message 类型定义已迁移到 ./session.ts，这里 re-export 保持单一来源。
 
-export interface Session {
-  id: string;
-  novel_id: string | null;
-  session_type: "chat" | "pipeline" | "review";
-  title: string;
-  summary: string | null;
-  message_count: number;
-  input_tokens: number;
-  output_tokens: number;
-  cost: number;
-  status: "active" | "paused" | "completed" | "archived";
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Message {
-  id: string;
-  session_id: string;
-  role: "user" | "assistant" | "system" | "tool";
-  content: string;
-  tool_calls: string | null;
-  tool_results: string | null;
-  token_count: number | null;
-  created_at: string;
-}
+export type { Session, Message, AgentEvent, PendingConfirmation } from "./session";
 
 // ── Agent Events / IPC ─────────────────────────────────────
+// AgentEvent 已迁移到 ./session.ts，IPC 参数类型在 ./attachment.ts。
 
-export interface AgentEvent {
-  type: "TurnStarted" | "StreamDelta" | "ReasoningDelta" | "ToolCallBegin" | "ToolCallDelta" | "ToolCallEnd" | "TurnCompleted" | "Error" | "CompactionTriggered";
-  session_id: string;
-  content?: string;
-  tool_call_id?: string;
-  tool?: string;
-  args?: string;
-  args_delta?: string;
-  output?: string;
-  is_error?: boolean;
-  input_tokens?: number;
-  output_tokens?: number;
-  error?: string;
-}
-
-export interface SendMessageParams {
-  session_id: string;
-  content: string;
-  [key: string]: unknown;
-}
+export type { AttachmentKind, AttachmentSpec, SendMessageParams } from "./attachment";
 
 // ── Skill: 见 ./skill (barrel 导出) ──────────────────────────
 
@@ -342,7 +301,8 @@ export interface ResearchItem {
 
 // ── Hook Record ──────────────────────────────────────────
 
-export type HookStatus = "Open" | "Progressing" | "Deferred" | "Resolved";
+// 与后端 HookStatus (#[serde(rename_all = "snake_case")]) 对齐
+export type HookStatus = "open" | "progressing" | "deferred" | "resolved";
 
 export interface HookRecord {
   hook_id: string;
@@ -473,67 +433,10 @@ export interface StoryFact {
 }
 
 // ── Wiki Entry ─────────────────────────────────────────────
+// Wiki 类型定义已迁移到 ./wiki.ts，这里 re-export 保持单一来源。
+// 字段与 src-tauri/src/features/wiki/models.rs 对齐。
 
-export type WikiCategory = "character" | "location" | "event" | "concept" | "item" | "other";
-
-export interface WikiEntry {
-  id: string;
-  novel_id: string;
-  title: string;
-  content: string;
-  category: WikiCategory;
-  tags: string[];
-  importance: number;
-  source_chapter: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateWikiEntryRequest {
-  title: string;
-  content: string;
-  category: WikiCategory;
-  tags?: string[];
-  importance?: number;
-  source_chapter?: number;
-}
-
-export interface UpdateWikiEntryRequest {
-  title?: string;
-  content?: string;
-  category?: WikiCategory;
-  tags?: string[];
-  importance?: number;
-  source_chapter?: number;
-}
-
-export interface WikiEntityLink {
-  id: string;
-  novel_id: string;
-  source_entry_id: string;
-  target_entry_id: string;
-  link_type: string;
-  description: string;
-  created_at: string;
-}
-
-export interface WikiGraphNode {
-  id: string;
-  title: string;
-  category: WikiCategory;
-  importance: number;
-}
-
-export interface WikiGraphLink {
-  source: string;
-  target: string;
-  type: string;
-}
-
-export interface WikiGraphView {
-  nodes: WikiGraphNode[];
-  links: WikiGraphLink[];
-}
+export type { WikiCategory, WikiSourceType, WikiEntry, CreateWikiEntryRequest, UpdateWikiEntryRequest, WikiEntityLink, WikiGraphNode, WikiGraphEdge, WikiGraphView } from "./wiki";
 
 // ── Chapter Version ────────────────────────────────────────
 
@@ -580,93 +483,6 @@ export interface DiffStats {
 export interface LineDiffResult {
   hunks: DiffHunk[];
   stats: DiffStats;
-}
-
-// ── Kanban ─────────────────────────────────────────────────
-
-export type KanbanTaskStatus = "plan" | "compose" | "write" | "audit" | "revise" | "done" | "cancelled";
-export type KanbanPriority = "low" | "medium" | "high" | "urgent";
-
-export interface KanbanTask {
-  id: string;
-  novel_id: string;
-  title: string;
-  description: string;
-  status: KanbanTaskStatus;
-  priority: KanbanPriority;
-  assigned_agent: string | null;
-  chapter_id: string | null;
-  parent_task_id: string | null;
-  tags: string[];
-  sort_order: number;
-  due_date: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateKanbanTaskRequest {
-  title: string;
-  description?: string;
-  status?: KanbanTaskStatus;
-  priority?: KanbanPriority;
-  assigned_agent?: string;
-  chapter_id?: string;
-  parent_task_id?: string;
-  tags?: string[];
-  due_date?: string;
-}
-
-export interface UpdateKanbanTaskRequest {
-  title?: string;
-  description?: string;
-  status?: KanbanTaskStatus;
-  priority?: KanbanPriority;
-  assigned_agent?: string;
-  chapter_id?: string;
-  parent_task_id?: string;
-  sort_order?: number;
-  due_date?: string;
-  tags?: string[];
-}
-
-export interface KanbanColumn {
-  id: string;
-  novel_id: string;
-  name: string;
-  status_key: string;
-  color: string;
-  sort_order: number;
-  wip_limit: number | null;
-  created_at: string;
-}
-
-export interface CreateKanbanColumnRequest {
-  name: string;
-  status_key: string;
-  color?: string;
-  sort_order?: number;
-  wip_limit?: number;
-}
-
-export interface UpdateKanbanColumnRequest {
-  name?: string;
-  color?: string;
-  sort_order?: number;
-  wip_limit?: number;
-}
-
-export interface KanbanState {
-  tasks: KanbanTask[];
-  columns: KanbanColumn[];
-  loading: boolean;
-  error: string | null;
-  loadTasks: (novelId: string) => Promise<void>;
-  loadColumns: (novelId: string) => Promise<void>;
-  createTask: (novelId: string, req: CreateKanbanTaskRequest) => Promise<KanbanTask>;
-  updateTask: (taskId: string, req: UpdateKanbanTaskRequest) => Promise<void>;
-  deleteTask: (taskId: string) => Promise<void>;
-  moveTask: (taskId: string, newStatus: KanbanTaskStatus) => Promise<void>;
-  reorderTasks: (taskIds: string[]) => Promise<void>;
 }
 
 // ── Loop Engineering ───────────────────────────────────────
@@ -817,3 +633,6 @@ export * from "./sandbox";
 export * from "./skill";
 export * from "./stats";
 export * from "./ai-logs";
+export * from "./story";
+export * from "./git";
+export * from "./sub_agent";

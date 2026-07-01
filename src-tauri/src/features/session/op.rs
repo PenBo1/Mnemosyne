@@ -91,6 +91,10 @@ pub struct CreateBookPayload {
     pub title: String,
     pub genre: String,
     pub brief: Option<String>,
+    /// 目标章节数；None 时使用 runner 默认（200）
+    pub target_chapters: Option<u32>,
+    /// 每章目标字数；None 时使用 runner 默认（3000）
+    pub chapter_words: Option<u32>,
 }
 
 /// Payload for chapter planning

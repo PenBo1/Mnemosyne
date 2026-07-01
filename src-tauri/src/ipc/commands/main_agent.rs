@@ -39,6 +39,7 @@ pub enum MainAgentEvent {
 pub async fn main_agent_execute(
     session_id: String,
     goal: String,
+    workspace_id: Option<String>,
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<IpcResponse<String>, AppError> {
@@ -96,6 +97,50 @@ pub async fn main_agent_execute(
     tools.register("bash", Box::new(BashTool::new(work_dir.clone(), None)));
     tools.register("search_memory", Box::new(SearchMemoryTool::new(memory.clone())));
     tools.register("archive_memory", Box::new(ArchiveMemoryTool::new(memory.clone())));
+
+    // spawn_subagent 工具 — 让主 Agent 在 ReAct 循环中自主 spawn 子 Agent
+    use crate::core::agent::sub_agent::{ParentAgentRefs, SpawnAgentTool};
+    let parent_refs = ParentAgentRefs {
+        parent_thread_id: session_id.clone(),
+        provider: provider.clone(),
+        model: model.clone(),
+        project_root: work_dir.clone(),
+        book_id: None,
+        memory: memory.clone(),
+        skill_manager: None,
+        user_profile: None,
+    };
+    tools.register("spawn_subagent", Box::new(SpawnAgentTool::new(
+        state.sub_agent_control.clone(),
+        parent_refs,
+    )));
+
+    // 小说创作工具 — 仅当 main agent 绑定了 workspace 时注册
+    // 让主 agent 能自主调用 create_novel / write_next_chapter / get_novel_status
+    if let Some(ws_id) = &workspace_id {
+        use crate::core::agent::main_agent::NovelToolDeps;
+        // S9: 从 registry 获取 per-agent 路由
+        let (model_overrides, agent_providers) = {
+            let registry = state.provider_registry.lock().await;
+            registry.build_agent_routing()
+        };
+        let deps = NovelToolDeps {
+            provider: provider.clone(),
+            model: model.clone(),
+            memory_store: state.memory_store.clone(),
+            data_dir: state.data_dir.clone(),
+            db: state.db.clone(),
+            workspace_id: ws_id.clone(),
+            model_overrides,
+            agent_providers,
+        };
+        tools.register("create_novel",
+            Box::new(crate::core::agent::main_agent::NovelCreateTool::new(deps.clone())));
+        tools.register("write_next_chapter",
+            Box::new(crate::core::agent::main_agent::WriteNextChapterTool::new(deps.clone())));
+        tools.register("get_novel_status",
+            Box::new(crate::core::agent::main_agent::GetNovelStatusTool::new(deps)));
+    }
 
     let ctx = crate::core::agent::AgentContext {
         provider,

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useI18n } from "@/shared/i18n";
 import type { LoopRunLog as LoopRunLogType } from "@/shared/types";
 import { CheckCircle, XCircle, AlertTriangle, Clock } from "lucide-react";
+import { EmptyState } from "@/components/shared/state";
 
 interface LoopRunLogProps {
   logs: LoopRunLogType[];
@@ -9,10 +10,10 @@ interface LoopRunLogProps {
 }
 
 const STATUS_ICONS: Record<string, ReactNode> = {
-  success: <CheckCircle className="h-3.5 w-3.5 text-[var(--status-success-default)]" />,
-  partial: <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />,
-  failed: <XCircle className="h-3.5 w-3.5 text-destructive" />,
-  escalated: <AlertTriangle className="h-3.5 w-3.5 text-[var(--status-warning-default)]" />,
+  success: <CheckCircle className="size-3.5 text-[var(--status-success-default)]" />,
+  partial: <AlertTriangle className="size-3.5 text-muted-foreground" />,
+  failed: <XCircle className="size-3.5 text-destructive" />,
+  escalated: <AlertTriangle className="size-3.5 text-[var(--status-warning-default)]" />,
 };
 
 export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
@@ -29,9 +30,7 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
 
       <div className="max-h-[500px] overflow-y-auto">
         {filteredLogs.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">
-            {t.loop.common.noLogs}
-          </div>
+          <EmptyState title={t.loop.common.noLogs} className="h-32" />
         ) : (
           <div className="divide-y">
             {filteredLogs.map((log) => (
@@ -48,7 +47,7 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
 
                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <Clock className="h-2.5 w-2.5" />
+                    <Clock className="size-2.5" />
                     {(log.duration_ms / 1000).toFixed(1)}s
                   </span>
                   <span>

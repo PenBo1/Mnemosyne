@@ -25,6 +25,8 @@ pub struct SessionConfig {
     pub memory_store: Arc<MemoryStore>,
     pub feedback_store: Arc<tokio::sync::Mutex<FeedbackStore>>,
     pub model_overrides: std::collections::HashMap<String, String>,
+    /// S9: per-agent provider 路由表，与 `model_overrides` 同步填充。
+    pub agent_providers: std::collections::HashMap<String, Arc<dyn Provider>>,
 }
 
 /// Status of a session
@@ -551,11 +553,11 @@ async fn handle_write_next_chapter(
 ) -> Result<(), AppError> {
     use crate::core::agent::pipeline::{PipelineConfig, PipelineRunner};
 
-    let workspace_path = {
+    let (workspace_path, db_for_pipeline) = {
         let db = config.db.lock().await;
         let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
+        (std::path::PathBuf::from(ws.path), db.clone())
     };
 
     let runner = {
@@ -564,10 +566,13 @@ async fn handle_write_next_chapter(
             model: config.model.clone(),
             project_root: workspace_path,
             model_overrides: config.model_overrides.clone(),
+            agent_providers: config.agent_providers.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
             fallback_model: None,
+            db: Some(db_for_pipeline.clone()),
+            context_budget: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -615,11 +620,11 @@ async fn handle_create_book(
 ) -> Result<(), AppError> {
     use crate::core::agent::pipeline::{PipelineConfig, PipelineRunner};
 
-    let workspace_path = {
+    let (workspace_path, db_for_pipeline) = {
         let db = config.db.lock().await;
         let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
+        (std::path::PathBuf::from(ws.path), db.clone())
     };
 
     let runner = {
@@ -628,15 +633,26 @@ async fn handle_create_book(
             model: config.model.clone(),
             project_root: workspace_path,
             model_overrides: config.model_overrides.clone(),
+            agent_providers: config.agent_providers.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
             fallback_model: None,
+            db: Some(db_for_pipeline.clone()),
+            context_budget: None,
         };
         PipelineRunner::new(pipeline_config)
     };
 
-    let book = runner.create_book(&payload.title, &payload.genre, payload.brief.as_deref()).await?;
+    let book = runner
+        .create_book(
+            &payload.title,
+            &payload.genre,
+            payload.brief.as_deref(),
+            payload.target_chapters,
+            payload.chapter_words,
+        )
+        .await?;
 
     // Save to DB
     {
@@ -647,8 +663,8 @@ async fn handle_create_book(
             genre: payload.genre.clone(),
             platform: "local".to_string(),
             language: "zh".to_string(),
-            target_chapters: 100,
-            chapter_words: 3000,
+            target_chapters: book.target_chapters as i64,
+            chapter_words: book.chapter_words as i64,
         }).await?;
     }
 
@@ -672,11 +688,11 @@ async fn handle_plan_chapter(
 ) -> Result<(), AppError> {
     use crate::core::agent::pipeline::{PipelineConfig, PipelineRunner};
 
-    let workspace_path = {
+    let (workspace_path, db_for_pipeline) = {
         let db = config.db.lock().await;
         let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
+        (std::path::PathBuf::from(ws.path), db.clone())
     };
 
     let runner = {
@@ -685,10 +701,13 @@ async fn handle_plan_chapter(
             model: config.model.clone(),
             project_root: workspace_path,
             model_overrides: config.model_overrides.clone(),
+            agent_providers: config.agent_providers.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
             fallback_model: None,
+            db: Some(db_for_pipeline.clone()),
+            context_budget: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -733,11 +752,11 @@ async fn handle_audit_chapter(
 ) -> Result<(), AppError> {
     use crate::core::agent::pipeline::{PipelineConfig, PipelineRunner};
 
-    let workspace_path = {
+    let (workspace_path, db_for_pipeline) = {
         let db = config.db.lock().await;
         let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
+        (std::path::PathBuf::from(ws.path), db.clone())
     };
 
     let runner = {
@@ -746,10 +765,13 @@ async fn handle_audit_chapter(
             model: config.model.clone(),
             project_root: workspace_path,
             model_overrides: config.model_overrides.clone(),
+            agent_providers: config.agent_providers.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
             fallback_model: None,
+            db: Some(db_for_pipeline.clone()),
+            context_budget: None,
         };
         PipelineRunner::new(pipeline_config)
     };
@@ -794,11 +816,11 @@ async fn handle_revise_chapter(
 ) -> Result<(), AppError> {
     use crate::core::agent::pipeline::{PipelineConfig, PipelineRunner};
 
-    let workspace_path = {
+    let (workspace_path, db_for_pipeline) = {
         let db = config.db.lock().await;
         let ws = db.get_workspace(&payload.workspace_id).await?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
-        std::path::PathBuf::from(ws.path)
+        (std::path::PathBuf::from(ws.path), db.clone())
     };
 
     let runner = {
@@ -807,10 +829,13 @@ async fn handle_revise_chapter(
             model: config.model.clone(),
             project_root: workspace_path,
             model_overrides: config.model_overrides.clone(),
+            agent_providers: config.agent_providers.clone(),
             memory_store: Some(config.memory_store.clone()),
             data_dir: config.data_dir.clone(),
             user_profile: None,
             fallback_model: None,
+            db: Some(db_for_pipeline.clone()),
+            context_budget: None,
         };
         PipelineRunner::new(pipeline_config)
     };

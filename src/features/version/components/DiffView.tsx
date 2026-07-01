@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { cn } from "@/shared/utils";
+import { EmptyState } from "@/components/shared/state";
 import type { LineDiffResult, DiffHunk, DiffLine, DiffLineType } from "@/shared/types";
 
 interface DiffViewProps {
@@ -26,9 +27,7 @@ export function DiffView({ diffResult, showStats = true, className }: DiffViewPr
 
   if (totalChanges === 0 && diffResult.hunks.length === 0) {
     return (
-      <div className={cn("text-center text-muted-foreground py-8", className)}>
-        No differences found
-      </div>
+      <EmptyState title="No differences found" className={cn("py-8", className)} />
     );
   }
 
@@ -37,11 +36,11 @@ export function DiffView({ diffResult, showStats = true, className }: DiffViewPr
       {showStats && (
         <div className="flex gap-4 text-xs text-muted-foreground border-b pb-2">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-[var(--status-success-default)]" />
+            <span className="size-2 rounded-full bg-[var(--status-success-default)]" />
             +{stats.lines_added} additions
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-destructive" />
+            <span className="size-2 rounded-full bg-destructive" />
             -{stats.lines_removed} deletions
           </span>
           {stats.chars_added > 0 && (

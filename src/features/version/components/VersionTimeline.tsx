@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { cn } from "@/shared/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/shared/state";
 import type { ChapterVersion } from "@/shared/types";
 
 interface VersionTimelineProps {
@@ -17,7 +18,7 @@ const REVISION_MODE_COLORS: Record<string, string> = {
   polish: "bg-muted-foreground",
   rewrite: "bg-[var(--status-warning-default)]",
   rework: "bg-destructive",
-  spot_fix: "bg-purple-500",
+  spot_fix: "bg-[var(--status-warning-default)]",
   manual: "bg-primary",
 };
 
@@ -34,9 +35,7 @@ export function VersionTimeline({
 
   if (versions.length === 0) {
     return (
-      <div className={cn("text-center text-muted-foreground py-8", className)}>
-        No versions available
-      </div>
+      <EmptyState title="No versions available" className={cn("py-8", className)} />
     );
   }
 
@@ -76,8 +75,8 @@ export function VersionTimeline({
                   <span className="font-medium">v{version.version_number}</span>
                   <span
                     className={cn(
-                      "w-2 h-2 rounded-full",
-                      REVISION_MODE_COLORS[version.revision_mode] || "bg-gray-500"
+                      "size-2 rounded-full",
+                      REVISION_MODE_COLORS[version.revision_mode] || "bg-muted-foreground"
                     )}
                     title={version.revision_mode}
                   />

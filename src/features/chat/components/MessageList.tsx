@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from "react";
 import { AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MessageBubble } from "./MessageBubble";
 import { EmptyState } from "./EmptyState";
 import type { Message } from "@/shared/types";
@@ -66,10 +67,12 @@ export function MessageList({
               />
             )}
             {error && (
-              <div className="flex items-center gap-2 rounded-[var(--radius-6)] border border-[var(--status-error-default)]/20 bg-[var(--status-error-surface-l1)] px-3 py-2 text-xs text-[var(--status-error-default)]">
-                <AlertCircle className="size-3.5 shrink-0" />
-                <span>{error}</span>
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription className="flex items-center gap-2">
+                  <AlertCircle className="size-3.5 shrink-0" />
+                  <span>{error}</span>
+                </AlertDescription>
+              </Alert>
             )}
           </>
         )}

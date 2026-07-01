@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useAgentSession } from "@/features/chat/hooks";
 import { useAgentStore } from "@/stores/agent";
+import { useWorkspaceStore } from "@/stores/workspace";
 import * as agentService from "@/features/chat/services";
 import type { Message, Session } from "@/shared/types";
 
@@ -12,6 +13,7 @@ import type { Message, Session } from "@/shared/types";
  * - 消息 / 流式状态 / 事件订阅通过 useAgent(currentSessionId)
  * - sendMessage 自行实现，处理"无 session 时先创建"的流程
  *   （useAgent.sendMessage 在 sessionId=null 时会报错，故不复用）
+ * - 创建 session 时自动绑定 active workspaceId，让 agent 能访问工作区上下文
  */
 export function useChat() {
   const sessions = useAgentStore((s) => s.sessions);
@@ -21,10 +23,20 @@ export function useChat() {
   const switchSession = useAgentStore((s) => s.switchSession);
   const createSession = useAgentStore((s) => s.createSession);
   const deleteSession = useAgentStore((s) => s.deleteSession);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
   // 订阅 agent-event + 读 messages/streaming/error；cancel 复用 useAgentSession
-  const { messages, streaming, streamingContent, streamingReasoning, error, cancel } =
-    useAgentSession(currentSessionId);
+  const {
+    messages,
+    streaming,
+    streamingContent,
+    streamingReasoning,
+    error,
+    cancel,
+    pendingConfirmation,
+    submittingConfirmation,
+    respondConfirmation,
+  } = useAgentSession(currentSessionId);
 
   // 写操作 action（通过 selector，避免整树订阅）
   const appendMessage = useAgentStore((s) => s.appendMessage);
@@ -35,6 +47,10 @@ export function useChat() {
   // 跟踪 latest currentSessionId，避免 sendMessage 闭包陈旧
   const currentSessionIdRef = useRef(currentSessionId);
   currentSessionIdRef.current = currentSessionId;
+
+  // 跟踪 latest activeWorkspaceId，避免闭包陈旧
+  const activeWorkspaceIdRef = useRef(activeWorkspaceId);
+  activeWorkspaceIdRef.current = activeWorkspaceId;
 
   // 首次挂载加载会话列表
   useEffect(() => {
@@ -49,15 +65,15 @@ export function useChat() {
   }, [sessions, currentSessionId, switchSession]);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachments?: agentService.AttachmentSpec[]) => {
       const trimmed = content.trim();
       if (!trimmed) return;
 
-      // 无 session 时先创建（拿到真实 id 后再发）
+      // 无 session 时先创建（拿到真实 id 后再发），绑定 active workspace
       let sid = currentSessionIdRef.current;
       if (!sid) {
         try {
-          const session = await createSession();
+          const session = await createSession(undefined, undefined, activeWorkspaceIdRef.current ?? undefined);
           sid = session.id;
         } catch {
           return; // createSession 已通过 toast 报错
@@ -82,7 +98,7 @@ export function useChat() {
       appendMessage(userMessage);
 
       try {
-        await agentService.sendMessage({ sessionId: sid, content: trimmed });
+        await agentService.sendMessage({ sessionId: sid, content: trimmed, attachments });
       } catch (err) {
         setStreaming(false);
         const msg = err instanceof Error ? err.message : "Failed to send message";
@@ -97,11 +113,11 @@ export function useChat() {
     // 当前已是空会话则不重复创建
     if (currentSessionId && messages.length === 0) return;
     try {
-      await createSession();
+      await createSession(undefined, undefined, activeWorkspaceId ?? undefined);
     } catch {
       // 已 toast
     }
-  }, [createSession, currentSessionId, messages.length]);
+  }, [createSession, currentSessionId, messages.length, activeWorkspaceId]);
 
   const handleDeleteSession = useCallback(async () => {
     if (!currentSessionId) return;
@@ -126,5 +142,8 @@ export function useChat() {
     switchSession,
     handleNewSession,
     handleDeleteSession,
+    pendingConfirmation,
+    submittingConfirmation,
+    respondConfirmation,
   };
 }

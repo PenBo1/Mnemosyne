@@ -1,6 +1,8 @@
 // ── Story auxiliary: hooks, chapter summaries, facts ──────
 
-export type HookStatus = "Open" | "Progressing" | "Deferred" | "Resolved";
+// 注意：后端 HookStatus 用 #[serde(rename_all = "snake_case")]，
+// 序列化为 snake_case，前端类型必须匹配。
+export type HookStatus = "open" | "progressing" | "deferred" | "resolved";
 
 export interface HookRecord {
   hook_id: string;

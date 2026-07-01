@@ -6,7 +6,11 @@ use super::types::AgentRole;
 use super::governance::*;
 use super::planner::PlanOutput;
 use super::agent_identity::AgentIdentity;
-use crate::infrastructure::utils::context_assembly::{build_governed_rule_stack, build_governed_trace};
+use crate::infrastructure::utils::context_assembly::{
+    build_governed_rule_stack, build_governed_trace,
+    apply_context_budget_if_needed, build_compiled_context_package,
+    render_context_entries, BudgetApplication,
+};
 
 pub struct ComposerAgent;
 
@@ -16,46 +20,100 @@ impl Default for ComposerAgent {
 impl ComposerAgent {
     pub fn new() -> Self { Self }
 
-    /// Compose chapter runtime context from truth files using governance.
+    /// S5.4: Compose chapter runtime context from truth files using governance.
     ///
-    /// The composer is a pure-logic agent (no LLM calls), but it loads its
-    /// identity for consistency with the agent identity system. The identity
-    /// is available if future versions add LLM-based context selection.
+    /// 当传入 `context_budget` 且总 token 超预算时，composer 会调用 LLM
+    /// 编译可压缩段（compressible sources），protected 段永不压缩。
+    /// 与 inkos `composeGovernedChapter` 行为对齐。
     pub async fn compose_chapter(
         &self,
-        _ctx: &AgentContext,
+        ctx: &AgentContext,
         book_dir: &std::path::Path,
         chapter_number: u32,
         plan: &PlanOutput,
         data_dir: &DataDir,
+        context_budget: Option<ContextBudget>,
     ) -> Result<ComposeOutput, AppError> {
-        // Load identity for consistency (pure-logic agent, but maintains the pattern)
         let _identity = AgentIdentity::load(data_dir, "composer");
-        // TODO: In future versions, identity could influence context selection strategy
         let story_dir = book_dir.join("story");
         let truth_files = read_truth_files(&story_dir);
 
-        // Build governed context package
+        // 1. 收集初始 context sources
         let selected_context = select_relevant_context(&truth_files, plan, chapter_number);
-
-        let context_package = ContextPackage {
+        let mut context_package = ContextPackage {
             chapter: chapter_number,
             selected_context,
         };
+        let mut trace_notes: Vec<String> = Vec::new();
 
-        // Build rule stack
+        // 2. S5.4: 应用上下文预算（如果提供）
+        if let Some(budget) = context_budget {
+            match apply_context_budget_if_needed(&context_package, budget) {
+                BudgetApplication::WithinBudget => {
+                    // 未超预算，原样使用
+                }
+                BudgetApplication::ProtectedExceedsBudget {
+                    protected_tokens,
+                    budget_tokens,
+                } => {
+                    return Err(AppError::internal(format!(
+                        "Protected context exceeds available input budget ({} / {} tokens). \
+                         Composer will not compress protected author intent, current focus, \
+                         hard state, or active hook evidence.",
+                        protected_tokens, budget_tokens
+                    )));
+                }
+                BudgetApplication::OverBudgetNoCompressible => {
+                    tracing::warn!(
+                        chapter = chapter_number,
+                        "[composer] context over budget but no compressible entries — keeping as-is"
+                    );
+                    trace_notes.push("context-over-budget-no-compressible-entries".to_string());
+                }
+                BudgetApplication::Compiled {
+                    protected_tokens,
+                    compressible_tokens,
+                    compile_budget,
+                    ..
+                } => {
+                    tracing::info!(
+                        chapter = chapter_number,
+                        protected_tokens,
+                        compressible_tokens,
+                        compile_budget,
+                        "[composer] compiling compressible context"
+                    );
+                    let language = crate::infrastructure::state_store::gc::utils::read_book_language_from_dir(book_dir)
+                        .unwrap_or_else(|| "zh".to_string());
+                    let compiled = self
+                        .compile_compressible_context(
+                            ctx,
+                            chapter_number,
+                            &plan.intent.goal,
+                            &language,
+                            compile_budget,
+                            &context_package,
+                        )
+                        .await?;
+                    context_package = build_compiled_context_package(&context_package, compiled);
+                    trace_notes.push("compiled-compressible-context".to_string());
+                }
+            }
+        }
+
+        // 3. 构建 rule stack
         let rule_stack = build_governed_rule_stack(plan, chapter_number);
 
-        // Build trace
+        // 4. 构建 trace
         let trace = build_governed_trace(
             chapter_number,
             plan,
             &context_package,
             vec!["truth_files".to_string()],
-            Vec::new(),
+            trace_notes,
         );
 
-        // Save to disk
+        // 5. 保存到磁盘
         let runtime_dir = story_dir.join("runtime");
         std::fs::create_dir_all(&runtime_dir)?;
 
@@ -76,6 +134,79 @@ impl ComposerAgent {
             rule_stack,
             trace,
         })
+    }
+
+    /// S5.4: 用 LLM 编译可压缩上下文段。
+    ///
+    /// 与 inkos `compileCompressibleContext` 对齐：
+    /// - 只编译 compressible 段
+    /// - protected 段作为参照传入，但不得改写
+    /// - 输出简洁 Markdown，保留人名、未兑现承诺、证据、时间点
+    async fn compile_compressible_context(
+        &self,
+        ctx: &AgentContext,
+        chapter_number: u32,
+        goal: &str,
+        language: &str,
+        compile_budget: u32,
+        context_package: &ContextPackage,
+    ) -> Result<String, AppError> {
+        let protected_entries: Vec<&ContextSource> = context_package
+            .selected_context
+            .iter()
+            .filter(|e| crate::infrastructure::utils::context_assembly::is_protected_context_source(&e.source))
+            .collect();
+        let compressible_entries: Vec<&ContextSource> = context_package
+            .selected_context
+            .iter()
+            .filter(|e| !crate::infrastructure::utils::context_assembly::is_protected_context_source(&e.source))
+            .collect();
+
+        let protected_block = render_context_entries(
+            &protected_entries.into_iter().cloned().collect::<Vec<_>>(),
+        );
+        let compressible_block = render_context_entries(
+            &compressible_entries.into_iter().cloned().collect::<Vec<_>>(),
+        );
+
+        let (system, user) = if language == "en" {
+            (
+                "You are the semantic context compiler.\n\
+                 Only compile the COMPRESSIBLE CONTEXT. The PROTECTED CONTEXT is binding reference material and must not be rewritten, summarized as a substitute, or weakened.\n\
+                 Output concise Markdown with source pointers. Preserve names, unresolved promises, evidence, timing, and constraints that may affect the next chapter. Drop low-relevance noise.".to_string(),
+                format!(
+                    "Chapter: {}\nGoal: {}\nTarget budget for compiled context: <= {} estimated input tokens\n\n\
+                     ## Protected Context (reference only, do not compile)\n{}\n\n\
+                     ## Compressible Context (compile this)\n{}",
+                    chapter_number, goal, compile_budget,
+                    if protected_block.is_empty() { "(none)" } else { &protected_block },
+                    if compressible_block.is_empty() { "(none)" } else { &compressible_block },
+                ),
+            )
+        } else {
+            (
+                "你是语义上下文编译器。\n\
+                 只能编译【可压缩上下文】。【受保护上下文】是绑定参照，不得改写、不得替代总结、不得削弱。\n\
+                 输出简洁 Markdown，保留来源指针。保留会影响下一章的人名、未兑现承诺、证据、时间点和约束，丢弃低相关噪声。".to_string(),
+                format!(
+                    "章节：第{}章\n目标：{}\n压缩后目标预算：不超过 {} 估算输入 tokens\n\n\
+                     ## 受保护上下文（只作为参照，不要编译它）\n{}\n\n\
+                     ## 可压缩上下文（只编译这一部分）\n{}",
+                    chapter_number, goal, compile_budget,
+                    if protected_block.is_empty() { "（无）" } else { &protected_block },
+                    if compressible_block.is_empty() { "（无）" } else { &compressible_block },
+                ),
+            )
+        };
+
+        let response = self.chat(ctx, &system, &user).await?;
+        let compiled = response.content.trim().to_string();
+        if compiled.is_empty() {
+            return Err(AppError::internal(
+                "Compressible context compiler returned empty output.".to_string()
+            ));
+        }
+        Ok(compiled)
     }
 }
 
@@ -139,9 +270,18 @@ fn read_truth_files(story_dir: &std::path::Path) -> TruthFiles {
 fn select_relevant_context(
     truth_files: &TruthFiles,
     _plan: &PlanOutput,
-    _chapter_number: u32,
+    chapter_number: u32,
 ) -> Vec<ContextSource> {
     let mut sources = Vec::new();
+
+    // S5.5: 从 volume_map 提取本章 POV 角色
+    let pov_character = crate::infrastructure::utils::pov_filter::extract_pov_from_outline(
+        &truth_files.volume_map,
+        chapter_number,
+    );
+    if let Some(ref pov) = pov_character {
+        tracing::debug!(chapter = chapter_number, pov = %pov, "[composer] POV detected, applying POV-aware filtering");
+    }
 
     // Protected sources (always included, never compressed)
     if !truth_files.story_frame.is_empty() {
@@ -189,7 +329,17 @@ fn select_relevant_context(
         });
     }
     if !truth_files.pending_hooks.is_empty() {
-        let filtered = crate::infrastructure::utils::context_filter::filter_hooks(&truth_files.pending_hooks);
+        // S5.5: 应用 POV 过滤（如果有 POV 角色）
+        let hooks_after_context_filter = crate::infrastructure::utils::context_filter::filter_hooks(&truth_files.pending_hooks);
+        let filtered = if let Some(ref pov) = pov_character {
+            crate::infrastructure::utils::pov_filter::filter_hooks_by_pov(
+                &hooks_after_context_filter,
+                pov,
+                &truth_files.chapter_summaries,
+            )
+        } else {
+            hooks_after_context_filter
+        };
         sources.push(ContextSource {
             source: "story/pending_hooks.md".to_string(),
             reason: "Active hooks and foreshadowing".to_string(),
@@ -198,7 +348,7 @@ fn select_relevant_context(
     }
     if !truth_files.chapter_summaries.is_empty() {
         let filtered = crate::infrastructure::utils::context_filter::filter_summaries(
-            &truth_files.chapter_summaries, _chapter_number, 5,
+            &truth_files.chapter_summaries, chapter_number, 5,
         );
         sources.push(ContextSource {
             source: "story/chapter_summaries.md".to_string(),
@@ -207,10 +357,19 @@ fn select_relevant_context(
         });
     }
     if !truth_files.character_matrix.is_empty() {
+        // S5.5: 应用 POV 过滤（如果有 POV 角色）
+        let filtered = if let Some(ref pov) = pov_character {
+            crate::infrastructure::utils::pov_filter::filter_matrix_by_pov(
+                &truth_files.character_matrix,
+                pov,
+            )
+        } else {
+            truth_files.character_matrix.clone()
+        };
         sources.push(ContextSource {
             source: "story/character_matrix.md".to_string(),
             reason: "Character relationships".to_string(),
-            excerpt: Some(cap(&truth_files.character_matrix, 3000)),
+            excerpt: Some(cap(&filtered, 3000)),
         });
     }
 

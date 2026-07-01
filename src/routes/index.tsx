@@ -11,8 +11,8 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { KnowledgePage } from "@/pages/KnowledgePage";
 import { WikiPage } from "@/pages/WikiPage";
 import { VersionPage } from "@/pages/VersionPage";
+import { GitPage } from "@/pages/GitPage";
 import ChatPage from "@/pages/ChatPage";
-import KanbanPage from "@/pages/KanbanPage";
 import LoopPage from "@/pages/LoopPage";
 import { OverviewPage } from "@/pages/novel/OverviewPage";
 import { CharactersPage } from "@/pages/novel/CharactersPage";
@@ -70,7 +70,7 @@ export function Router() {
     return <SettingsPage />;
   }
 
-  if (["trends", "novels", "skills", "dashboard", "knowledge", "wiki", "version"].includes(currentPage)) {
+  if (["trends", "novels", "skills", "dashboard", "knowledge", "wiki", "version", "git"].includes(currentPage)) {
     return (
       <>
         {currentPage === "trends" && <TrendsPage />}
@@ -78,16 +78,16 @@ export function Router() {
         {currentPage === "skills" && <SkillsPage />}
         {currentPage === "dashboard" && <DashboardPage />}
         {currentPage === "knowledge" && <KnowledgePage />}
-        {currentPage === "wiki" && <WikiPage novelId="default" />}
+        {currentPage === "wiki" && <WikiPage />}
         {currentPage === "version" && <VersionPage novelId="default" />}
+        {currentPage === "git" && <GitPage />}
       </>
     );
   }
 
-  // KanbanPage and LoopPage manage their own layout
+  // LoopPage manages its own layout
   return (
     <>
-      {currentPage === "kanban" && <KanbanPage />}
       {currentPage === "loops" && <LoopPage />}
     </>
   );

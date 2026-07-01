@@ -122,8 +122,8 @@ export function useWiki(novelId?: string) {
     async (
       sourceId: string,
       targetId: string,
-      linkType: string,
-      description?: string
+      relationType: string,
+      relationDesc?: string
     ) => {
       if (!novelId) throw new Error("No novel selected");
       try {
@@ -131,8 +131,8 @@ export function useWiki(novelId?: string) {
           novelId,
           sourceId,
           targetId,
-          linkType,
-          description
+          relationType,
+          relationDesc
         );
         // 重新加载图谱以反映新链接
         await loadGraph();

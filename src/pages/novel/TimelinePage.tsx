@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   PageContainer,
   PageHeader,
@@ -139,7 +140,7 @@ export function TimelinePage() {
         <EmptyState icon={<ClockIcon />} title={t.timeline.empty} />
       ) : (
         <div className="relative">
-          <div className="absolute left-[72px] top-0 bottom-0 w-px bg-border" />
+          <Separator orientation="vertical" className="absolute left-[72px] top-0 bottom-0" />
           <div className="flex flex-col gap-4">
             {sorted.map((ev) => (
               <div
@@ -167,12 +168,9 @@ export function TimelinePage() {
                       </span>
                       <span className="font-medium">{ev.title}</span>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(ev.id); }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
-                    >
-                      <Trash2Icon className="size-3" />
-                    </button>
+                    <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); handleDelete(ev.id); }} className="opacity-0 group-hover:opacity-100 text-destructive">
+                      <Trash2Icon />
+                    </Button>
                   </div>
                   {ev.description && (
                     <p className="text-xs text-muted-foreground">{ev.description}</p>

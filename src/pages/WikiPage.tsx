@@ -25,11 +25,37 @@ import { PageContainer, PageHeader, PageHeading, PageTitle, PageDescription, Pag
 import { LoadingState, EmptyState } from "@/components/shared/state";
 import { useWiki } from "@/features/wiki/hooks/useWiki";
 import { WikiEntryEditor, WikiGraphViewComponent } from "@/features/wiki/components";
-import type { WikiEntry, WikiCategory, CreateWikiEntryRequest, UpdateWikiEntryRequest } from "@/shared/types";
+import { useI18n } from "@/shared/i18n";
+import { useWorkspaceStore } from "@/stores/workspace";
+import { fetchNovels } from "@/features/novel/services";
+import type { WikiEntry, WikiCategory, CreateWikiEntryRequest, UpdateWikiEntryRequest, Novel } from "@/shared/types";
 
-const WIKI_CATEGORIES: WikiCategory[] = ["character", "location", "event", "concept", "item", "other"];
+const WIKI_CATEGORIES: WikiCategory[] = ["general", "character", "location", "event", "concept", "reference"];
 
-export function WikiPage({ novelId }: { novelId: string }) {
+/**
+ * WikiPage 不再接收硬编码 novelId，而是从 active workspace 自动获取
+ * 该 workspace 下的第一个 novel 作为 wiki 的归属。
+ *
+ * 若 workspace 下没有 novel，显示空状态提示用户先创建 novel。
+ */
+export function WikiPage() {
+  const { t } = useI18n();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const [novels, setNovels] = useState<Novel[]>([]);
+
+  useEffect(() => {
+    fetchNovels()
+      .then(setNovels)
+      .catch(() => setNovels([]));
+  }, [activeWorkspaceId]);
+
+  // 当前 workspace 下的第一个 novel（wiki 绑定到 novel）
+  const activeNovel = useMemo(() => {
+    if (!activeWorkspaceId) return undefined;
+    return novels.find((n) => n.workspace_id === activeWorkspaceId);
+  }, [novels, activeWorkspaceId]);
+
+  const novelId = activeNovel?.id;
   const {
     entries,
     graph,
@@ -49,9 +75,11 @@ export function WikiPage({ novelId }: { novelId: string }) {
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
-    loadEntries();
-    loadGraph();
-  }, [loadEntries, loadGraph]);
+    if (novelId) {
+      loadEntries();
+      loadGraph();
+    }
+  }, [loadEntries, loadGraph, novelId]);
 
   const filteredEntries = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -100,6 +128,49 @@ export function WikiPage({ novelId }: { novelId: string }) {
     [entries],
   );
 
+  // 无 active workspace 或 workspace 下无 novel 的空状态
+  if (!activeWorkspaceId) {
+    return (
+      <PageContainer>
+        <PageHeader>
+          <PageHeading>
+            <PageTitle>
+              <BookOpenIcon />
+              {t.wiki.title}
+            </PageTitle>
+            <PageDescription>{t.wiki.description}</PageDescription>
+          </PageHeading>
+        </PageHeader>
+        <EmptyState
+          icon={<BookOpenIcon />}
+          title={t.wiki.noWorkspace}
+          description={t.wiki.noWorkspaceHint}
+        />
+      </PageContainer>
+    );
+  }
+
+  if (!novelId) {
+    return (
+      <PageContainer>
+        <PageHeader>
+          <PageHeading>
+            <PageTitle>
+              <BookOpenIcon />
+              {t.wiki.title}
+            </PageTitle>
+            <PageDescription>{t.wiki.description}</PageDescription>
+          </PageHeading>
+        </PageHeader>
+        <EmptyState
+          icon={<BookOpenIcon />}
+          title={t.wiki.noNovel}
+          description={t.wiki.noNovelHint}
+        />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer>
       {/* 头部 */}
@@ -107,16 +178,14 @@ export function WikiPage({ novelId }: { novelId: string }) {
         <PageHeading>
           <PageTitle>
             <BookOpenIcon />
-            Repo Wiki
+            {t.wiki.title}
           </PageTitle>
-          <PageDescription>
-            Knowledge base for your novel
-          </PageDescription>
+          <PageDescription>{t.wiki.description}</PageDescription>
         </PageHeading>
         <PageActions>
           <Button onClick={() => setIsCreating(true)}>
             <PlusIcon data-icon="inline-start" />
-            New Entry
+            {t.wiki.newEntry}
           </Button>
         </PageActions>
       </PageHeader>
@@ -125,11 +194,11 @@ export function WikiPage({ novelId }: { novelId: string }) {
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "list" | "graph")} className="flex-1 flex flex-col gap-2">
         <TabsList>
           <TabsTrigger value="list">
-            List ({entries.length})
+            {t.wiki.listView} ({entries.length})
           </TabsTrigger>
           <TabsTrigger value="graph">
             <NetworkIcon className="size-4" />
-            Graph
+            {t.wiki.graphView}
           </TabsTrigger>
         </TabsList>
 
@@ -152,7 +221,7 @@ export function WikiPage({ novelId }: { novelId: string }) {
                 <div className="relative flex-1 max-w-sm">
                   <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search entries..."
+                    placeholder={t.wiki.searchPlaceholder}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -165,7 +234,7 @@ export function WikiPage({ novelId }: { novelId: string }) {
                     size="sm"
                     onClick={() => setFilterCategory("all")}
                   >
-                    All
+                    {t.wiki.all}
                     <Badge variant="outline" className="size-5 justify-center text-xs">
                       {entries.length}
                     </Badge>
@@ -180,7 +249,7 @@ export function WikiPage({ novelId }: { novelId: string }) {
                         size="sm"
                         onClick={() => setFilterCategory(filterCategory === cat ? "all" : cat)}
                       >
-                        {cat}
+                        {t.wiki.categories[cat]}
                         <Badge variant="outline" className="size-5 justify-center text-xs">
                           {count}
                         </Badge>
@@ -196,12 +265,12 @@ export function WikiPage({ novelId }: { novelId: string }) {
               ) : filteredEntries.length === 0 ? (
                 <EmptyState
                   icon={<BookOpenIcon />}
-                  title="No entries yet"
-                  description="Create your first wiki entry"
+                  title={t.wiki.empty}
+                  description={t.wiki.emptyHint}
                 >
                   <Button onClick={() => setIsCreating(true)}>
                     <PlusIcon data-icon="inline-start" />
-                    New Entry
+                    {t.wiki.newEntry}
                   </Button>
                 </EmptyState>
               ) : (
@@ -218,8 +287,8 @@ export function WikiPage({ novelId }: { novelId: string }) {
                             <div className="flex-1 min-w-0 flex flex-col gap-2">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium truncate">{entry.title}</span>
-                                <Badge variant="secondary" className="shrink-0 text-xs capitalize">
-                                  {entry.category}
+                                <Badge variant="secondary" className="shrink-0 text-xs">
+                                  {t.wiki.categories[entry.category]}
                                 </Badge>
                                 {entry.importance >= 5 && (
                                   <Badge variant="outline" className="shrink-0 text-xs">
@@ -250,7 +319,7 @@ export function WikiPage({ novelId }: { novelId: string }) {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => setEditingEntry(entry)}>
                                   <PencilIcon />
-                                  <span>Edit</span>
+                                  <span>{t.common.edit}</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={(e) => {
@@ -260,7 +329,7 @@ export function WikiPage({ novelId }: { novelId: string }) {
                                   className="text-destructive"
                                 >
                                   <Trash2Icon />
-                                  <span>Delete</span>
+                                  <span>{t.common.delete}</span>
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -286,8 +355,8 @@ export function WikiPage({ novelId }: { novelId: string }) {
           ) : (
             <EmptyState
               icon={<NetworkIcon />}
-              title="No graph data"
-              description="Create entries to see the knowledge graph"
+              title={t.wiki.noGraph}
+              description={t.wiki.noGraphHint}
             />
           )}
         </TabsContent>

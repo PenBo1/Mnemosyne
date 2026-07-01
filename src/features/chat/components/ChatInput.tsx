@@ -5,6 +5,10 @@ import {
   Paperclip,
   Mic,
   Zap,
+  X,
+  FileText,
+  BookOpen,
+  FileCode,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "@/shared/i18n";
@@ -22,6 +26,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ContextPicker } from "./ContextPicker";
+import { Button } from "@/components/ui/button";
+import type { AttachmentSpec } from "@/shared/types";
 
 export function ChatInput({
   value,
@@ -29,14 +36,24 @@ export function ChatInput({
   onSubmit,
   onCancel,
   streaming,
+  attachments,
   onAttachFile,
+  onAddAttachment,
+  onRemoveAttachment,
+  workspaceId,
+  workspacePath,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   streaming: boolean;
+  attachments: AttachmentSpec[];
   onAttachFile: (filePath: string) => void;
+  onAddAttachment: (att: AttachmentSpec) => void;
+  onRemoveAttachment: (index: number) => void;
+  workspaceId: string | null;
+  workspacePath: string | null;
 }) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -91,6 +108,38 @@ export function ChatInput({
               : "border-[var(--border-neutral-l1)]"
           )}
         >
+          {/* Attachment chips */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+              {attachments.map((att, i) => (
+                <span
+                  key={`${att.kind}-${att.ref}-${i}`}
+                  className="inline-flex items-center gap-1 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l2)] py-1 pl-1.5 pr-1 text-[11px] text-[var(--text-secondary)]"
+                >
+                  {att.kind === "wiki" ? (
+                    <BookOpen className="size-3 text-[var(--text-tertiary)]" />
+                  ) : att.kind === "chapter" ? (
+                    <FileCode className="size-3 text-[var(--text-tertiary)]" />
+                  ) : att.kind === "file" ? (
+                    <FileText className="size-3 text-[var(--text-tertiary)]" />
+                  ) : (
+                    <FileText className="size-3 text-[var(--text-tertiary)]" />
+                  )}
+                  <span className="max-w-40 truncate">{att.label}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRemoveAttachment(i)}
+                    className="size-3.5"
+                    aria-label={t.agentChat.removeAttachment}
+                  >
+                    <X className="size-2.5" />
+                  </Button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Textarea area */}
           <textarea
             ref={textareaRef}
@@ -110,38 +159,35 @@ export function ChatInput({
               {/* Paperclip -- real file picker */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-lg"
                     onClick={() => { void handleAttachFile(); }}
-                    className="flex size-8 items-center justify-center rounded-[var(--radius-6)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
-                    aria-label="Attach file"
+                    aria-label={t.agentChat.attachFile}
                   >
-                    <Paperclip className="size-4" />
-                  </button>
+                    <Paperclip />
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent>{t.agentChat.files}</TooltipContent>
+                <TooltipContent>{t.agentChat.attachFile}</TooltipContent>
               </Tooltip>
 
+              {/* Context picker -- wiki entries + chapter files */}
+              <ContextPicker
+                workspaceId={workspaceId}
+                workspacePath={workspacePath}
+                onAddAttachment={onAddAttachment}
+              />
+
               {/* Quick pass toggle */}
-              <button
-                type="button"
+              <Button
+                variant={quickPass ? "secondary" : "ghost"}
+                size="sm"
                 onClick={() => setQuickPass((prev) => !prev)}
-                className={cn(
-                  "flex items-center gap-1 rounded-[var(--radius-6)] px-2 py-1 text-[11px] font-medium transition-colors",
-                  quickPass
-                    ? "bg-[var(--bg-brand)]/15 text-[var(--bg-brand)]"
-                    : "text-[var(--text-tertiary)] hover:bg-[var(--bg-overlay-l1)] hover:text-[var(--text-secondary)]"
-                )}
                 aria-label={t.agentChat.quickPass}
               >
-                <Zap
-                  className={cn(
-                    "size-3.5",
-                    quickPass && "fill-[var(--bg-brand)]"
-                  )}
-                />
+                <Zap className={cn(quickPass && "fill-[var(--bg-brand)]")} />
                 <span>{t.agentChat.quickPass}</span>
-              </button>
+              </Button>
             </div>
 
             {/* Right actions */}
@@ -149,14 +195,14 @@ export function ChatInput({
               {/* Mic button -- disabled, coming soon */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-lg"
                     disabled
-                    className="flex size-8 items-center justify-center rounded-[var(--radius-6)] text-[var(--text-tertiary)]/30 cursor-not-allowed"
                     aria-label="Voice input"
                   >
-                    <Mic className="size-4" />
-                  </button>
+                    <Mic />
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent>Coming soon</TooltipContent>
               </Tooltip>
@@ -190,29 +236,26 @@ export function ChatInput({
 
               {/* Send / Stop */}
               {streaming ? (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon-lg"
                   onClick={onCancel}
-                  className="flex size-8 items-center justify-center rounded-[var(--radius-full)] bg-[var(--status-error-default)]/10 text-[var(--status-error-default)] transition-colors hover:bg-[var(--status-error-default)]/20"
+                  className="rounded-full bg-[var(--status-error-default)]/10 text-[var(--status-error-default)] hover:bg-[var(--status-error-default)]/20"
                   aria-label={t.agentChat.stop}
                 >
-                  <StopCircle className="size-4" />
-                </button>
+                  <StopCircle />
+                </Button>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant={canSend ? "brand" : "ghost"}
+                  size="icon-lg"
                   onClick={onSubmit}
                   disabled={!canSend}
-                  className={cn(
-                    "flex size-8 items-center justify-center rounded-[var(--radius-full)] transition-all",
-                    canSend
-                      ? "bg-[var(--status-primary-default)] text-white shadow-sm hover:opacity-90 active:scale-95"
-                      : "cursor-not-allowed bg-[var(--bg-overlay-l1)] text-[var(--text-tertiary)]/30"
-                  )}
+                  className="rounded-full"
                   aria-label={t.agentChat.send}
                 >
-                  <ArrowUp className="size-4" />
-                </button>
+                  <ArrowUp />
+                </Button>
               )}
             </div>
           </div>

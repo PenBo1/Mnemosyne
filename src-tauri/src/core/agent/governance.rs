@@ -79,6 +79,25 @@ pub struct TokenBudget {
     pub total_selected_tokens: u32,
 }
 
+/// S5.4: 章节上下文预算。
+///
+/// 移植自 inkos `ContextBudget`。当总 token 超过 `context_window_tokens - reserved_output_tokens`
+/// 时，触发 compressible 段 LLM 编译压缩。protected 段永不压缩。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ContextBudget {
+    /// LLM 上下文窗口大小（tokens）
+    pub context_window_tokens: u32,
+    /// 为输出预留的 tokens（max_tokens）
+    pub reserved_output_tokens: u32,
+}
+
+impl ContextBudget {
+    /// 可用于输入的 token 数 = 上下文窗口 - 输出预留
+    pub fn available_input_tokens(&self) -> u32 {
+        self.context_window_tokens.saturating_sub(self.reserved_output_tokens)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContextTiers {
     pub protected_sources: Vec<String>,
@@ -174,5 +193,33 @@ mod tests {
         let parsed: ChapterIntent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.chapter, intent.chapter);
         assert_eq!(parsed.goal, intent.goal);
+    }
+
+    #[test]
+    fn test_context_budget_available_input_tokens() {
+        let budget = ContextBudget {
+            context_window_tokens: 128_000,
+            reserved_output_tokens: 8_000,
+        };
+        assert_eq!(budget.available_input_tokens(), 120_000);
+    }
+
+    #[test]
+    fn test_context_budget_saturating_sub() {
+        // reserved > window 时不应下溢
+        let budget = ContextBudget {
+            context_window_tokens: 1_000,
+            reserved_output_tokens: 2_000,
+        };
+        assert_eq!(budget.available_input_tokens(), 0);
+    }
+
+    #[test]
+    fn test_context_budget_zero_window() {
+        let budget = ContextBudget {
+            context_window_tokens: 0,
+            reserved_output_tokens: 0,
+        };
+        assert_eq!(budget.available_input_tokens(), 0);
     }
 }

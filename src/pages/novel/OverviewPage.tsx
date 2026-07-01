@@ -28,8 +28,10 @@ import { LoadingState, EmptyState } from "@/components/shared/state";
 import {
   BookOpenIcon,
   EditIcon,
+  BookmarkIcon,
 } from "lucide-react";
 import { useOverview } from "@/features/story/hooks";
+import { HookLedgerPanel } from "@/features/story/components/HookLedgerPanel";
 
 export function OverviewPage() {
   const { t } = useI18n();
@@ -115,6 +117,18 @@ export function OverviewPage() {
           </div>
         </div>
       )}
+
+      {/* Hook 账本：展示 + 手动 resolve/defer/reopen */}
+      <div className="flex flex-col gap-2">
+        <PageHeading>
+          <PageTitle>
+            <BookmarkIcon />
+            {t.overview.hookLedgerTitle}
+          </PageTitle>
+          <PageDescription>{t.overview.hookLedgerDesc}</PageDescription>
+        </PageHeading>
+        <HookLedgerPanel novelId={novel.id} />
+      </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>

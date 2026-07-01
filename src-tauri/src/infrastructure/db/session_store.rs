@@ -10,6 +10,7 @@ use crate::shared::errors::AppError;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionRequest {
     pub novel_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub title: Option<String>,
 }
 
@@ -17,6 +18,7 @@ pub struct CreateSessionRequest {
 pub struct Session {
     pub id: String,
     pub novel_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub session_type: String,
     pub title: String,
     pub summary: Option<String>,
@@ -92,16 +94,18 @@ impl Database {
         let now = Utc::now().to_rfc3339();
         let title = req.title.unwrap_or_default();
         let novel_id = req.novel_id.clone();
+        let workspace_id = req.workspace_id.clone();
 
         sqlx::query(
-            "INSERT INTO sessions (id, novel_id, session_type, title, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at) VALUES (?, ?, 'chat', ?, 0, 0, 0, 0.0, 'active', ?, ?)"
+            "INSERT INTO sessions (id, novel_id, workspace_id, session_type, title, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at) VALUES (?, ?, ?, 'chat', ?, 0, 0, 0, 0.0, 'active', ?, ?)"
         )
-        .bind(&id).bind(&novel_id).bind(&title).bind(&now).bind(&now)
+        .bind(&id).bind(&novel_id).bind(&workspace_id).bind(&title).bind(&now).bind(&now)
         .execute(&self.pool).await.map_err(db_err)?;
 
         Ok(Session {
             id,
             novel_id,
+            workspace_id,
             session_type: "chat".to_string(),
             title,
             summary: None,
@@ -117,36 +121,36 @@ impl Database {
 
     pub async fn get_session(&self, id: &str) -> Result<Option<Session>, AppError> {
         sqlx::query(
-            "SELECT id, novel_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at FROM sessions WHERE id = ?"
+            "SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at FROM sessions WHERE id = ?"
         )
         .bind(id)
         .map(|row: sqlx::sqlite::SqliteRow| Session {
-            id: row.get(0usize), novel_id: row.get(1usize), session_type: row.get(2usize),
-            title: row.get(3usize), summary: row.get(4usize), message_count: row.get(5usize),
-            input_tokens: row.get(6usize), output_tokens: row.get(7usize), cost: row.get(8usize),
-            status: row.get(9usize), created_at: row.get(10usize), updated_at: row.get(11usize),
+            id: row.get(0usize), novel_id: row.get(1usize), workspace_id: row.get(2usize),
+            session_type: row.get(3usize), title: row.get(4usize), summary: row.get(5usize),
+            message_count: row.get(6usize), input_tokens: row.get(7usize), output_tokens: row.get(8usize),
+            cost: row.get(9usize), status: row.get(10usize), created_at: row.get(11usize), updated_at: row.get(12usize),
         })
         .fetch_optional(&self.pool).await.map_err(db_err)
     }
 
     pub async fn list_sessions(&self, novel_id: Option<&str>) -> Result<Vec<Session>, AppError> {
         let map_session = |row: sqlx::sqlite::SqliteRow| Session {
-            id: row.get(0usize), novel_id: row.get(1usize), session_type: row.get(2usize),
-            title: row.get(3usize), summary: row.get(4usize), message_count: row.get(5usize),
-            input_tokens: row.get(6usize), output_tokens: row.get(7usize), cost: row.get(8usize),
-            status: row.get(9usize), created_at: row.get(10usize), updated_at: row.get(11usize),
+            id: row.get(0usize), novel_id: row.get(1usize), workspace_id: row.get(2usize),
+            session_type: row.get(3usize), title: row.get(4usize), summary: row.get(5usize),
+            message_count: row.get(6usize), input_tokens: row.get(7usize), output_tokens: row.get(8usize),
+            cost: row.get(9usize), status: row.get(10usize), created_at: row.get(11usize), updated_at: row.get(12usize),
         };
 
         if let Some(nid) = novel_id {
             sqlx::query(
-                "SELECT id, novel_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at FROM sessions WHERE novel_id = ? ORDER BY updated_at DESC"
+                "SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at FROM sessions WHERE novel_id = ? ORDER BY updated_at DESC"
             )
             .bind(nid)
             .map(map_session)
             .fetch_all(&self.pool).await.map_err(db_err)
         } else {
             sqlx::query(
-                "SELECT id, novel_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+                "SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
             )
             .map(map_session)
             .fetch_all(&self.pool).await.map_err(db_err)

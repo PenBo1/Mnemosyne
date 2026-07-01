@@ -53,7 +53,12 @@ pub struct ConfirmationRequest {
 /// User's response to a confirmation request
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConfirmationResponse {
+    /// 批准本次执行。
     Approved,
+    /// 批准本次执行 + 后续同名工具自动通过（"首次确认+可自动"模式）。
+    /// agent loop 收到后会把这个 tool_name 加入 auto_approved_tools，
+    /// 后续同名工具调用直接放行，不再触发确认。
+    ApprovedAuto,
     Rejected,
     Modified(String),
 }

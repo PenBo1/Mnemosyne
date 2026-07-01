@@ -47,9 +47,9 @@ export function CreateWorkspaceDialog({
       }
     }}>
       <DialogTrigger asChild>
-        <button className="rounded-[var(--radius-4)] p-0.5 hover:bg-sidebar-accent">
-          <PlusIcon className="size-3.5" />
-        </button>
+        <Button variant="ghost" size="icon-sm">
+          <PlusIcon />
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

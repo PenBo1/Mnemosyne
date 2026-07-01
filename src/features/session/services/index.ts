@@ -1,8 +1,12 @@
 import { ipc } from "@/infrastructure/api";
 import type { Session, Message } from "@/shared/types";
 
-export async function createSession(novelId?: string, title?: string): Promise<Session> {
-  return ipc<Session>("session_create", { novelId, title });
+export async function createSession(
+  novelId?: string,
+  title?: string,
+  workspaceId?: string
+): Promise<Session> {
+  return ipc<Session>("session_create", { novelId, workspaceId, title });
 }
 
 export async function listSessions(novelId?: string): Promise<Session[]> {

@@ -41,6 +41,24 @@ impl Database {
 
         Ok(Self { pool })
     }
+
+    /// 创建内存数据库并执行所有迁移。
+    ///
+    /// 仅用于单元测试：每个测试一个独立连接池，互不干扰，跑完即销毁。
+    #[cfg(test)]
+    pub async fn connect_in_memory() -> Result<Self, AppError> {
+        let pool = SqlitePool::connect("sqlite::memory:").await.map_err(db_err)?;
+
+        // 内存库同样需要外键约束（PRAGMA foreign_keys 在 :memory: 上有效）
+        for pragma in [
+            "PRAGMA foreign_keys = ON",
+        ] {
+            pool.execute(pragma).await.map_err(db_err)?;
+        }
+
+        crate::infrastructure::db::migrate::run_migrate(&pool).await?;
+        Ok(Self { pool })
+    }
 }
 
 /// 将 sqlx::Error 转换为 AppError。

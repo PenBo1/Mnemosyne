@@ -2,10 +2,10 @@
 
 import type { Workspace } from "./workspace";
 
-export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources";
+export type SettingsTab = "general" | "model" | "prompts" | "agents" | "audit" | "system" | "bookSources" | "git";
 
 export type WorkspacePage = "overview" | "characters" | "worldbuilding" | "plot" | "timeline" | "research";
-export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version" | "kanban" | "loops";
+export type AppPage = WorkspacePage | "settings" | "trends" | "novels" | "skills" | "chat" | "memory" | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version" | "loops" | "git";
 
 export interface AppState {
   currentPage: AppPage;

@@ -1,4 +1,5 @@
 import { BookOpen, Users, Globe, GitBranch, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/shared/i18n";
 
 interface FeaturePill {
@@ -37,14 +38,15 @@ export function EmptyState() {
         {/* Feature Pills */}
         <div className="flex flex-wrap items-center justify-center gap-2">
           {FEATURES.map((feature) => (
-            <button
+            <Button
               key={feature.labelKey}
-              type="button"
-              className="flex items-center gap-1.5 rounded-[var(--radius-full)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] px-3.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--status-primary-default)]/30 hover:text-[var(--text-default)] hover:bg-[var(--status-primary-surface-l1)]"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
             >
-              <feature.icon className="size-3.5" />
+              <feature.icon />
               {t.agentChat[feature.labelKey]}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

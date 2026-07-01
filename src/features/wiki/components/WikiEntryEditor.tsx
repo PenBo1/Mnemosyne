@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/shared/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { X } from "lucide-react";
 import { useI18n } from "@/shared/i18n";
 import type { WikiEntry, WikiCategory, CreateWikiEntryRequest, UpdateWikiEntryRequest } from "@/shared/types";
 
-const WIKI_CATEGORIES: WikiCategory[] = ["character", "location", "event", "concept", "item", "other"];
+const WIKI_CATEGORIES: WikiCategory[] = ["general", "character", "location", "event", "concept", "reference"];
 
 interface WikiEntryEditorProps {
   entry?: WikiEntry | null;
@@ -21,7 +24,7 @@ export function WikiEntryEditor({ entry, onSave, onCancel, isNew = false, classN
   const { t } = useI18n();
   const [title, setTitle] = useState(entry?.title || "");
   const [content, setContent] = useState(entry?.content || "");
-  const [category, setCategory] = useState<WikiCategory>(entry?.category || "other");
+  const [category, setCategory] = useState<WikiCategory>(entry?.category || "general");
   const [tags, setTags] = useState<string[]>(entry?.tags || []);
   const [importance, setImportance] = useState(entry?.importance || 0);
   const [sourceChapter, setSourceChapter] = useState<number | undefined>(entry?.source_chapter || undefined);
@@ -38,7 +41,7 @@ export function WikiEntryEditor({ entry, onSave, onCancel, isNew = false, classN
     } else if (isNew) {
       setTitle("");
       setContent("");
-      setCategory("other");
+      setCategory("general");
       setTags([]);
       setImportance(0);
       setSourceChapter(undefined);
@@ -137,20 +140,21 @@ export function WikiEntryEditor({ entry, onSave, onCancel, isNew = false, classN
               }}
             />
             <Button variant="outline" size="sm" onClick={handleAddTag} className="h-8">
-              Add
+              {t.common.add}
             </Button>
           </div>
           {tags.length > 0 && (
             <div className="flex gap-1 flex-wrap">
               {tags.map((tag) => (
-                <span
+                <Badge
                   key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs cursor-pointer hover:bg-muted/80"
+                  variant="secondary"
+                  className="cursor-pointer gap-1"
                   onClick={() => handleRemoveTag(tag)}
                 >
                   {tag}
-                  <span className="text-muted-foreground">×</span>
-                </span>
+                  <X className="size-3" />
+                </Badge>
               ))}
             </div>
           )}
@@ -158,7 +162,7 @@ export function WikiEntryEditor({ entry, onSave, onCancel, isNew = false, classN
 
         {/* 重要性 */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Importance (0-10)</label>
+          <label className="text-xs font-medium">{t.wiki.importance}</label>
           <div className="flex gap-1">
             {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
               <Button
@@ -176,19 +180,20 @@ export function WikiEntryEditor({ entry, onSave, onCancel, isNew = false, classN
 
         {/* 来源章节 */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Source Chapter</label>
+          <label className="text-xs font-medium">{t.wiki.sourceChapter}</label>
           <Input
             type="number"
             value={sourceChapter || ""}
             onChange={(e) => setSourceChapter(e.target.value ? parseInt(e.target.value) : undefined)}
-            placeholder="Optional"
+            placeholder={t.wiki.optional}
             className="h-8 w-20"
             min={1}
           />
         </div>
 
         {/* 操作 */}
-        <div className="flex gap-2 justify-end pt-2 border-t">
+        <Separator />
+        <div className="flex gap-2 justify-end pt-2">
           <Button variant="outline" size="sm" onClick={onCancel}>
             {t.common.cancel}
           </Button>

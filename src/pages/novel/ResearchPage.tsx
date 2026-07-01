@@ -181,12 +181,9 @@ export function ResearchPage() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive shrink-0"
-              >
-                <Trash2Icon className="size-3" />
-              </button>
+              <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="opacity-0 group-hover:opacity-100 text-destructive">
+                <Trash2Icon />
+              </Button>
             </div>
           ))}
         </div>

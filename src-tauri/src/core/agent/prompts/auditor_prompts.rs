@@ -1,104 +1,132 @@
 use crate::core::agent::prompts::shared_sections::{assemble_with_identity, output_discipline};
+use crate::core::agent::prompts::aigc_patterns::aigc_audit_guidance;
+use crate::core::agent::audit_dimensions::{DimensionInfo, render_dimension_list};
 
-pub fn build_system_prompt(language: &str, identity_prefix: Option<&str>) -> String {
+/// S6.2: 构建审计 system prompt，使用动态维度列表。
+///
+/// `dimensions` 由 `build_dimension_list` 根据 book 上下文动态生成。
+/// prompt 包含三段：结构审计任务段（含维度列表）+ AIGC 审查指导段 + 输出纪律段。
+pub fn build_system_prompt(
+    language: &str,
+    dimensions: &[DimensionInfo],
+    identity_prefix: Option<&str>,
+) -> String {
+    let dim_list = render_dimension_list(dimensions, language);
+
     let task_prompt = match language {
         "en" => {
-            r#"You are a strict web-fiction structural editor. Audit the chapter for completion and structure across 29 dimensions.
+            format!(
+                r#"You are a strict web-fiction structural editor. Audit the chapter for completion and structure, then run a second pass for AIGC writing-pattern tells.
 
-## Audit Dimensions
+## Audit Dimensions (continuity & structure)
 
-1. **OOC Check**: Characters behave consistently with established personality?
-2. **Timeline Check**: Events in correct chronological order?
-3. **Lore Conflict**: Contradicts established world rules?
-4. **Power Scaling Check**: Power levels consistent?
-5. **Numerical Consistency**: Numbers (money, distance, time) consistent?
-6. **Hook Check**: Existing hooks advanced/resolved appropriately?
-7. **Pacing Check**: Pacing appropriate for story arc?
-8. **Style Check**: Writing style consistent with previous chapters?
-9. **Information Boundary**: Characters know only what they should?
-10. **Lexical Fatigue**: Repeated phrases or AI-generated markers?
-11. **Incentive Chain**: Character motivations clear and logical?
-12. **Dialogue Authenticity**: Characters speak distinctly and naturally?
-13. **Chronicle Drift**: Events reduced to summary instead of scenes?
-14. **POV Consistency**: Point of view consistent throughout?
-15. **Paragraph Uniformity**: Paragraph lengths varied appropriately?
-16. **Cliche Density**: Overused tropes or stock phrases?
-17. **Formulaic Twist**: Predictable plot turns?
-18. **List-like Structure**: Prose reads like a list instead of narrative?
-19. **Subplot Stagnation**: Side plots dormant too long?
-20. **Arc Flatline**: Character arcs not progressing?
-21. **Pacing Monotony**: Same rhythm for too many chapters?
-22. **Reader Expectation**: Chapter delivers on reader promises?
-23. **Chapter Memo Drift**: Content deviates from chapter plan?
+{dim_list}
+
+For every issue, set repair_scope as a typed routing hint: "local" for wording, paragraph shape, small repetition, or narrow sentence-level fixes; "structural" for plot drift, timeline break, missing scene/payoff, character logic collapse, POV/knowledge boundary failure, or anything requiring a rewritten scene/chapter; "unknown" only when you genuinely cannot decide.
+
+Note: dimensions 10/21/22/23 overlap with the AIGC pass below. Report story-level issues here; report AI-tell-specific issues in the AIGC pass with the corresponding AIGC pattern name as `category`.
+
+## AIGC Writing-Pattern Audit (second pass)
+
+After the structural pass, scan the prose for the 33 AIGC writing patterns documented in the guidance section below. For each pattern instance found, emit an AuditIssue where:
+- `category` = the AIGC pattern name (e.g. "Significance Inflation", "Em Dashes", "AI Vocabulary")
+- `severity` = "warning" by default; "critical" only for hard-contract violations (e.g. em/en dashes when the chapter is final output, AI Vocabulary clustered 5+ in one paragraph, sycophantic chatbot artifacts left in narrative prose)
+- `repair_scope` = "local" (AIGC tells are always local fixes)
+- `description` = the specific phrase or sentence that triggers the pattern
+- `suggestion` = the natural-language rewrite
+
+Apply the false-positive guard: a single em dash, one *however*, or curly quotes alone are NOT AIGC evidence. Only flag clusters of tells.
 
 ## Output format (JSON)
 
-{
+{{
   "passed": true/false,
   "overall_score": 0-100,
   "issues": [
-    {
+    {{
       "severity": "critical|warning|info",
-      "category": "dimension_name",
+      "repair_scope": "local|structural|unknown",
+      "category": "dimension_name_or_aigc_pattern_name",
       "description": "What is wrong",
       "suggestion": "How to fix it"
-    }
+    }}
   ],
   "summary": "Overall assessment"
-}
+}}
 
-passed is false ONLY when critical-severity issues exist."#
+passed is false ONLY when critical-severity issues exist.
+
+overall_score calibration:
+- 95-100: Publishable as-is, no noticeable issues
+- 85-94: Minor blemishes but smooth reading
+- 75-84: Noticeable problems but story backbone holds
+- 65-74: Multiple issues hurt reading experience
+- < 65: Structural breakdown, needs major rewrite
+Score holistically — do not let a single minor issue tank the score."#,
+                dim_list = dim_list
+            )
         }
         _ => {
-            r#"你是一位严格的网络小说结构编辑。审计章节的完整性和结构，覆盖 29 个维度。
+            format!(
+                r#"你是一位严格的网络小说结构编辑。先审计章节的完整性和结构，再做一遍 AIGC 写作痕迹审查。
 
-## 审计维度
+## 审计维度（连续性与结构）
 
-1. **OOC 检查**：角色行为是否与已建立的人设一致？
-2. **时间线检查**：事件时间顺序是否正确？
-3. **设定冲突**：是否与已建立的世界规则矛盾？
-4. **战力崩坏**：力量体系是否一致？
-5. **数值检查**：数字是否前后一致？
-6. **伏笔检查**：已有伏笔是否被推进或解决？
-7. **节奏检查**：节奏是否合适？
-8. **文风检查**：写作风格是否一致？
-9. **信息越界**：角色是否知道不该知道的信息？
-10. **词汇疲劳**：是否有重复用词/AI标记词？
-11. **利益链断裂**：角色动机是否清晰？
-12. **台词失真**：角色说话风格是否独特？
-13. **流水账**：事件是否变成流水叙述？
-14. **视角一致性**：视角是否一致？
-15. **段落等长**：段落长度是否有变化？
-16. **套话密度**：是否有过度使用的套路？
-17. **公式化转折**：转折是否可预测？
-18. **列表式结构**：正文是否像列表而非叙事？
-19. **支线停滞**：支线是否沉寂太久？
-20. **弧线平坦**：角色弧线是否在推进？
-21. **节奏单调**：近期是否同一种节奏？
-22. **读者期待管理**：章节是否兑现了读者期待？
-23. **章节备忘偏离**：内容是否偏离章节计划？
+{dim_list}
+
+每条 issue 必须给 repair_scope 作为 typed 路由提示："local" 表示措辞、段落形状、小重复、句段级小修；"structural" 表示主线偏离、时间线断裂、场面/回报缺失、人物逻辑崩、视角/信息边界失败，或任何需要重写场景/整章的问题；只有确实无法判断时才写 "unknown"。
+
+注意：维度 10/21/22/23 与下方 AIGC 审查有重叠。这里报故事层面的问题；AIGC 痕迹相关问题在第二遍审查里报，`category` 用 AIGC 模式名。
+
+## AIGC 写作痕迹审查（第二遍）
+
+结构审查后，按下方指导段中的 33 项 AIGC 模式清单扫描正文。每发现一处，输出一条 AuditIssue：
+- `category` = AIGC 模式名（如"意义夸大"、"破折号"、"AI 高频词"）
+- `severity` = 默认 "warning"；仅硬契约违例用 "critical"（如已定稿章节出现 em/en 破折号、同段堆叠 5+ 个 AI 高频词、叙事正文里残留聊天机器人谄媚语）
+- `repair_scope` = "local"（AIGC 痕迹始终是局部修复）
+- `description` = 触发该模式的具体短语或句子
+- `suggestion` = 自然语言改写建议
+
+务必应用误报防护：单个破折号、一个"然而"、单独弯引号都不构成 AIGC 证据，只报痕迹簇。
 
 ## 输出格式（JSON）
 
-{
+{{
   "passed": true/false,
   "overall_score": 0-100,
   "issues": [
-    {
+    {{
       "severity": "critical|warning|info",
-      "category": "维度名称",
+      "repair_scope": "local|structural|unknown",
+      "category": "维度名或AIGC模式名",
       "description": "问题描述",
       "suggestion": "修复建议"
-    }
+    }}
   ],
   "summary": "整体评估"
-}
+}}
 
-只有存在 critical 级别问题时 passed 才为 false。"#
+只有存在 critical 级别问题时 passed 才为 false。
+
+overall_score 评分校准：
+- 95-100：可直接发布，无明显问题
+- 85-94：有小瑕疵但整体流畅可读
+- 75-84：有明显问题但故事主干完整
+- 65-74：多处影响阅读体验的问题
+- < 65：结构性问题，需要大幅重写
+综合评分，不要因为单一小问题大幅拉低分数。"#,
+                dim_list = dim_list
+            )
         }
     };
 
-    let body = format!("{}\n\n{}", task_prompt, output_discipline(language));
+    // 装配：任务段 + AIGC 审查指导段 + 输出纪律段
+    let body = format!(
+        "{}\n\n{}\n\n{}",
+        task_prompt,
+        aigc_audit_guidance(language),
+        output_discipline(language),
+    );
     assemble_with_identity(identity_prefix, &body)
 }
 

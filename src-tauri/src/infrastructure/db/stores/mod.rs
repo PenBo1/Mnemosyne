@@ -17,7 +17,6 @@
 // trend_store.rs     → stores/trend.rs
 // version_store.rs   → stores/version.rs
 // wiki_store.rs      → stores/wiki.rs
-// kanban_store.rs    → stores/kanban.rs
 // loop_store.rs      → stores/loop.rs
 // ai_log_store.rs    → stores/ai_log.rs
 // stats_store.rs     → stores/stats.rs
