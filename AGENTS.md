@@ -46,6 +46,176 @@ Capabilities are defined in `src-tauri/capabilities/*.json`. Only declared comma
 - Secrets and tokens must never pass through `invoke`.
 - **CSP**: Currently disabled (`null`). Must be re-enabled before production with strict policy (no `unsafe-eval`).
 
+## Security Kernel 模型
+
+Security Kernel 是 Rust 核心的统一安全入口，所有敏感操作必须经过 Kernel 审批。
+
+### 架构图（统一入口）
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           SecurityKernel.execute()                           │
+│                              （唯一安全入口）                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │ Validation  │→ │   Policy    │→ │   Rate      │→ │  Resource   │        │
+│  │   Layer     │  │   Engine    │  │  Limiter    │  │  Manager    │        │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
+│         │               │               │               │                   │
+│         ↓               ↓               ↓               ↓                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │   Path      │  │  Approval   │  │   Rate      │  │   Quota     │        │
+│  │  Sanitizer  │  │   Manager   │  │   Store     │  │   Check     │        │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
+│         │               │               │               │                   │
+│         ↓               ↓               ↓               ↓                   │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │                     Permission Manager                           │       │
+│  │  (Session-based, Capability-check, Scope-validation)            │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+│                                    │                                        │
+│                                    ↓                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │                        Audit Event Bus                           │       │
+│  │  (LoggingHandler, MetricsHandler, SecurityEvent stream)         │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ↓
+                          ┌─────────────────┐
+                          │    Executor     │
+                          │  (Actual Op)    │
+                          └─────────────────┘
+```
+
+### 执行流程
+
+```rust
+SecurityKernel::execute(op, ctx, executor)
+  → ValidationLayer::validate_operation(op)         // 输入校验（路径/URL/ID）
+  → PolicyEngine::evaluate(op, ctx)                 // Policy 决策
+      → if Deny: emit PolicyDenied, return Err
+      → if RequireApproval: 
+          → if ctx.approval_token present:
+              → ApprovalManager::validate(token, op, workspace)
+          → else: emit ApprovalRequested, return Err
+      → if Allow: continue
+  → RateLimiter::check_and_fail(op, workspace)      // 频率限制
+  → ResourceManager::check_quota(workspace)         // 资源配额
+  → PermissionManager::check(op, workspace)         // Capability 校验
+  → executor()                                       // 执行实际操作
+  → AuditEventBus::emit(OperationComplete)          // 审计日志
+```
+
+### Rust Unknown Agent 原则
+
+**核心原则**：前端 Agent 永远不被信任，所有操作请求必须经过 Security Kernel 审批。
+
+| Agent 来源 | 默认信任级别 | Policy 行为 |
+|:-----------|:-------------|:------------|
+| **Unknown Agent**（前端未注册） | `Dangerous` | 默认 Deny 所有操作，必须显式批准 |
+| **Registered Agent**（有 manifest） | 根据插件风险级别 | 按 Global Policy + Plugin Policy 评估 |
+| **Main Agent**（内置核心） | `Trusted` | 允许大部分操作，高风险需 Approval |
+| **Sub-Agent**（由 Main Agent 创建） | 继承父 Agent 信任级别 | 受父 Agent Policy 约束 |
+
+**设计动机**：
+- 前端 WebView 是不可信边界，任何来自前端的"Agent"都可能是被篡改的
+- 插件系统允许第三方扩展，必须通过 Plugin Registry 注册并声明权限
+- Unknown Agent 默认 Dangerous 防止零信任漏洞
+
+### Permission Session 设计（无 Token）
+
+Permission Manager 使用 **Session-based** 权限模型，而非传统 Token-based：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PermissionSession                        │
+├─────────────────────────────────────────────────────────────┤
+│  session_id: SessionId                                      │
+│  workspace: WorkspaceId                                     │
+│  capabilities: Vec<CapabilityId>    // 已授予的能力         │
+│  expires_at: DateTime<Utc>           // Session TTL         │
+│  created_by: UserId                  // 创建者              │
+├─────────────────────────────────────────────────────────────┤
+│  ✅ 无 approval_token 存储                                  │
+│  ✅ 无 bearer_token 传递                                    │
+│  ✅ 权限由 Session + Capability 组合决定                    │
+│  ✅ Session 短生命周期（默认 30 分钟）                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**设计原则**：
+- **无 Token 传递**：Session 不使用可传递的 bearer token，避免 token 泄露风险
+- **Session 隔离**：每个 Session 绑定单一 Workspace，无法跨 Workspace 操作
+- **Capability 组合**：权限由多个 Capability 组合决定，而非单一 role
+- **短生命周期**：Session 默认 30 分钟 TTL，超时自动失效
+
+### Policy Override 层级
+
+Policy 决策采用多层级 Override，高优先级覆盖低优先级：
+
+```
+优先级（从高到低）：
+┌─────────────────────────────────────────────────────────────┐
+│  1. Temporary Override   ← 当前会话临时覆盖（单次操作）      │
+│     (TimeWindow + SingleOperation)                          │
+├─────────────────────────────────────────────────────────────┤
+│  2. User Override        ← 用户级别偏好设置                  │
+│     (UserId → OverrideDecision)                             │
+├─────────────────────────────────────────────────────────────┤
+│  3. Workspace Override   ← 工作空间级别策略                  │
+│     (WorkspaceId → WorkspacePolicy)                         │
+├─────────────────────────────────────────────────────────────┤
+│  4. Global Policy        ← 全局默认策略                      │
+│     (GlobalPolicy + DefaultRiskDecisions)                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Override 规则**：
+- **Temporary Override**：单次操作临时豁免，有时间窗口限制（如 5 分钟内允许特定操作）
+- **User Override**：用户可设置个人偏好（如"始终允许 git push"），但受 Workspace Policy 约束
+- **Workspace Override**：管理员可设置 Workspace 级别策略（如"企业 Workspace 禁止删除"）
+- **Global Policy**：系统默认策略，最低优先级，提供兜底决策
+
+**Override 查找流程**：
+```rust
+PolicyEngine::evaluate(op, ctx)
+  → check temporary_override(ctx.session, op)    // 优先级 1
+      → if found: return override.decision
+  → check user_override(ctx.user, op)            // 优先级 2
+      → if found: return override.decision
+  → check workspace_override(ctx.workspace, op)  // 优先级 3
+      → if found: return workspace_policy.decision
+  → check global_policy(op, risk_level)          // 优先级 4（兜底）
+      → return global.decide_by_risk(risk)
+```
+
+### 安全配置文件
+
+默认安全配置位于 `src-tauri/resources/security.json`：
+
+```json
+{
+  "global_policy": {
+    "default_decision_by_risk": {
+      "low": "Allow",
+      "medium": "RequireApproval",   // 中高风险需审批
+      "high": "RequireApproval",
+      "critical": "Deny"
+    }
+  },
+  "rate_policies": [
+    { "operation": "ReadFile", "max_per_minute": 10000 }  // 读取限频
+  ],
+  "resource_quota": {
+    "token": 1000000    // Token 配额
+  },
+  "network_endpoint_defaults": {
+    "allowed_hosts": ["api.openai.com", "api.anthropic.com"]
+  }
+}
+```
+
 ## Decision methodology
 
 - Use first principles: define goals, constraints, and facts before deriving implementation paths. Force yourself out of analogical reasoning — do not pattern-match from prior solutions or training data; re-derive the answer from the most basic facts of this problem.
@@ -158,43 +328,89 @@ ipc/                 IPC 层（Tauri 命令入口，类型安全契约）
 ### Renderer process (WebView — `src/`)
 
 ```
-pages/ (page components) → features/{feature}/hooks/ → features/{feature}/services/ → infrastructure/api/
+pages/ (page components) → features/{feature}/hooks/ → features/{feature}/services/ → services/ipc/
                                                                                               ↕
                                                                                        stores/ (Zustand)
                                                                                               ↕
-                                                                          core/agent/ (pure logic kernel)
+                                                                          features/agent/services/ (LLM + tools)
 ```
 
-- `pages/` — page-level components, one per route/view. Must not contain IPC calls or business logic. Only call hooks and compose components.
-- `routes/` — Context-based page switcher (no URL router)
-- `features/` — feature modules (each feature is self-contained, communicates via contracts):
-  - `features/chat/` — chat feature (components/, hooks/, services/)
-  - `features/workspace/` — workspace management (components/, hooks/, services/)
-  - `features/story/` — story editing (hooks/, services/)
-  - `features/settings/` — settings page (hooks/, services/)
-  - `features/wiki/`, `features/version/`, `features/loop/`, `features/novel/`, `features/radar/`, `features/memory/`, `features/sandbox/`, `features/skill/`, `features/stats/`, `features/session/`, `features/knowledge/`, `features/tools/` — other features
-- `core/` — core layer (UI-independent pure logic)
-  - `core/agent/` — AI Agent state machine and decision logic (stream-protocol, tool-protocol, session-lifecycle) — no React/Tauri/IPC dependencies, shared by hooks and stores
-  - `core/memory/` — frontend memory management (async action helpers)
-- `infrastructure/` — infrastructure layer (external service adapters)
-  - `infrastructure/api/` — Tauri command wrappers with `ipc<T>()` helper (only IPC exit point)
-  - `infrastructure/event_bus/` — unified event bus (all Tauri `listen()` must go through here)
-- `shared/` — shared layer (cross-module utilities)
-  - `shared/types/` — cross-layer shared types (single source of truth, no type exports from services/hooks)
-  - `shared/constants/` — centralized constants
-  - `shared/utils/` — utility functions
-  - `shared/locales/` — i18n translation files (en.ts, zh.ts)
-  - `shared/i18n.tsx` — I18n full implementation
-  - `shared/theme.tsx` — Theme full implementation
-  - `shared/app-context.tsx` — `useReducer` + Context for global app state (page navigation, settings tab)
-  - `shared/settings.ts` — settings utilities
-- `components/` — common UI components (business-agnostic)
-  - `components/ui/` — shadcn/ui base components (Button, Input, Modal, etc.)
-  - `components/layout/` — layout components (AppLayout, AppSidebar, etc.)
-  - `components/shared/` — shared atomic components
-- `hooks/` — global custom hooks (business-agnostic, e.g. `useCopyFeedback`, `useIsMobile`). Feature-specific hooks live in `features/{feature}/hooks/`.
-- `stores/` — Zustand stores for complex domain state. `stores/agent/` (chat-store.ts + main-agent-store.ts) for AI Agent state.
-- `styles/` — global styles (index.css)
+```
+src/
+├── app/                    # 应用入口（App.tsx, bootstrap, lifecycle）
+├── features/               # 功能模块（chat/agent/workspace/novel/...）
+│   ├── agent/              # AI Agent 独立 feature
+│   │   ├── components/     # Agent UI（ApprovalCard, PlanDiffReview）
+│   │   ├── services/       # Agent 服务（agents/llm/state/subagent/tools/utils + legacy）
+│   │   ├── store/          # Agent stores（agents-store, plan-store, todo-store）
+│   │   ├── prompts/        # Agent prompts（genres/）
+│   │   └── types.ts        # Agent 类型定义
+│   ├── chat/               # Chat feature（components/hooks/services/store/types）
+│   ├── workspace/          # Workspace management（components/hooks/services/store/types）
+│   ├── story/              # Story editing（hooks/services/types/pages/novel）
+│   ├── settings/           # Settings page（hooks/sections/services/types）
+│   ├── wiki/               # Wiki feature
+│   ├── version/            # Version control
+│   ├── novel/              # Novel download/reader
+│   ├── radar/              # Trend radar
+│   ├── memory/             # Memory management
+│   ├── skill/              # Skill management
+│   ├── session/            # Session management
+│   ├── knowledge/          # Knowledge base
+│   ├── tools/              # Tools services（notifications）
+│   ├── git/                # Git integration
+│   └── loop/               # Loop engine
+├── components/             # 全局公共组件
+│   ├── ui/                 # shadcn/ui 基础组件（Button/Input/Modal 等）
+│   ├── layout/             # 布局组件（AppLayout/AppSidebar）
+│   └── shared/             # 共享原子组件（page-layout/search-input/setting-row/state）
+├── services/               # 全局服务
+│   ├── ipc/                # Tauri 命令包装器（ipc<T>() helper）
+│   ├── llm/                # LLM proxy fetch
+│   └── storage/            # 文件存储（fs）
+│   └ settings.ts           # Settings 服务（loadSettings/saveSettings + AI model CRUD）
+├── hooks/                  # 全局 hooks（useAsyncAction/useCopyFeedback/useIsMobile）
+├── stores/                 # 全局 stores（Zustand，复杂领域状态）
+├── lib/                    # 工具函数
+│   ├── utils.ts            # cn() 等 Tailwind 工具
+│   ├── event-bus.ts        # 统一事件总线
+│   ├── constants.ts        # 全局常量（DEFAULT_PAGE/PROMPT_CATEGORIES/DEFAULT_GENRE_CONFIG）
+│   ├── app-context.tsx     # 全局 app state（useReducer + Context）
+│   ├── shortcuts.ts        # 快捷键核心模块
+│   └── theme.tsx           # 主题管理
+├── types/                  # 全局类型定义
+│   ├── app.ts              # AppPage/AppState/SettingsTab
+│   ├── book.ts             # Book 类型
+│   ├── book-rules.ts       # BookRules 类型
+│   ├── genre-profile.ts    # GenreProfile 类型
+│   ├── hook.ts             # Hook 类型
+│   ├── llm.ts              # LLMMessage/LLMResponse/OnStreamProgress
+│   └── ...
+├── locales/                # i18n
+│   ├── en.ts               # 英文翻译
+│   ├── zh.ts               # 中文翻译
+│   ├── i18n.tsx            # I18n 实现
+│   └── index.ts            # 导出
+├── routes/                 # 路由（Context-based page switcher）
+└── styles/                 # 全局样式（index.css）
+```
+
+**Import 路径规范**:
+- `@/features/xxx` — 功能模块（如 `@/features/chat/store`, `@/features/agent/services/llm/chat-runtime`）
+- `@/services/xxx` — 全局服务（如 `@/services/settings`, `@/services/ipc`, `@/services/storage/fs`）
+- `@/types` — 全局类型（如 `@/types/app`, `@/types/llm`）
+- `@/locales` — i18n（如 `@/locales/i18n`）
+- `@/hooks` — 全局 hooks（如 `@/hooks/useAsyncAction`）
+- `@/lib` — 工具函数（如 `@/lib/utils`, `@/lib/constants`, `@/lib/app-context`, `@/lib/theme`）
+- `@/components/xxx` — 全局组件（如 `@/components/ui/button`, `@/components/layout/AppLayout`）
+
+**Rules**:
+- `pages/` 已移除，页面组件在 `features/{feature}/` 下（如 `features/chat/ChatPage.tsx`）
+- `features/agent/` 是 AI Agent 独立功能模块，包含 services（LLM + tools）、store、prompts
+- `features/settings/hooks/` 只放设置相关 hooks，全局 hooks 在 `src/hooks/`
+- `lib/` 只放纯工具函数/Context，不放业务逻辑
+- `services/settings.ts` 是全局 settings 服务，`features/settings/` 是设置页面功能
+- `types/` 是全局类型定义，feature 内部类型在各 feature 的 `types.ts` 或 `types/` 下
 
 ## File & modularization requirements
 
@@ -411,7 +627,7 @@ await ipc("agent_send_message", { session_id: sessionId, content });
 
 ## i18n conventions (CRITICAL)
 
-**No hardcoded strings**: Every user-visible string MUST use i18n. Add keys to both `src/lib/locales/en.ts` and `src/lib/locales/zh.ts`.
+**No hardcoded strings**: Every user-visible string MUST use i18n. Add keys to both `src/locales/en.ts` and `src/locales/zh.ts`.
 
 **Checklist for new features**:
 - [ ] All UI text uses `t.keypath` or `t.section.key`

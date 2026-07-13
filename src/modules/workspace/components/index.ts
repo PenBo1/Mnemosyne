@@ -1,1 +1,0 @@
-export { HeatmapGrid } from "./HeatmapGrid";

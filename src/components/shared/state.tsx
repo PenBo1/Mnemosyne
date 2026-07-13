@@ -1,6 +1,7 @@
 import * as React from "react"
-import { cn } from "@/shared/utils"
+import { cn } from "@/lib/utils"
 import { Spinner } from "@/components/ui/spinner"
+import { Badge } from "@/components/ui/badge"
 import {
   Empty,
   EmptyHeader,
@@ -10,11 +11,6 @@ import {
   EmptyContent,
 } from "@/components/ui/empty"
 
-/**
- * LoadingState — 统一加载态
- *
- * 替代各页面 4 种不同的加载写法（Skeleton / Spinner / "Loading..." / t.common.loading）。
- */
 function LoadingState({
   className,
   label,
@@ -35,12 +31,6 @@ function LoadingState({
   )
 }
 
-/**
- * EmptyState — 统一空态
- *
- * 封装 shadcn Empty 组件，提供图标+标题+描述+操作的标准化空态。
- * 替代各页面 5 种不同的空态写法。
- */
 function EmptyState({
   icon,
   title,
@@ -66,4 +56,20 @@ function EmptyState({
   )
 }
 
-export { LoadingState, EmptyState }
+function StatusBadge({
+  variant = "default",
+  children,
+  className,
+}: {
+  variant?: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info"
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <Badge variant={variant} className={className}>
+      {children}
+    </Badge>
+  )
+}
+
+export { LoadingState, EmptyState, StatusBadge }

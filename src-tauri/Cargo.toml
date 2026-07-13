@@ -28,29 +28,49 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 tracing-appender = "0.2"
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono", "migrate"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite_migration = "1"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7"] }
 async-trait = "0.1"
-tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
-futures = "0.3"
-reqwest = { version = "0.12", features = ["json", "stream"] }
-pin-project-lite = "0.2"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "time", "process"] }
+futures-util = "0.3"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream"] }
+bytes = "1"
 dirs = "5"
 regex = "1"
 glob = "0.3"
 serde_yaml = "0.9"
 url = "2"
 urlencoding = "2"
-zip = "0.6"
 scraper = "0.22"
 rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
 similar = "2.4"
+sysinfo = "0.30"
+rig = { package = "rig-core", version = "0.39", default-features = false }
+thiserror = "2"
+schemars = "1"
+dashmap = "6"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# keyring: 跨平台密钥存储 (macOS Keychain / Windows Credential Manager)
+# Linux 走文件回退 (mode 0600), 不依赖 keyring crate
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+# 体积优化: LTO + 单 codegen-unit + 体积优先 + 去 unwind 表 + 剥离符号
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "s"
+panic = "abort"
+strip = true
 

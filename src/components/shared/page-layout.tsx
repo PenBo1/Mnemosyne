@@ -1,36 +1,38 @@
 import * as React from "react"
-import { cn } from "@/shared/utils"
+import { cn } from "@/lib/utils"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
-/**
- * PageContainer — 统一页面外壳
- *
- * 提供统一的 padding、滚动、最大宽度控制。
- * 所有页面应使用此组件作为最外层容器。
- */
 function PageContainer({
   className,
   scrollable = true,
+  children,
   ...props
 }: React.ComponentProps<"div"> & { scrollable?: boolean }) {
+  if (scrollable) {
+    return (
+      <ScrollArea className={cn("h-full", className)}>
+        <div
+          data-slot="page-container"
+          className="flex flex-col gap-6 p-6"
+          {...props}
+        >
+          {children}
+        </div>
+      </ScrollArea>
+    )
+  }
+
   return (
     <div
       data-slot="page-container"
-      className={cn(
-        "flex h-full flex-col gap-6 p-6",
-        scrollable && "overflow-y-auto",
-        className
-      )}
+      className={cn("flex h-full flex-col gap-6 p-6", className)}
       {...props}
-    />
+    >
+      {children}
+    </div>
   )
 }
 
-/**
- * PageHeader — 统一页面头部
- *
- * 标准化标题、描述、右侧操作区的布局。
- * 消除各页面 5 种不同的头部写法。
- */
 function PageHeader({
   className,
   ...props
@@ -38,10 +40,7 @@ function PageHeader({
   return (
     <div
       data-slot="page-header"
-      className={cn(
-        "flex flex-wrap items-center justify-between gap-4",
-        className
-      )}
+      className={cn("flex flex-wrap items-center justify-between gap-4", className)}
       {...props}
     />
   )
@@ -67,10 +66,7 @@ function PageTitle({
   return (
     <h1
       data-slot="page-title"
-      className={cn(
-        "flex items-center gap-2 text-lg font-semibold tracking-tight",
-        className
-      )}
+      className={cn("flex items-center gap-2 text-lg font-semibold tracking-tight", className)}
       {...props}
     />
   )

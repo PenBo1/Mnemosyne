@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "global_policy": {
+    "default_decision_by_risk": {
+      "low": "Allow",
+      "medium": "RequireApproval",
+      "high": "RequireApproval",
+      "critical": "Deny"
+    },
+    "trusted_workspace_policy": {
+      "allow_read": true,
+      "allow_write": true,
+      "allow_delete": true,
+      "allow_shell": true,
+      "allow_network": true,
+      "max_file_size_mb": 500,
+      "require_approval_for_write": false,
+      "require_approval_for_delete": false
+    },
+    "enterprise_workspace_policy": {
+      "allow_read": true,
+      "allow_write": true,
+      "allow_delete": false,
+      "allow_shell": true,
+      "allow_network": true,
+      "max_file_size_mb": 1000,
+      "require_approval_for_write": true,
+      "require_approval_for_delete": true
+    },
+    "readonly_workspace_policy": {
+      "allow_read": true,
+      "allow_write": false,
+      "allow_delete": false,
+      "allow_shell": false,
+      "allow_network": true,
+      "max_file_size_mb": 50,
+      "require_approval_for_write": true,
+      "require_approval_for_delete": true
+    },
+    "unknown_workspace_policy": {
+      "allow_read": true,
+      "allow_write": false,
+      "allow_delete": false,
+      "allow_shell": false,
+      "allow_network": false,
+      "max_file_size_mb": 10,
+      "require_approval_for_write": true,
+      "require_approval_for_delete": true
+    },
+    "dangerous_workspace_policy": {
+      "allow_read": false,
+      "allow_write": false,
+      "allow_delete": false,
+      "allow_shell": false,
+      "allow_network": false,
+      "max_file_size_mb": 0,
+      "require_approval_for_write": true,
+      "require_approval_for_delete": true
+    },
+    "blocked_operations": [
+      "fs:delete:system",
+      "fs:write:system",
+      "shell:rm",
+      "shell:del",
+      "shell:format",
+      "shell:fdisk",
+      "shell:shutdown",
+      "shell:reboot"
+    ],
+    "always_require_approval": [
+      "fs:write:workspace",
+      "shell:git:commit",
+      "shell:git:push"
+    ],
+    "always_deny": [
+      "fs:delete:cache",
+      "shell:mkfs"
+    ]
+  },
+  "rate_policies": [
+    {
+      "operation": "ReadFile",
+      "max_per_minute": 10000,
+      "max_per_hour": 600000,
+      "max_per_day": 10000000
+    },
+    {
+      "operation": "WriteFile",
+      "max_per_minute": 1000,
+      "max_per_hour": 60000,
+      "max_per_day": 1000000
+    },
+    {
+      "operation": "DeleteFile",
+      "max_per_minute": 100,
+      "max_per_hour": 6000,
+      "max_per_day": 100000
+    },
+    {
+      "operation": "ShellExec",
+      "max_per_minute": 100,
+      "max_per_hour": 6000,
+      "max_per_day": 100000
+    },
+    {
+      "operation": "NetworkRequest",
+      "max_per_minute": 500,
+      "max_per_hour": 30000,
+      "max_per_day": 500000
+    }
+  ],
+  "resource_quota": {
+    "cpu": null,
+    "memory": null,
+    "disk": null,
+    "network": null,
+    "token": 1000000,
+    "cost": 10.0
+  },
+  "fs_scope_defaults": {
+    "workspace": {
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    "workspace_readonly": {
+      "read": true,
+      "write": false,
+      "delete": false
+    },
+    "app_data": {
+      "read": true,
+      "write": true,
+      "delete": false
+    },
+    "cache": {
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    "temp": {
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    "resources": {
+      "read": true,
+      "write": false,
+      "delete": false
+    },
+    "templates": {
+      "read": true,
+      "write": false,
+      "delete": false
+    },
+    "plugins": {
+      "read": true,
+      "write": true,
+      "delete": false
+    },
+    "logs": {
+      "read": true,
+      "write": true,
+      "delete": false
+    }
+  },
+  "network_endpoint_defaults": {
+    "allowed_hosts": [
+      "api.openai.com",
+      "api.anthropic.com",
+      "api.deepseek.com",
+      "api.agnes.local",
+      "localhost"
+    ],
+    "blocked_hosts": [
+      "metadata.google.internal",
+      "metadata.azure.com",
+      "169.254.169.254"
+    ],
+    "allow_localhost_for_mcp": true
+  },
+  "approval_token": {
+    "default_ttl_seconds": 30,
+    "max_ttl_seconds": 300,
+    "action_hash_algorithm": "sha256"
+  }
+}

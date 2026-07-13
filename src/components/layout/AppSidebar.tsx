@@ -8,28 +8,29 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import {
   SettingsIcon,
   LayersIcon,
   ArrowLeftIcon,
   GlobeIcon,
-  ShieldCheckIcon,
   ShieldIcon,
   FolderIcon,
   ChevronRightIcon,
   ChevronDownIcon,
-  FileTextIcon,
-  UsersIcon,
   GitBranchIcon,
-  ClockIcon,
-  BookmarkIcon,
   Trash2Icon,
   MessageSquareIcon,
   TrendingUpIcon,
@@ -40,41 +41,48 @@ import {
   WrenchIcon,
   CpuIcon,
   NetworkIcon,
+  KeyboardIcon,
+  WorkflowIcon,
+  InfoIcon,
+  BoxesIcon,
+  ScrollTextIcon,
+  HardDriveIcon,
 } from "lucide-react";
-import { useAppState, useAppDispatch } from "@/shared/app-context";
-import { useI18n } from "@/shared/i18n";
+import { useAppState, useAppDispatch } from "@/lib/app-context";
+import { useAgentStore } from "@/features/chat/store";
+import { useI18n } from "@/locales/i18n";
 import { useSidebarWorkspaces } from "@/features/workspace/hooks/useSidebarWorkspaces";
-import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
-import type { AppPage, SettingsTab, WorkspacePage } from "@/shared/types";
+import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialog";
+import { SidebarSessionList } from "@/features/chat/components/sidebar-session-list";
+import type { AppPage, SettingsPage } from "@/types";
+import { isSettingsPage } from "@/types";
 
-const WORKSPACE_SUB_ITEMS: { id: WorkspacePage; labelKey: string; icon: typeof FileTextIcon }[] = [
-  { id: "overview", labelKey: "overview", icon: BookOpenIcon },
-  { id: "characters", labelKey: "characters", icon: UsersIcon },
-  { id: "worldbuilding", labelKey: "worldbuilding", icon: GlobeIcon },
-  { id: "plot", labelKey: "plot", icon: GitBranchIcon },
-  { id: "timeline", labelKey: "timeline", icon: ClockIcon },
-  { id: "research", labelKey: "research", icon: BookmarkIcon },
-];
-
-const TOOLS_SUB_ITEMS: { id: "novels" | "trends" | "loops" | "git"; labelKey: string; icon: typeof BookOpenIcon }[] = [
+const TOOLS_SUB_ITEMS: { id: "novels" | "trends" | "loops" | "git" | "pipeline"; labelKey: string; icon: typeof BookOpenIcon }[] = [
   { id: "novels", labelKey: "novels", icon: BookOpenIcon },
   { id: "trends", labelKey: "scanTrends", icon: TrendingUpIcon },
   { id: "loops", labelKey: "loops", icon: CpuIcon },
+  { id: "pipeline", labelKey: "pipeline", icon: WorkflowIcon },
   { id: "git", labelKey: "git", icon: GitBranchIcon },
 ];
 
-const SETTINGS_NAV_ITEMS: { id: SettingsTab; labelKey: string; icon: typeof GlobeIcon }[] = [
-  { id: "general", labelKey: "general", icon: GlobeIcon },
-  { id: "model", labelKey: "aiProvider", icon: CpuIcon },
-  { id: "prompts", labelKey: "prompts", icon: MessageSquareIcon },
-  { id: "agents", labelKey: "agents", icon: BotIcon },
-  { id: "bookSources", labelKey: "bookSources", icon: BookOpenIcon },
-  { id: "audit", labelKey: "audit", icon: ShieldIcon },
-  { id: "system", labelKey: "system", icon: ShieldCheckIcon },
+const SETTINGS_NAV_ITEMS: { id: SettingsPage; labelKey: string; icon: typeof GlobeIcon }[] = [
+  { id: "settings.general", labelKey: "general", icon: GlobeIcon },
+  { id: "settings.model", labelKey: "aiProvider", icon: CpuIcon },
+  { id: "settings.embedding", labelKey: "embedding", icon: BoxesIcon },
+  { id: "settings.prompts", labelKey: "prompts", icon: MessageSquareIcon },
+  { id: "settings.agents", labelKey: "agents", icon: BotIcon },
+  { id: "settings.bookSources", labelKey: "bookSources", icon: BookOpenIcon },
+  { id: "settings.network", labelKey: "network", icon: NetworkIcon },
+  { id: "settings.audit", labelKey: "audit", icon: ShieldIcon },
+  { id: "settings.git", labelKey: "gitLabel", icon: GitBranchIcon },
+  { id: "settings.shortcuts", labelKey: "shortcutsLabel", icon: KeyboardIcon },
+  { id: "settings.system", labelKey: "systemLabel", icon: HardDriveIcon },
+  { id: "settings.logs", labelKey: "logsLabel", icon: ScrollTextIcon },
+  { id: "settings.about", labelKey: "aboutLabel", icon: InfoIcon },
 ];
 
 export function AppSidebar() {
-  const { currentPage, settingsTab } = useAppState();
+  const { currentPage } = useAppState();
   const dispatch = useAppDispatch();
   const { t } = useI18n();
   const {
@@ -94,14 +102,10 @@ export function AppSidebar() {
   } = useSidebarWorkspaces();
   const [expandedWs, setExpandedWs] = useState<string | null>(null);
   const [expandedTools, setExpandedTools] = useState<boolean>(false);
-  const isSettings = currentPage === "settings";
+  const isSettings = isSettingsPage(currentPage);
 
   function navigateTo(page: AppPage) {
     dispatch({ type: "SET_PAGE", payload: page });
-  }
-
-  function setSettingsTab(tab: SettingsTab) {
-    dispatch({ type: "SET_SETTINGS_TAB", payload: tab });
   }
 
   return (
@@ -132,8 +136,8 @@ export function AppSidebar() {
                 {SETTINGS_NAV_ITEMS.map((item) => (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
-                      isActive={settingsTab === item.id}
-                      onClick={() => setSettingsTab(item.id)}
+                      isActive={currentPage === item.id}
+                      onClick={() => navigateTo(item.id)}
                     >
                       <item.icon />
                       <span>{t.settings[item.labelKey as keyof typeof t.settings] as string}</span>
@@ -152,39 +156,55 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={currentPage === "chat" || currentPage === "main-agent"}
-                      onClick={() => navigateTo("chat")}
-                      tooltip={t.sidebar.aiAgent}
+                      onClick={() => {
+                        // 仅进入空白页，不创建会话（输入消息时才创建）
+                        useAgentStore.getState().clearCurrentSession();
+                        navigateTo("chat");
+                      }}
+                      tooltip={t.sidebar.newTask}
                     >
                       <BotIcon />
-                      <span>{t.sidebar.aiAgent}</span>
+                      <span>{t.sidebar.newTask}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem className="group/tools">
-                    <SidebarMenuButton
-                      isActive={TOOLS_SUB_ITEMS.some((item) => item.id === currentPage)}
-                      onClick={() => setExpandedTools(!expandedTools)}
-                      tooltip={t.sidebar.tools}
-                    >
-                      <WrenchIcon className="group-hover/tools:hidden" />
-                      <ChevronRightIcon className={`hidden group-hover/tools:block transition-transform duration-200 ${expandedTools ? 'rotate-90' : ''}`} />
-                      <span>{t.sidebar.tools}</span>
-                    </SidebarMenuButton>
-                    {expandedTools && (
-                      <SidebarMenuSub>
-                        {TOOLS_SUB_ITEMS.map((item) => (
-                          <SidebarMenuSubItem key={item.id}>
-                            <SidebarMenuSubButton
-                              isActive={currentPage === item.id}
-                              onClick={() => navigateTo(item.id)}
-                            >
-                              <item.icon />
-                              <span>{t.sidebar[item.labelKey as keyof typeof t.sidebar] as string}</span>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        ))}
-                      </SidebarMenuSub>
-                    )}
-                  </SidebarMenuItem>
+                  <Collapsible
+                    open={expandedTools}
+                    onOpenChange={setExpandedTools}
+                    className="group/tools"
+                  >
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton
+                          isActive={TOOLS_SUB_ITEMS.some((item) => item.id === currentPage)}
+                          tooltip={t.sidebar.tools}
+                        >
+                          <WrenchIcon className="group-hover/tools:hidden" />
+                          <ChevronRightIcon
+                            className={cn(
+                              "hidden group-hover/tools:block transition-transform duration-200",
+                              expandedTools && "rotate-90",
+                            )}
+                          />
+                          <span>{t.sidebar.tools}</span>
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {TOOLS_SUB_ITEMS.map((item) => (
+                            <SidebarMenuSubItem key={item.id}>
+                              <SidebarMenuSubButton
+                                isActive={currentPage === item.id}
+                                onClick={() => navigateTo(item.id)}
+                              >
+                                <item.icon />
+                                <span>{t.sidebar[item.labelKey as keyof typeof t.sidebar] as string}</span>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          ))}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={currentPage === "skills"}
@@ -258,52 +278,40 @@ export function AppSidebar() {
                       const isActive = activeWorkspaceId === ws.id;
                       const isExpanded = expandedWs === ws.id;
                       return (
-                        <SidebarMenuItem key={ws.id}>
-                          <SidebarMenuButton
-                            isActive={isActive}
-                            onClick={() => {
-                              setActiveWorkspace(ws.id);
-                              setExpandedWs(isExpanded ? null : ws.id);
-                              if (!isExpanded) {
-                                navigateTo("novels");
-                              }
-                            }}
-                          >
-                            <FolderIcon />
-                            <span className="flex-1 truncate">{ws.name}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
+                        <Collapsible
+                          key={ws.id}
+                          open={isExpanded}
+                          onOpenChange={(open) => {
+                            setExpandedWs(open ? ws.id : null);
+                            setActiveWorkspace(ws.id);
+                            if (open) {
+                              // 展开工作区时导航到对话页（展示该工作区的会话列表）
+                              navigateTo("chat");
+                            }
+                          }}
+                        >
+                          <SidebarMenuItem>
+                            <CollapsibleTrigger asChild>
+                              <SidebarMenuButton isActive={isActive}>
+                                <FolderIcon />
+                                <span className="flex-1 truncate">{ws.name}</span>
+                                {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                              </SidebarMenuButton>
+                            </CollapsibleTrigger>
+                            <SidebarMenuAction
+                              showOnHover
                               onClick={(e) => {
                                 e.stopPropagation();
                                 removeWorkspace(ws.id);
                               }}
-                              className="opacity-0 group-hover/menu-item:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                             >
                               <Trash2Icon />
-                            </Button>
-                            {isExpanded ? (
-                              <ChevronDownIcon className="size-3.5" />
-                            ) : (
-                              <ChevronRightIcon className="size-3.5" />
-                            )}
-                          </SidebarMenuButton>
-                          {isExpanded && (
-                            <SidebarMenuSub>
-                              {WORKSPACE_SUB_ITEMS.map((item) => (
-                                <SidebarMenuSubItem key={item.id}>
-                                  <SidebarMenuSubButton
-                                    isActive={currentPage === item.id}
-                                    onClick={() => navigateTo(item.id)}
-                                  >
-                                    <item.icon />
-                                    <span>{t.sidebar[item.labelKey as keyof typeof t.sidebar] as string}</span>
-                                  </SidebarMenuSubButton>
-                                </SidebarMenuSubItem>
-                              ))}
-                            </SidebarMenuSub>
-                          )}
-                        </SidebarMenuItem>
+                            </SidebarMenuAction>
+                            <CollapsibleContent>
+                              <SidebarSessionList workspaceId={ws.id} />
+                            </CollapsibleContent>
+                          </SidebarMenuItem>
+                        </Collapsible>
                       );
                     })
                   )}
@@ -323,7 +331,7 @@ export function AppSidebar() {
                 <span>{t.sidebar.backToWorkspace}</span>
               </SidebarMenuButton>
             ) : (
-              <SidebarMenuButton onClick={() => navigateTo("settings")}>
+              <SidebarMenuButton onClick={() => navigateTo("settings.general")}>
                 <SettingsIcon />
                 <span>{t.sidebar.settings}</span>
               </SidebarMenuButton>

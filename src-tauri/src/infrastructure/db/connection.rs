@@ -1,67 +1,64 @@
-use sqlx::{Executor, SqlitePool};
+
+use rusqlite::Connection;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
-use crate::shared::errors::AppError;
+use crate::shared::error::AppError;
 
-/// 应用核心数据库。所有 store 共享同一个连接池。
-///
-/// schema 通过 `sqlx::migrate!` 在 `new()` 时自动应用，无需手动加载 SQL。
+/// 数据库句柄。内部 `Arc<Mutex<Connection>>`,克隆廉价且共享同一连接,
+/// 允许多个模块(如 AgentEngine)持有副本以写入指标。
 #[derive(Clone)]
 pub struct Database {
-    pub pool: SqlitePool,
+    conn: Arc<Mutex<Connection>>,
+}
+
+pub fn validate_name(name: &str, field: &str) -> Result<(), AppError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::invalid_input(format!("{} cannot be empty", field)));
+    }
+    if trimmed.len() > 255 {
+        return Err(AppError::invalid_input(format!("{} too long (max 255 chars)", field)));
+    }
+    Ok(())
 }
 
 impl Database {
-    /// 打开/创建 state.sqlite 并执行所有未应用的迁移。
-    pub async fn new(db_path: &str) -> Result<Self, AppError> {
+    pub fn new(db_path: &str) -> Result<Self, AppError> {
         let dir = Path::new(db_path).parent()
             .ok_or_else(|| AppError::internal("Invalid database path"))?;
         std::fs::create_dir_all(dir)
             .map_err(|e| AppError::internal(format!("Failed to create db directory: {}", e)))?;
 
-        let url = format!("sqlite:{}?mode=rwc", db_path);
-        let pool = SqlitePool::connect(&url).await.map_err(db_err)?;
+        let mut conn = Connection::open(db_path)
+            .map_err(db_err)?;
 
-        // PRAGMA 必须在事务外执行（sqlx::migrate 会将每个迁移文件包在事务中，
-        // 而 SQLite 禁止在事务内修改 journal_mode/synchronous 等 PRAGMA）。
-        // 在迁移前应用，确保后续 schema 操作有 WAL + 外键 + 缓存等优化。
-        for pragma in [
-            "PRAGMA journal_mode = WAL",
-            "PRAGMA foreign_keys = ON",
-            "PRAGMA synchronous = NORMAL",
-            "PRAGMA busy_timeout = 5000",
-            "PRAGMA temp_store = MEMORY",
-            "PRAGMA cache_size = -20000",
-        ] {
-            pool.execute(pragma).await.map_err(db_err)?;
-        }
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;\
+             PRAGMA foreign_keys = ON;\
+             PRAGMA synchronous = NORMAL;\
+             PRAGMA busy_timeout = 5000;\
+             PRAGMA temp_store = MEMORY;\
+             PRAGMA cache_size = -20000;",
+        ).map_err(db_err)?;
 
-        // 应用迁移（每次启动都执行，sqlx 自动跳过已应用的）
-        crate::infrastructure::db::migrate::run_migrate(&pool).await?;
-
-        Ok(Self { pool })
+        crate::infrastructure::db::migrate::run_migrate(&mut conn)?;
+        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
     }
 
-    /// 创建内存数据库并执行所有迁移。
-    ///
-    /// 仅用于单元测试：每个测试一个独立连接池，互不干扰，跑完即销毁。
     #[cfg(test)]
-    pub async fn connect_in_memory() -> Result<Self, AppError> {
-        let pool = SqlitePool::connect("sqlite::memory:").await.map_err(db_err)?;
+    pub fn connect_in_memory() -> Result<Self, AppError> {
+        let mut conn = Connection::open_in_memory().map_err(db_err)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;").map_err(db_err)?;
+        crate::infrastructure::db::migrate::run_migrate(&mut conn)?;
+        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
+    }
 
-        // 内存库同样需要外键约束（PRAGMA foreign_keys 在 :memory: 上有效）
-        for pragma in [
-            "PRAGMA foreign_keys = ON",
-        ] {
-            pool.execute(pragma).await.map_err(db_err)?;
-        }
-
-        crate::infrastructure::db::migrate::run_migrate(&pool).await?;
-        Ok(Self { pool })
+    pub fn conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, AppError> {
+        self.conn.lock().map_err(|e| AppError::internal(format!("Database mutex poisoned: {}", e)))
     }
 }
 
-/// 将 sqlx::Error 转换为 AppError。
-pub(super) fn db_err(e: sqlx::Error) -> AppError {
+pub(super) fn db_err(e: rusqlite::Error) -> AppError {
     AppError::internal(format!("Database error: {}", e))
 }

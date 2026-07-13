@@ -1,37 +1,20 @@
-// ============================================================================
-// 模块声明 —— 五层分层架构
-// ============================================================================
-//
-// 依赖层次（自上而下，严禁反向）：
-//
-//   ipc/                 IPC 层（Tauri 命令入口，类型安全契约）
-//     ├── core/          核心业务逻辑（agent 引擎、interaction 编排、state、init）
-//     │     ├── agent/   AI Agent 核心决策引擎（14 子模块）
-//     │     └── interaction/  编排层（session ↔ pipeline 桥接）
-//     ├── features/      功能模块层（story/session/version/wiki/novel/radar/user_profile/skill_manager）
-//     ├── infrastructure/ 基础设施层（db/llm_client/sandbox/file_storage/state_store/ai_services/middleware 等系统访问）
-//     └── shared/        跨层共享类型与纯函数（含 errors 错误处理）
-//
-// 规则：
-// - core/agent 不依赖任何 features（features 编排 agent，agent 不反向依赖）
-// - features 之间不横向依赖（跨域编排放 core/interaction/ 或 ipc/commands/）
-// - infrastructure 只依赖 shared，不依赖任何 features 或 core/agent
-// - shared 只依赖 std（errors 模块仅含纯数据类型）
-// - ipc/commands 只做参数提取、验证、委托，不含业务逻辑
-
+pub mod application;
 pub mod core;
-pub mod features;
+pub mod domain;
 pub mod infrastructure;
-pub mod ipc;
+pub mod security_kernel;
 pub mod shared;
-use crate::infrastructure::file_storage::data_dir::DataDir;
-use crate::infrastructure::db::Database;
-use crate::infrastructure::llm_client::ProviderRegistry;
-use crate::features::skill_manager::SkillManager;
-use crate::infrastructure::sandbox::enforce::SandboxEnforcer;
-use crate::infrastructure::sandbox::policy::SandboxPolicy;
-use crate::core::state::AppState;
-use std::sync::Arc;
+
+use crate::infrastructure::fs::data_dir::DataDir;
+use crate::infrastructure::db::state::DbState;
+use crate::infrastructure::llm::state::LlmState;
+use crate::application::skill::state::SkillState;
+use crate::infrastructure::sandbox::state::SandboxState;
+use crate::infrastructure::memory::state::MemoryState;
+use crate::domain::feedback::state::FeedbackState;
+use crate::infrastructure::workspace::state::WorkspaceState;
+use crate::infrastructure::workspace::registry::WorkspaceRegistry;
+use crate::security_kernel::SecurityKernelState;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,236 +27,213 @@ pub fn run() {
         .setup(|app| {
             let app_dir = app.path().app_data_dir().expect("failed to get app data dir");
             std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
-
-            let data_dir = DataDir::new(app_dir.clone());
+            let data_dir = DataDir::new(app_dir);
             data_dir.initialize().expect("failed to initialize data directory");
 
-            // 业务级初始化（agent 身份文件、内置 novel sources）。
-            // 必须在 data_dir.initialize() 之后调用，因为它需要 agents_dir/ 和 book_sources_dir/ 已存在。
-            // 上提到 core 层是为了避免 infrastructure 反向依赖 features/ 和 core/agent/。
-            crate::core::init::initialize_app_business_state(&data_dir)
+            crate::application::init::initialize_app_business_state(&data_dir)
                 .expect("failed to initialize app business state");
 
-            crate::infrastructure::middleware::logging::init(&data_dir.logs_dir(), &data_dir);
-
+            crate::infrastructure::fs::fs_utils::init_logging(&data_dir.logs_dir(), &data_dir);
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Mnemosyne starting");
             tracing::info!(root = %data_dir.root().display(), "App data directory");
 
-            let db_path = data_dir.state_db_path();
-            tracing::info!(path = %db_path.display(), "Opening state database");
-            let database = tauri::async_runtime::block_on(Database::new(db_path.to_str().unwrap()))
-                .expect("failed to open state database");
-            tracing::info!("State database initialized (migrations applied)");
+            // 先创建 DbState,以便克隆 Database 给 AgentEngine 与 SecurityKernel 持有
+            let db_state = DbState::new(data_dir.clone());
+            // DataDir 作为 State 共享给 pipeline 命令
+            app.manage(data_dir.clone());
+            let db_for_agent = db_state.db.clone();
+            let db_for_kernel = db_state.db.clone();
+            app.manage(db_state);
+            app.manage(LlmState::new(data_dir.clone()));
+            app.manage(SkillState::new(&data_dir));
+            app.manage(SandboxState::new(data_dir.root().to_path_buf()));
+            app.manage(MemoryState::new(data_dir.root().to_path_buf()));
+            app.manage(FeedbackState::new());
+            app.manage(crate::infrastructure::secrets::SecretsState::default());
+            app.manage(WorkspaceState::new());
+            app.manage(WorkspaceRegistry::new());
+            app.manage(SecurityKernelState::with_db(db_for_kernel));
 
-            // 种子化内置 Loop Pattern 到 DB（幂等，启动时同步执行）
-            tauri::async_runtime::block_on(
-                crate::core::init::seed_builtin_loop_patterns(&database),
-            )
-            .expect("failed to seed builtin loop patterns");
+            // Initialize agent engine from LLM provider registry
+            let agent_engine = {
+                let registry = crate::infrastructure::llm::registry::ProviderRegistry::new(&data_dir);
+                let workspace_root = std::env::current_dir().unwrap_or_else(|_| data_dir.root().to_path_buf());
+                crate::core::agent::engine::AgentEngine::new(registry, db_for_agent, workspace_root)
+            };
 
-            let provider_registry = ProviderRegistry::new(&data_dir);
-            tracing::info!(count = provider_registry.list_providers().len(), "Providers loaded");
+            // Pipeline SchedulerState（需要 AgentEngine + DataDir.books_dir）
+            let scheduler_config = crate::domain::pipeline::scheduler::SchedulerConfig::default();
+            let pipeline_config = crate::domain::pipeline::runner::PipelineConfig {
+                books_dir: data_dir.books_dir(),
+                ..Default::default()
+            };
+            let scheduler_state = crate::domain::pipeline::scheduler::SchedulerState::new(
+                pipeline_config,
+                scheduler_config,
+                agent_engine.clone(),
+            );
+            app.manage(scheduler_state);
 
-            let mut skill_manager = SkillManager::new();
-            if let Some(home) = dirs::home_dir() {
-                skill_manager.add_dir(home.join(".mnemosyne").join("skills"));
-            }
-            skill_manager.add_dir(data_dir.skills_dir());
-            if let Err(e) = skill_manager.discover() {
-                tracing::warn!("Failed to discover skills: {}", e);
-            }
-            let skill_count = skill_manager.list().len();
-            tracing::info!(count = skill_count, "Skills discovered");
-
-            let sandbox_policy = SandboxPolicy::restricted();
-            let sandbox_enforcer = SandboxEnforcer::new(sandbox_policy, app_dir.clone());
-            let memory_store = crate::infrastructure::state_store::memory::MemoryStore::new(app_dir.clone());
-            let feedback_store = crate::infrastructure::state_store::feedback::FeedbackStore::new();
-            let mcp_server = crate::infrastructure::ai_services::mcp::McpServer::new();
-            let app_handle = app.handle().clone();
-
-            // scheduler 在 workspace 打开时懒加载初始化
-            let scheduler = tokio::sync::Mutex::new(None::<Arc<crate::core::agent::pipeline::Scheduler>>);
-
-            app.manage(AppState {
-                data_dir,
-                db: database,
-                provider_registry: tokio::sync::Mutex::new(provider_registry),
-                skill_manager: tokio::sync::Mutex::new(skill_manager),
-                sandbox: tokio::sync::Mutex::new(sandbox_enforcer),
-                memory_store,
-                feedback_store: Arc::new(tokio::sync::Mutex::new(feedback_store)),
-                mcp_server: tokio::sync::Mutex::new(mcp_server),
-                scheduler,
-                app_handle,
-                sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-                agent_states: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-                main_agent_states: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-                sub_agent_control: Arc::new(crate::core::agent::sub_agent::SubAgentControl::new()),
-            });
+            app.manage(crate::core::agent::commands::AgentState::new(agent_engine));
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ipc::commands::greet::greet,
-            ipc::commands::settings::set_window_theme,
-            ipc::commands::settings::get_log_level,
-            ipc::commands::settings::set_log_level,
-            ipc::commands::prompts::create_prompt,
-            ipc::commands::prompts::list_prompts,
-            ipc::commands::prompts::get_prompt,
-            ipc::commands::prompts::update_prompt,
-            ipc::commands::prompts::delete_prompt,
-            ipc::commands::trends::create_trend,
-            ipc::commands::trends::list_trends,
-            ipc::commands::trends::delete_trend,
-            ipc::commands::novels::create_novel,
-            ipc::commands::novels::update_novel,
-            ipc::commands::novels::list_novels,
-            ipc::commands::novels::delete_novel,
-            ipc::commands::stats::get_stats,
-            ipc::commands::stats::get_daily_activity,
-            ipc::commands::workspaces::create_workspace,
-            ipc::commands::workspaces::list_workspaces,
-            ipc::commands::workspaces::get_workspace,
-            ipc::commands::workspaces::delete_workspace,
-            ipc::commands::sessions::session_create,
-            ipc::commands::sessions::session_list,
-            ipc::commands::sessions::session_get,
-            ipc::commands::sessions::session_delete,
-            ipc::commands::sessions::session_messages,
-            ipc::commands::providers::provider_list,
-            ipc::commands::providers::provider_models,
-            ipc::commands::providers::provider_test_connection,
-            ipc::commands::providers::provider_refresh,
-            ipc::commands::skills::skill_list,
-            ipc::commands::skills::skill_get,
-            ipc::commands::skills::skill_create,
-            ipc::commands::skills::skill_update,
-            ipc::commands::skills::skill_delete,
-            ipc::commands::skills::skill_index,
-            ipc::commands::skills::skill_refresh,
-            ipc::commands::novels_pipeline::novel_create,
-            ipc::commands::novels_pipeline::novel_write_next,
-            ipc::commands::novels_pipeline::novel_plan,
-            ipc::commands::novels_pipeline::novel_audit,
-            ipc::commands::novels_pipeline::novel_revise,
-            ipc::commands::novels_pipeline::story_state_get,
-            ipc::commands::novels_pipeline::hook_update_status,
-            ipc::commands::novels_pipeline::query_facts_at_chapter,
-            ipc::commands::novels_pipeline::list_recent_chapter_summaries,
-            ipc::commands::novels_pipeline::list_chapter_summaries_range,
-            ipc::commands::notifications::send_notification,
-            ipc::commands::radar::radar_scan,
-            ipc::commands::radar::radar_history,
-            ipc::commands::radar::radar_delete,
-            ipc::commands::sandbox::sandbox_status,
-            ipc::commands::sandbox::sandbox_validate_file,
-            ipc::commands::sandbox::sandbox_validate_command,
-            ipc::commands::sandbox::sandbox_validate_network,
-            ipc::commands::sandbox::sandbox_get_policy,
-            ipc::commands::agent::agent_send_message,
-            ipc::commands::agent::agent_approve_tool,
-            ipc::commands::agent::agent_respond_confirmation,
-            ipc::commands::agent::agent_cancel,
-            ipc::commands::agent::agent_compact,
-            ipc::commands::agent::agent_restart,
-            ipc::commands::agent_session::session_send_message,
-            ipc::commands::agent_session::session_cancel,
-            ipc::commands::agent_session::session_get_status,
-            ipc::commands::agent_session::session_shutdown,
-            ipc::commands::agent_session::session_write_next_chapter,
-            ipc::commands::agent_session::session_create_book,
-            ipc::commands::agent_session::session_approve_tool,
-            ipc::commands::agent_session::session_reject_tool,
-            ipc::commands::agent_config::list_agents,
-            ipc::commands::agent_config::update_agent,
-            ipc::commands::agent_config::toggle_agent_status,
-            ipc::commands::agent_config::list_ai_models,
-            ipc::commands::novels_pipeline::novel_observe,
-            ipc::commands::novels_pipeline::novel_reflect,
-            ipc::commands::novel_sources::novel_source_list,
-            ipc::commands::novel_sources::novel_search,
-            ipc::commands::novel_sources::novel_download,
-            ipc::commands::novel_sources::novel_list_local,
-            ipc::commands::scheduler::scheduler_init,
-            ipc::commands::scheduler::scheduler_write_cycle,
-            ipc::commands::scheduler::scheduler_status,
-            ipc::commands::scheduler::scheduler_pause,
-            ipc::commands::scheduler::scheduler_resume,
-            ipc::commands::scheduler::scheduler_stop,
-            ipc::commands::scheduler::scheduler_search_rag,
-            ipc::commands::scheduler::scheduler_search_memory,
-            ipc::commands::scheduler::scheduler_get_lessons,
-            ipc::commands::scheduler::scheduler_restore_checkpoint,
-            ipc::commands::mcp::mcp_handle_request,
-            ipc::commands::mcp::mcp_server_info,
-            ipc::commands::mcp::mcp_check_tool_safety,
-            ipc::commands::ai_logs::ai_log_llm_calls,
-            ipc::commands::ai_logs::ai_log_tool_executions,
-            ipc::commands::ai_logs::ai_log_token_usage,
-            ipc::commands::ai_logs::ai_log_sandbox_violations,
-            ipc::commands::main_agent::main_agent_execute,
-            ipc::commands::main_agent::main_agent_respond,
-            ipc::commands::main_agent::main_agent_list_sessions,
-            ipc::commands::main_agent::main_agent_cancel,
-            // Wiki 命令
-            ipc::commands::wiki::wiki_list_entries,
-            ipc::commands::wiki::wiki_get_entry,
-            ipc::commands::wiki::wiki_create_entry,
-            ipc::commands::wiki::wiki_update_entry,
-            ipc::commands::wiki::wiki_delete_entry,
-            ipc::commands::wiki::wiki_get_graph,
-            ipc::commands::wiki::wiki_create_link,
-            ipc::commands::wiki::wiki_delete_link,
-            ipc::commands::wiki::wiki_search,
-            // Version 命令
-            ipc::commands::version::version_list,
-            ipc::commands::version::version_get,
-            ipc::commands::version::version_get_latest,
-            ipc::commands::version::version_diff,
-            ipc::commands::version::version_diff_latest,
-            ipc::commands::version::version_restore,
-            ipc::commands::version::version_save,
-            // Loop Engineering 命令
-            ipc::commands::loop_engine::loop_create_state,
-            ipc::commands::loop_engine::loop_get_states,
-            ipc::commands::loop_engine::loop_update_state,
-            ipc::commands::loop_engine::loop_delete_state,
-            ipc::commands::loop_engine::loop_run_cycle,
-            ipc::commands::loop_engine::loop_get_run_logs,
-            ipc::commands::loop_engine::loop_get_patterns,
-            ipc::commands::loop_engine::loop_upsert_pattern,
-            ipc::commands::loop_engine::loop_pause,
-            ipc::commands::loop_engine::loop_resume,
-            ipc::commands::loop_engine::loop_get_budget_status,
-            // Memory 命令
-            ipc::commands::memory::memory_list,
-            ipc::commands::memory::memory_search,
-            ipc::commands::memory::memory_stats,
-            ipc::commands::memory::memory_format_context,
-            ipc::commands::memory::memory_create,
-            ipc::commands::memory::memory_update,
-            ipc::commands::memory::memory_delete,
-            // FS 命令
-            ipc::commands::fs::fs_read_file,
-            ipc::commands::fs::fs_list_directory,
-            // Git 命令
-            ipc::commands::git::git_check_installed,
-            ipc::commands::git::git_install,
-            ipc::commands::git::git_init,
-            ipc::commands::git::git_status,
-            ipc::commands::git::git_log,
-            ipc::commands::git::git_diff,
-            ipc::commands::git::git_stage,
-            ipc::commands::git::git_commit,
-            ipc::commands::git::git_rollback,
-            ipc::commands::git::git_get_config,
-            ipc::commands::git::git_set_config,
-            // Sub-Agent 命令
-            ipc::commands::sub_agent::sub_agent_list,
-            ipc::commands::sub_agent::sub_agent_get,
-            ipc::commands::sub_agent::sub_agent_cancel,
+            crate::infrastructure::settings::set_window_theme,
+            crate::infrastructure::settings::get_data_dir_path,
+            crate::infrastructure::settings::get_log_level,
+            crate::infrastructure::settings::set_log_level,
+            crate::infrastructure::settings::get_git_enabled,
+            crate::infrastructure::settings::set_git_enabled,
+            crate::infrastructure::settings::list_log_files,
+            crate::infrastructure::settings::read_log_file,
+            crate::infrastructure::settings::clear_log_file,
+            crate::infrastructure::prompts::create_prompt,
+            crate::infrastructure::prompts::list_prompts,
+            crate::infrastructure::prompts::get_prompt,
+            crate::infrastructure::prompts::update_prompt,
+            crate::infrastructure::prompts::delete_prompt,
+            crate::infrastructure::db::commands::create_trend,
+            crate::infrastructure::db::commands::list_trends,
+            crate::infrastructure::db::commands::delete_trend,
+            crate::domain::novel::commands::novel_create,
+            crate::domain::novel::commands::novel_update,
+            crate::domain::novel::commands::novel_list,
+            crate::domain::novel::commands::novel_get,
+            crate::domain::novel::commands::novel_delete,
+            crate::domain::novel::commands::novel_source_list,
+            crate::domain::novel::commands::novel_source_toggle,
+            crate::infrastructure::stats::get_stats,
+            crate::infrastructure::stats::get_daily_activity,
+            crate::infrastructure::stats::get_ai_stats,
+            crate::security_kernel::commands::audit_events_query,
+            crate::security_kernel::commands::audit_event_stats,
+            crate::application::workspace::commands::create_workspace,
+            crate::application::workspace::commands::list_workspaces,
+            crate::application::workspace::commands::get_workspace,
+            crate::application::workspace::commands::delete_workspace,
+            crate::application::workspace::commands::touch_workspace,
+            crate::application::session::commands::session_create,
+            crate::application::session::commands::session_list,
+            crate::application::session::commands::session_get,
+            crate::application::session::commands::session_delete,
+            crate::application::session::commands::session_messages,
+            crate::application::session::commands::message_create,
+            crate::application::skill::commands::skill_list,
+            crate::application::skill::commands::skill_get,
+            crate::application::skill::commands::skill_create,
+            crate::application::skill::commands::skill_update,
+            crate::application::skill::commands::skill_delete,
+            crate::application::skill::commands::skill_index,
+            crate::application::skill::commands::skill_refresh,
+            crate::domain::story::commands::story_state_get,
+            crate::domain::story::commands::story_state_save,
+            crate::domain::story::commands::hook_update_status,
+            crate::domain::story::commands::query_facts_at_chapter,
+            crate::domain::story::commands::list_recent_chapter_summaries,
+            crate::domain::story::commands::list_chapter_summaries_range,
+            crate::infrastructure::notifications::send_notification,
+            crate::domain::radar::commands::radar_scan_list,
+            crate::domain::radar::commands::radar_scan_delete,
+            crate::domain::radar::commands::radar_scan_create,
+            crate::domain::radar::commands::radar_scan,
+            crate::infrastructure::sandbox::commands::sandbox_status,
+            crate::infrastructure::sandbox::commands::sandbox_validate_path,
+            crate::infrastructure::sandbox::commands::sandbox_validate_command,
+            crate::infrastructure::sandbox::commands::sandbox_validate_url,
+            crate::infrastructure::sandbox::commands::sandbox_get_policy,
+            crate::infrastructure::llm::commands::llm_model_list,
+            crate::infrastructure::providers::provider_list,
+            crate::infrastructure::providers::provider_models,
+            crate::infrastructure::providers::provider_test_connection,
+            crate::infrastructure::providers::provider_refresh,
+            crate::infrastructure::llm::embedding::commands::embedding_get_config,
+            crate::infrastructure::llm::embedding::commands::embedding_set_config,
+            crate::infrastructure::llm::embedding::commands::embedding_test,
+            crate::infrastructure::llm::embedding::commands::embedding_index_doc,
+            crate::infrastructure::llm::embedding::commands::embedding_search,
+            crate::infrastructure::llm::embedding::commands::embedding_delete_doc,
+            crate::infrastructure::llm::embedding::commands::embedding_stats,
+            crate::domain::wiki::commands::wiki_list_entries,
+            crate::domain::wiki::commands::wiki_get_entry,
+            crate::domain::wiki::commands::wiki_create_entry,
+            crate::domain::wiki::commands::wiki_update_entry,
+            crate::domain::wiki::commands::wiki_delete_entry,
+            crate::domain::wiki::commands::wiki_get_graph,
+            crate::domain::wiki::commands::wiki_create_link,
+            crate::domain::wiki::commands::wiki_delete_link,
+            crate::domain::wiki::commands::wiki_search,
+            crate::domain::version::commands::version_list,
+            crate::domain::version::commands::version_get,
+            crate::domain::version::commands::version_get_latest,
+            crate::domain::version::commands::version_save,
+            crate::domain::version::commands::version_diff,
+            crate::domain::version::commands::version_diff_latest,
+            crate::domain::version::commands::version_restore,
+            crate::infrastructure::memory::commands::memory_list,
+            crate::infrastructure::memory::commands::memory_search,
+            crate::infrastructure::memory::commands::memory_stats,
+            crate::infrastructure::memory::commands::memory_format_context,
+            crate::infrastructure::memory::commands::memory_create,
+            crate::infrastructure::memory::commands::memory_update,
+            crate::infrastructure::memory::commands::memory_delete,
+            crate::infrastructure::fs::commands::fs_read_file,
+            crate::infrastructure::fs::commands::fs_write_file,
+            crate::infrastructure::fs::commands::fs_list_directory,
+            crate::infrastructure::fs::commands::fs_create_directory,
+            crate::infrastructure::fs::commands::fs_delete_file,
+            crate::infrastructure::fs::commands::fs_exists,
+            crate::infrastructure::fs::commands::fs_copy_file,
+            crate::domain::git::commands::git_check_installed,
+            crate::domain::git::commands::git_install,
+            crate::domain::git::commands::git_init,
+            crate::domain::git::commands::git_status,
+            crate::domain::git::commands::git_log,
+            crate::domain::git::commands::git_diff,
+            crate::domain::git::commands::git_stage,
+            crate::domain::git::commands::git_commit,
+            crate::domain::git::commands::git_rollback,
+            crate::domain::git::commands::git_get_config,
+            crate::domain::git::commands::git_set_config,
+            crate::infrastructure::net::lm_ping,
+            crate::core::agent::commands::chat_send_message,
+            crate::core::agent::commands::chat_stop,
+            crate::core::agent::commands::chat_tool_respond,
+            crate::domain::pipeline::commands::pipeline_init_book,
+            crate::domain::pipeline::commands::pipeline_revise_foundation,
+            crate::domain::pipeline::commands::pipeline_plan_chapter,
+            crate::domain::pipeline::commands::pipeline_compose_chapter,
+            crate::domain::pipeline::commands::pipeline_write_draft,
+            crate::domain::pipeline::commands::pipeline_audit_draft,
+            crate::domain::pipeline::commands::pipeline_revise_draft,
+            crate::domain::pipeline::commands::pipeline_write_next_chapter,
+            crate::domain::pipeline::commands::pipeline_list_chapters,
+            crate::domain::pipeline::commands::pipeline_get_chapter,
+            crate::domain::pipeline::commands::pipeline_consolidate,
+            crate::domain::pipeline::commands::pipeline_list_books,
+            crate::domain::pipeline::commands::pipeline_get_book,
+            crate::domain::pipeline::commands::pipeline_read_truth_file,
+            crate::domain::pipeline::commands::pipeline_scheduler_start,
+            crate::domain::pipeline::commands::pipeline_scheduler_stop,
+            crate::domain::pipeline::commands::pipeline_scheduler_status,
+            crate::domain::pipeline::commands::pipeline_scheduler_trigger_write,
+            crate::domain::pipeline::commands::pipeline_scheduler_trigger_radar,
+            crate::domain::pipeline::commands::pipeline_scheduler_resume_book,
+            crate::domain::pipeline::commands::pipeline_scheduler_is_book_paused,
+            crate::domain::pipeline::commands::pipeline_scheduler_subscribe,
+            // Phase 6 扩展命令
+            crate::domain::pipeline::commands::pipeline_short_fiction_run,
+            crate::domain::pipeline::commands::pipeline_fanfic_import,
+            crate::domain::pipeline::commands::pipeline_script_run,
+            crate::domain::pipeline::commands::pipeline_storyboard_run,
+            crate::domain::pipeline::commands::pipeline_interactive_film_run,
+            crate::domain::pipeline::commands::pipeline_story_graph_validate,
+            crate::domain::pipeline::commands::pipeline_story_graph_paths,
+            crate::domain::pipeline::commands::pipeline_story_graph_apply_delta,
+            crate::infrastructure::secrets::secrets_get,
+            crate::infrastructure::secrets::secrets_set,
+            crate::infrastructure::secrets::secrets_delete,
+            crate::infrastructure::secrets::secrets_get_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
