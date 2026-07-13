@@ -197,7 +197,6 @@ pub fn is_within_base(path: &Path, base: &Path) -> Result<bool, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_validate_path_empty() {

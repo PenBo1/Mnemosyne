@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn save_settings_preserves_models_and_active_id() {
-        let (registry, tmp) = build_test_registry();
+        let (_registry, tmp) = build_test_registry();
 
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         let reloaded = ProviderRegistry::new(&data_dir);

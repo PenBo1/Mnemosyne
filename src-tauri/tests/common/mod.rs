@@ -17,6 +17,7 @@ use mnemosyne_lib::domain::git::types::GitConfig;
 /// - 自动初始化 Git 仓库
 /// - 提供基本配置（user.name / user.email）
 /// - 测试结束后自动清理
+#[allow(dead_code)]
 pub struct GitRepoFixture {
     /// 仓库路径
     pub repo_path: PathBuf,
@@ -24,6 +25,7 @@ pub struct GitRepoFixture {
     _tmp: TempDir,
 }
 
+#[allow(dead_code)]
 impl GitRepoFixture {
     /// 创建新的 Git 仓库 fixture
     ///
@@ -65,6 +67,7 @@ impl GitRepoFixture {
 /// - 创建临时工作目录
 /// - 支持创建测试文件结构
 /// - 自动清理
+#[allow(dead_code)]
 pub struct FsTestFixture {
     /// 工作目录路径
     pub work_dir: PathBuf,
@@ -72,6 +75,7 @@ pub struct FsTestFixture {
     _tmp: TempDir,
 }
 
+#[allow(dead_code)]
 impl FsTestFixture {
     /// 创建新的文件系统 fixture
     pub fn new() -> Self {

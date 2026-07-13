@@ -3,7 +3,6 @@
 use std::path::Path;
 use crate::shared::error::AppError;
 use super::super::types::{BookConfig, Language};
-use super::length::LengthSpec;
 
 // ── 核心类型 ──────────
 
