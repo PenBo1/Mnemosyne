@@ -127,18 +127,9 @@ export function useChat() {
     loadSessions(undefined, activeWorkspaceId ?? undefined);
   }, [activeWorkspaceId, loadSessions]);
 
-  // 读取 pendingClear 标志（用户主动清空会话时为 true）
-  const pendingClear = useAgentStore((s) => s.pendingClear);
-
-  // 初始挂载时若已有会话但未选中，自动选第一个
-  // 但如果用户主动清空（pendingClear=true），则跳过自动选择
-  const initialAutoSelectDone = useRef(false);
-  useEffect(() => {
-    if (!initialAutoSelectDone.current && !pendingClear && sessions.length > 0 && !currentSessionId) {
-      initialAutoSelectDone.current = true;
-      switchSession(sessions[0].id);
-    }
-  }, [sessions, currentSessionId, pendingClear, switchSession]);
+  // 用户期望：默认打开空白对话页面，不自动加载历史会话
+  // 直接输入内容会自动创建新会话，或点击侧边栏选择历史会话
+  // 因此保持 currentSessionId = null，不自动选择历史会话
 
   const sendMessage = useCallback(
     async (content: string, attachments?: AttachmentSpec[]) => {
