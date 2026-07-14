@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -222,7 +222,7 @@ export function BookSourcesSettings() {
         <Card className="py-0 gap-0">
           <CardContent className="divide-y px-0">
             {sources.map((source) => (
-              <div key={source.name} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-muted/50">
+              <div key={source.name} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-accent">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <GlobeIcon className="size-4 shrink-0" />
@@ -249,7 +249,7 @@ export function BookSourcesSettings() {
                         onClick={() => setDeleteConfirm(source.name)}
                         className="text-destructive"
                       >
-                        <Trash2Icon />
+                        <Trash2Icon className="size-4" />
                         <span>{t.common.delete}</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>

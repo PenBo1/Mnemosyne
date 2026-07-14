@@ -4,15 +4,19 @@
 // 仅处理已完成卷（end_ch <= 当前最新章节），当前进行中卷的详细摘要保留原状。
 //
 // 流程：
-// 1. 读取 volume_map.md + chapter_summaries.md
-// 2. 解析卷边界 + 摘要表
-// 3. 对每个已完成卷，LLM 压缩为叙事段落
-// 4. 归档已完成卷的详细摘要，仅保留当前卷的行
-//
-// 注意：rerunAdvancedCountPromotion（Phase 7 hotfix 2）依赖
-// hook 晋升工具，尚未移植到 Rust，此处跳过。
+// 1. 重新执行 hook 晋升（rerun_promotion_pass）：基于 chapter_summaries.md
+//    统计 advancedCount，达到阈值的 hook 翻转 promoted=true 并写回 pending_hooks.md
+// 2. 读取 volume_map.md + chapter_summaries.md
+// 3. 解析卷边界 + 摘要表
+// 4. 对每个已完成卷，LLM 压缩为叙事段落
+// 5. 归档已完成卷的详细摘要，仅保留当前卷的行
 
 use crate::core::agent::engine::AgentEngine;
+use crate::domain::pipeline::types::Language;
+use crate::domain::pipeline::utils::hook_promotion::rerun_promotion_pass;
+use crate::domain::pipeline::utils::story_markdown::{
+    parse_pending_hooks_markdown, render_hooks_markdown,
+};
 use crate::shared::error::AppError;
 
 /// Consolidator 输出
@@ -21,6 +25,9 @@ pub struct ConsolidationResult {
     pub volume_summaries: String,
     pub archived_volumes: u32,
     pub retained_chapters: u32,
+    /// 本次运行中被晋升（promoted 由 false/None → true）的 hook 数量。
+    /// pending_hooks.md 不存在或无 hook 越过阈值时为 0。
+    pub promoted_hook_count: u32,
 }
 
 /// 卷边界（从 volume_map.md 解析）
@@ -39,10 +46,11 @@ struct SummaryRow {
 /// 压缩已完成卷的章节摘要为卷级叙事摘要。
 ///
 /// 流程：
-/// 1. 读取 volume_map.md + chapter_summaries.md
-/// 2. 解析卷边界 + 摘要表
-/// 3. 对每个已完成卷，LLM 压缩为叙事段落
-/// 4. 归档已完成卷的详细摘要，仅保留当前卷的行
+/// 1. 重新执行 hook 晋升（rerun_promotion_pass）
+/// 2. 读取 volume_map.md + chapter_summaries.md
+/// 3. 解析卷边界 + 摘要表
+/// 4. 对每个已完成卷，LLM 压缩为叙事段落
+/// 5. 归档已完成卷的详细摘要，仅保留当前卷的行
 pub async fn consolidate(
     engine: &AgentEngine,
     book_dir: &std::path::Path,
@@ -57,12 +65,18 @@ pub async fn consolidate(
         .or_else(|_| std::fs::read_to_string(story_dir.join("volume_outline.md")))
         .unwrap_or_default();
 
+    // Phase 7 hotfix 2：归档前的 hook 晋升重跑。独立于摘要压缩执行，
+    // 即使是尚无已完成卷的新书，也会在 seed 的 advanced_count 越过阈值时
+    // 翻转 promoted 标志。
+    let promoted_hook_count = rerun_advanced_count_promotion(&story_dir, &summaries_raw);
+
     // 任一为空则提前返回
     if summaries_raw.is_empty() || outline_raw.is_empty() {
         return Ok(ConsolidationResult {
             volume_summaries: String::new(),
             archived_volumes: 0,
             retained_chapters: 0,
+            promoted_hook_count,
         });
     }
 
@@ -75,6 +89,7 @@ pub async fn consolidate(
             volume_summaries: String::new(),
             archived_volumes: 0,
             retained_chapters: rows.len() as u32,
+            promoted_hook_count,
         });
     }
 
@@ -90,6 +105,7 @@ pub async fn consolidate(
             volume_summaries: String::new(),
             archived_volumes: 0,
             retained_chapters: rows.len() as u32,
+            promoted_hook_count,
         });
     }
 
@@ -165,21 +181,64 @@ pub async fn consolidate(
         volume_summaries: new_summaries,
         archived_volumes: completed_volumes.len() as u32,
         retained_chapters: retained_rows.len() as u32,
+        promoted_hook_count,
     })
 }
 
-/// 对单个卷做一次 LLM 压缩，返回叙事段落。
+/// Phase 7 hotfix 2 — 重跑 advancedCount 晋升。
+///
+/// 当 pending_hooks.md 中的 seed hook 在历史章节中累计被推进 ≥ 2 次时，
+/// 将其 `promoted` 标志翻转为 true 并写回。返回本次翻转的 hook 数量。
+///
+/// 算法委托给纯函数 `rerun_promotion_pass`；本函数负责文件 I/O 与语言检测。
+///
+/// - `story_dir`：`<book>/story` 目录
+/// - `summaries_raw`：已读取的 chapter_summaries.md 内容（避免重复读盘）
+fn rerun_advanced_count_promotion(story_dir: &std::path::Path, summaries_raw: &str) -> u32 {
+    let ledger_path = story_dir.join("pending_hooks.md");
+    let raw = match std::fs::read_to_string(&ledger_path) {
+        Ok(s) if !s.trim().is_empty() => s,
+        _ => return 0,
+    };
+
+    // 语言检测：含 CJK 字符视为 zh，否则 en
+    let language = if raw.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
+        Language::Zh
+    } else {
+        Language::En
+    };
+
+    let hooks = parse_pending_hooks_markdown(&raw, language);
+    if hooks.is_empty() {
+        return 0;
+    }
+
+    let result = rerun_promotion_pass(&hooks, summaries_raw);
+    if !result.updated {
+        return 0;
+    }
+
+    let rendered = render_hooks_markdown(&result.hooks, language);
+    if std::fs::write(&ledger_path, rendered).is_err() {
+        return 0;
+    }
+    result.flipped_count
+}
+
+/// Compress a single volume via one LLM pass; return the narrative paragraph.
 async fn consolidate_volume(
     engine: &AgentEngine,
     vol: &VolumeBoundary,
     header: &str,
     rows: &str,
 ) -> Result<String, AppError> {
-    let system_prompt = r###"你是叙事摘要专家。将逐章摘要压缩为一段连贯的叙事段落（不超过 500 字），保留关键事件、人物发展和情节推进。保留具体人名、地名、情节点。使用与输入相同的语言撰写。"###;
+    let system_prompt = r###"<identity>
+You are a narrative-summarization specialist. Compress per-chapter summaries into a single coherent narrative paragraph (no more than 500 words), preserving key events, character development, and plot progression. Keep specific names, place names, and plot points. Write in the same language as the input.
+</identity>"###;
     let user_message = format!(
-        r###"卷：{name}（第{start_ch}-{end_ch}章）
+        r###"Volume: {name} (Chapters {start_ch}-{end_ch})
 
-章节摘要：
+Chapter Summaries:
 {header}
 {rows}"###,
         name = vol.name,
@@ -432,12 +491,15 @@ mod tests {
     #[tokio::test]
     async fn consolidate_returns_empty_when_files_missing() {
         use crate::infrastructure::db::connection::Database;
+        use crate::infrastructure::fs::data_dir::DataDir;
         use crate::infrastructure::llm::registry::ProviderRegistry;
         use std::path::PathBuf;
 
         let registry = ProviderRegistry::empty();
         let db = Database::connect_in_memory().expect("in-memory db");
-        let engine = AgentEngine::new(registry, db, PathBuf::new());
+        let tmp_data = tempfile::tempdir().expect("tempdir for data_dir");
+        let data_dir = DataDir::new(tmp_data.path().to_path_buf());
+        let engine = AgentEngine::new(registry, db, data_dir, PathBuf::new(), None);
 
         // 不存在的书籍目录 → 文件读取失败 → 提前返回空结果
         let tmp = tempfile::tempdir().expect("tempdir");

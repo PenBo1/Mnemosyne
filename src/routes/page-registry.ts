@@ -17,6 +17,18 @@ export const pageRegistry: Record<string, PageConfig> = {
     loader: () => import("@/features/settings/sections/GeneralSettings").then((m) => ({ default: m.GeneralSettings })),
     layout: "default",
   },
+  "settings.userProfile": {
+    loader: () => import("@/features/settings/sections/UserProfileSettings").then((m) => ({ default: m.UserProfileSettings })),
+    layout: "default",
+  },
+  "settings.genres": {
+    loader: () => import("@/features/settings/sections/GenreSettings").then((m) => ({ default: m.GenreSettings })),
+    layout: "default",
+  },
+  "settings.styles": {
+    loader: () => import("@/features/settings/sections/StyleSettings").then((m) => ({ default: m.StyleSettings })),
+    layout: "default",
+  },
   "settings.model": {
     loader: () => import("@/features/settings/sections/ModelSettings").then((m) => ({ default: m.ModelSettings })),
     layout: "default",
@@ -59,6 +71,34 @@ export const pageRegistry: Record<string, PageConfig> = {
   },
   "settings.logs": {
     loader: () => import("@/features/settings/sections/LogsSettings").then((m) => ({ default: m.LogsSettings })),
+    layout: "default",
+  },
+  "settings.skillEvolution": {
+    loader: () => import("@/features/settings/sections/SkillEvolutionSettings").then((m) => ({ default: m.SkillEvolutionSettings })),
+    layout: "default",
+  },
+  "settings.learnedPreferences": {
+    loader: () => import("@/features/settings/sections/LearnedPreferencesSettings").then((m) => ({ default: m.LearnedPreferencesSettings })),
+    layout: "default",
+  },
+  "settings.shortTermMemory": {
+    loader: () => import("@/features/settings/sections/ShortTermMemorySettings").then((m) => ({ default: m.ShortTermMemorySettings })),
+    layout: "default",
+  },
+  "settings.agentAudit": {
+    loader: () => import("@/features/settings/sections/AgentAuditSettings").then((m) => ({ default: m.AgentAuditSettings })),
+    layout: "default",
+  },
+  "settings.dailySummary": {
+    loader: () => import("@/features/settings/sections/DailySummarySettings").then((m) => ({ default: m.DailySummarySettings })),
+    layout: "default",
+  },
+  "settings.projectMemory": {
+    loader: () => import("@/features/settings/sections/ProjectMemorySettings").then((m) => ({ default: m.ProjectMemorySettings })),
+    layout: "default",
+  },
+  "settings.toolLimits": {
+    loader: () => import("@/features/settings/sections/ToolLimitsSettings").then((m) => ({ default: m.ToolLimitsSettings })),
     layout: "default",
   },
   "settings.about": {
@@ -116,6 +156,10 @@ export const pageRegistry: Record<string, PageConfig> = {
   
   git: {
     loader: () => import("@/features/git/GitPage").then((m) => ({ default: m.GitPage })),
+    layout: "default",
+  },
+  audit: {
+    loader: () => import("@/features/audit/pages/AuditPage").then((m) => ({ default: m.AuditPage })),
     layout: "default",
   },
   loops: {

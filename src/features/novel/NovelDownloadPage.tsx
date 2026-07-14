@@ -121,7 +121,7 @@ export function NovelDownloadPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <DownloadIcon />
+            <BookOpenIcon />
             {t.novels.download.title}
           </PageTitle>
           <PageDescription>{t.novels.download.description}</PageDescription>
@@ -159,7 +159,7 @@ export function NovelDownloadPage() {
       {!searching && results.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <CardTitle className="trae-card-eyebrow">
               {t.novels.download.search}
             </CardTitle>
           </CardHeader>
@@ -218,20 +218,20 @@ export function NovelDownloadPage() {
       )}
 
       {!searching && results.length === 0 && keyword && (
-        <EmptyState icon={<SearchIcon />} title={t.novels.download.noResults} />
+        <EmptyState icon={<SearchIcon className="size-6" />} title={t.novels.download.noResults} />
       )}
 
       {localNovels.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <CardTitle className="trae-card-eyebrow">
               {t.novels.download.downloadedNovels.replace("{count}", String(localNovels.length))}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {localNovels.map((novel) => (
-                <div key={novel} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div key={novel} className="flex items-center gap-2 p-2 rounded-md bg-[var(--bg-overlay-l1)]">
                   <BookOpenIcon className="size-4 text-muted-foreground" />
                   <span className="text-sm truncate">{novel}</span>
                 </div>

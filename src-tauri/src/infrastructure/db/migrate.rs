@@ -4,7 +4,7 @@ use rusqlite_migration::{Migrations, M};
 
 use crate::shared::error::AppError;
 
-const MIGRATION_COUNT: u32 = 9;
+const MIGRATION_COUNT: u32 = 19;
 
 pub fn run_migrate(conn: &mut Connection) -> Result<(), AppError> {
     let sqlx_migrated: bool = conn
@@ -33,6 +33,16 @@ pub fn run_migrate(conn: &mut Connection) -> Result<(), AppError> {
         M::up(include_str!("../../../migrations/20260710000001_audit_events.sql")),
         M::up(include_str!("../../../migrations/20260711000001_workspace_last_opened_at.sql")),
         M::up(include_str!("../../../migrations/20260711000002_vector_store.sql")),
+        M::up(include_str!("../../../migrations/20260713000001_memory_entries.sql")),
+        M::up(include_str!("../../../migrations/20260713000002_loop_runs.sql")),
+        M::up(include_str!("../../../migrations/20260713000003_short_term_memory.sql")),
+        M::up(include_str!("../../../migrations/20260713000004_learned_preferences.sql")),
+        M::up(include_str!("../../../migrations/20260713000005_skill_evolution.sql")),
+        M::up(include_str!("../../../migrations/20260713000006_loop_states_patterns.sql")),
+        M::up(include_str!("../../../migrations/20260713000007_trace_spans.sql")),
+        M::up(include_str!("../../../migrations/20260713000008_metric_points.sql")),
+        M::up(include_str!("../../../migrations/20260714000001_memory_archives.sql")),
+        M::up(include_str!("../../../migrations/20260714000002_interaction_sessions.sql")),
     ]);
 
     migrations

@@ -9,4 +9,5 @@
 pub mod types;
 pub mod client;
 pub mod chunker;
+pub mod ingest;
 pub mod commands;

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,7 +150,7 @@ export function VersionPage({ novelId }: { novelId: string }) {
                   </pre>
                 ) : (
                   <EmptyState
-                    icon={<HistoryIcon />}
+                    icon={<HistoryIcon className="size-6" />}
                     title={t.versionPage.selectPrompt}
                     description={t.versionPage.selectHint}
                   />

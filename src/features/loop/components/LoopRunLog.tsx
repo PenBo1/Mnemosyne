@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useI18n } from "@/locales/i18n";
 import type { LoopRunLog as LoopRunLogType } from "@/features/loop/types";
 import { CheckCircle, XCircle, AlertTriangle, Clock } from "lucide-react";
@@ -20,13 +20,13 @@ const STATUS_ICONS: Record<string, ReactNode> = {
 export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
   const { t } = useI18n();
   const filteredLogs = selectedStateId
-    ? logs.filter((l) => l.loop_state_id === selectedStateId)
+    ? logs.filter((l) => l.loopStateId === selectedStateId)
     : logs;
 
   return (
     <Card size="sm" className="gap-0 py-0">
       <CardHeader className="px-3 py-2 border-b">
-        <CardTitle className="text-sm font-medium">{t.loop.runLogs}</CardTitle>
+        <CardTitle className="trae-card-eyebrow">{t.loop.runLogs}</CardTitle>
       </CardHeader>
       <CardContent className="max-h-[500px] overflow-y-auto p-0">
         {filteredLogs.length === 0 ? (
@@ -41,17 +41,17 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
                     {t.loop.logStatus[log.status]}
                   </span>
                   <span className="text-[10px] text-muted-foreground ml-auto">
-                    {new Date(log.created_at).toLocaleString()}
+                    {new Date(log.createdAt).toLocaleString()}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="size-2.5" />
-                    {(log.duration_ms / 1000).toFixed(1)}s
+                    {(log.durationMs / 1000).toFixed(1)}s
                   </span>
                   <span>
-                    {log.tokens_used.toLocaleString()} {t.loop.metrics.tokens}
+                    {log.tokensUsed.toLocaleString()} {t.loop.metrics.tokens}
                   </span>
                 </div>
 
@@ -76,9 +76,9 @@ export function LoopRunLog({ logs, selectedStateId }: LoopRunLogProps) {
                   </div>
                 )}
 
-                {log.error_message && (
+                {log.errorMessage && (
                   <div className="text-[10px] text-destructive">
-                    {log.error_message}
+                    {log.errorMessage}
                   </div>
                 )}
               </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useAgentStore } from "@/features/chat/store";
 import { useI18n } from "@/locales/i18n";
@@ -8,6 +9,7 @@ import { ChatInput } from "@/features/chat/components/chat-input";
 import { ContextPanel } from "@/features/chat/components/context-panel";
 import { ApprovalCard } from "@/features/agent/components/ApprovalCard";
 import { PlanDiffReview } from "@/features/agent/components/PlanDiffReview";
+import { SLASH_COMMANDS, type SlashCommand } from "@/features/chat/components/slash-commands";
 import type { AttachmentSpec } from "@/features/chat/types";
 
 export default function ChatPage() {
@@ -37,10 +39,10 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AttachmentSpec[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [activeCommand, setActiveCommand] = useState<SlashCommand | null>(null);
 
   const title = activeSession?.title || t.agentChat.title;
 
-  // 监听 EmptyState 卡片点击 —— 填入输入框
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<string>).detail;
@@ -50,23 +52,91 @@ export default function ChatPage() {
     return () => window.removeEventListener("chat:prompt", handler);
   }, []);
 
+  const executeCommand = (stem: string, args?: string) => {
+    switch (stem) {
+      case "/new":
+        void handleNewSession();
+        return true;
+      case "/clear":
+        useAgentStore.getState().replaceMessages([]);
+        return true;
+      case "/write":
+        if (!args) {
+          toast.warning(t.agentChat.slashWriteNoArgs);
+        } else {
+          toast.info(t.agentChat.slashWriteWIP);
+        }
+        return true;
+      case "/help":
+        toast.info("/new - 新建会话\n/clear - 清空消息\n/write - 写作模式\n/help - 显示帮助\n/status - 查看状态\n/depth - 设置思考深度\n/wiki - 打开 Wiki\n/memory - 打开记忆");
+        return true;
+      case "/status":
+        toast.info("状态功能开发中");
+        return true;
+      case "/depth":
+        toast.info(`思考深度设置功能开发中，参数: ${args || "未提供"}`);
+        return true;
+      case "/character":
+      case "/world":
+      case "/plot":
+        toast.info(`${stem.slice(1)} 模式功能开发中`);
+        return true;
+      case "/wiki":
+      case "/memory":
+        toast.info(`导航功能开发中: ${stem}`);
+        return true;
+      case "/export":
+        toast.info(`导出功能开发中，参数: ${args || "未提供"}`);
+        return true;
+      default:
+        toast.error(`命令 ${stem} 未实现`);
+        return true;
+    }
+  };
+
   const handleSubmit = () => {
     const trimmed = input.trim();
-    if (!trimmed || streaming) return;
+    if ((!trimmed && !activeCommand) || streaming) return;
+
+    if (activeCommand) {
+      const success = executeCommand(activeCommand.stem, trimmed);
+      if (success) {
+        setActiveCommand(null);
+        setInput("");
+        setAttachments([]);
+      }
+      return;
+    }
+
+    if (trimmed.startsWith("/")) {
+      const stemMatch = trimmed.match(/^\/\S+/);
+      const stem = stemMatch?.[0] ?? trimmed;
+      const args = trimmed.slice(stem.length).trim();
+
+      const matchedCommand = SLASH_COMMANDS.find((cmd) => cmd.stem === stem);
+
+      if (matchedCommand) {
+        executeCommand(stem, args);
+      } else {
+        toast.error(`未知命令: ${stem}\n输入 /help 查看可用命令`);
+      }
+      setInput("");
+      setAttachments([]);
+      return;
+    }
+
     setInput("");
-    const atts = attachments.length > 0 ? attachments : undefined;
     setAttachments([]);
+    void sendMessage(trimmed, attachments.length > 0 ? attachments : undefined);
+  };
 
-    if (trimmed === "/new") {
-      void handleNewSession();
-      return;
+  const handleActiveCommandChange = (cmd: SlashCommand | null) => {
+    if (cmd && !cmd.hasArgs) {
+      executeCommand(cmd.stem);
+      setActiveCommand(null);
+    } else {
+      setActiveCommand(cmd);
     }
-    if (trimmed === "/clear") {
-      useAgentStore.getState().replaceMessages([]);
-      return;
-    }
-
-    void sendMessage(trimmed, atts);
   };
 
   const handleAttachFile = (filePath: string) => {
@@ -122,6 +192,8 @@ export default function ChatPage() {
           attachments={attachments}
           onAttachFile={handleAttachFile}
           onRemoveAttachment={handleRemoveAttachment}
+          activeCommand={activeCommand}
+          onActiveCommandChange={handleActiveCommandChange}
         />
       </main>
 

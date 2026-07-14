@@ -51,23 +51,25 @@ const DIMENSIONS: &[&str] = &[
 
 fn build_system_prompt(target_chapters: u32) -> String {
     format!(
-        r###"你是网络小说的总策划评审。你的任务是评审 Architect 生成的基础设定，从 5 个维度打分。
+        r###"<identity>
+You are the chief story-architect reviewer for web fiction. Your task is to review the foundation specification produced by the Architect and score it across five dimensions.
+</identity>
 
-## 评审维度
+## Review Dimensions
 
-1. 核心冲突：主线矛盾是否清晰、是否有前台/后台双层故事、对手是否有力
-2. 开篇节奏：前 5 章能否抓住读者、是否有明确钩子
-3. 世界一致性：世界铁律是否自洽、是否有落地质感
-4. 角色区分度：主要角色是否有反差细节、说话方式是否区分、弧线是否清晰
-5. 节奏可行性：{target_chapters} 章的卷纲节奏是否合理、是否有高潮铺垫与后效
+1. Core conflict: Is the main-line contradiction clear? Is there a foreground/background two-layer story? Is the antagonist forceful?
+2. Opening pacing: Can the first 5 chapters grip the reader? Are there explicit hooks?
+3. World consistency: Are the world's iron rules self-consistent? Is there a grounded sense of texture?
+4. Character differentiation: Do the main characters have contrasting details? Are their speech patterns distinct? Are their arcs clear?
+5. Pacing feasibility: Is the volume-outline pacing reasonable across {target_chapters} chapters? Are there climax buildups and aftermaths?
 
-## 评分标准
+## Scoring Standard
 
-- 80+：通过，该维度质量良好
-- 60-79：需修改，有明确问题但不致命
-- <60：方向性错误，需要重做
+- 80+: Pass — the dimension is of good quality.
+- 60-79: Needs revision — clear problems but not fatal.
+- <60: Directional error — redo required.
 
-## 输出格式（严格遵守）
+## Output Format (must be followed strictly)
 
 === DIMENSION: 1 ===
 分数：X
@@ -77,7 +79,7 @@ fn build_system_prompt(target_chapters: u32) -> String {
 分数：X
 意见：Y
 
-（依次输出 5 个维度）
+(emit all five dimensions in order)
 
 === OVERALL ===
 总分：X
@@ -89,7 +91,7 @@ fn build_system_prompt(target_chapters: u32) -> String {
 
 fn build_user_message(foundation: &ArchitectOutput) -> String {
     format!(
-        r###"请评审以下基础设定：
+        r###"Review the following foundation specification:
 
 ## story_frame
 {story_frame}

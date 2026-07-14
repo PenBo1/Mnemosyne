@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useI18n } from "@/locales/i18n";
 import type { LoopPattern, CreateLoopStateRequest } from "@/features/loop/types";
 import {
@@ -45,9 +45,9 @@ export function LoopPatternEditor({
     setSubmitting(true);
     try {
       await onSubmit({
-        pattern_id: selectedPatternId,
-        readiness_level: readinessLevel,
-        token_cap_daily: parseInt(tokenCap, 10) || 50000,
+        patternId: selectedPatternId,
+        readinessLevel: readinessLevel,
+        tokenCapDaily: parseInt(tokenCap, 10) || 50000,
       });
       onOpenChange(false);
       setSelectedPatternId("");
@@ -84,7 +84,7 @@ export function LoopPatternEditor({
           </Field>
 
           {selectedPatternId && (
-            <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
+            <div className="text-xs text-muted-foreground bg-[var(--bg-overlay-l1)] rounded p-2">
               {patterns.find((p) => p.id === selectedPatternId)?.description ??
                 t.loop.noDescription}
             </div>

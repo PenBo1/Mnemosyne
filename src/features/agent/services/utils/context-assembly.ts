@@ -8,8 +8,8 @@
 // 迁移要点：
 // 1. 仅改 import 路径，去掉 .js 后缀。
 // 2. 原依赖 `estimateTextTokens`（来自 ../llm/provider.js），Mnemosyne 未迁移该模块。
-//    按迁移规则，本文件内自写简化版（按 text.length / 3 粗估，中文字符到 token 的近似）。
-//    TODO：后续接入 tiktoken 时替换为精确实现。
+//    本文件内自写改进版（中文 1 字≈1.5 token / 英文 1 词≈1.3 token / 代码字符数÷3.5）。
+//    不引入 tiktoken 外部依赖（保持包体积小）。
 // 3. 原依赖 `PlanChapterOutput` 类型（来自 ../agents/planner.js，Mnemosyne 未迁移 planner）。
 //    按迁移规则，本文件内定义局部最小接口 `PlanOutputLike`，只包含本文件实际用到的字段
 //    （intent.mustAvoid / intent.styleEmphasis / plannerInputs）。后续迁移 planner.ts 时可
@@ -38,14 +38,51 @@ interface PlanOutputLike {
   readonly plannerInputs: ReadonlyArray<string>;
 }
 
+// ── Token 估算（P2.1 改进版）─────────────────────────────────
+//
+// 估算依据（不引入 tiktoken，保持包体积小）：
+// - 中文（CJK 统一表意文字 + 扩展 A）：1 字 ≈ 1.5 token。
+//   依据：GPT-4o 的 cl100k_base 对中文常用字多为 1-2 token，平均约 1.5。
+// - 英文：按空格分词，1 词 ≈ 1.3 token。
+//   依据：英文常用词在 BPE 中多为 1 token，少见词 2-3 token，平均约 1.3。
+// - 代码（非 CJK、非英文单词的符号序列）：字符数 ÷ 3.5。
+//   依据：代码中大量符号在 BPE 中平均 2-4 字符/token，取 3.5 折中。
+// - 混合文本按三类分别统计后求和，比旧的 length/3 粗估更贴近实际。
+
+const CJK_RANGE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g;
+const ENGLISH_WORD = /[a-zA-Z]+/g;
+
 /**
- * 简化版 token 估算（替代未迁移的 llm/provider.ts:estimateTextTokens）。
- * 按 text.length / 3 粗估（中文字符到 token 的近似）。
- * TODO：后续接入 tiktoken 时替换为精确实现。
+ * 改进版 token 估算（P2.1）。
+ * 中文 1 字 ≈ 1.5 token / 英文 1 词 ≈ 1.3 token / 代码字符数 ÷ 3.5。
+ * 不引入 tiktoken 外部依赖（保持包体积小）。
  */
-function estimateTextTokens(text: string): number {
+export function estimateTextTokens(text: string): number {
   if (!text) return 0;
-  return Math.ceil(text.length / 3);
+
+  let cjkChars = 0;
+  let englishWords = 0;
+
+  // 统计 CJK 字符数
+  const cjkMatches = text.match(CJK_RANGE);
+  if (cjkMatches) cjkChars = cjkMatches.length;
+
+  // 统计英文单词数（在移除 CJK 后的文本上分词，避免中文被误匹配）
+  const nonCjkText = text.replace(CJK_RANGE, " ");
+  const wordMatches = nonCjkText.match(ENGLISH_WORD);
+  if (wordMatches) englishWords = wordMatches.length;
+
+  // 代码/符号字符数 = 总字符数 - CJK 字符数 - 英文单词字符数（含连字符）
+  const englishChars = englishWords > 0
+    ? wordMatches!.reduce((sum, w) => sum + w.length, 0)
+    : 0;
+  const codeChars = Math.max(0, text.length - cjkChars - englishChars);
+
+  const cjkTokens = cjkChars * 1.5;
+  const englishTokens = englishWords * 1.3;
+  const codeTokens = codeChars / 3.5;
+
+  return Math.ceil(cjkTokens + englishTokens + codeTokens);
 }
 
 const MAX_OVERRIDE_REASON_CHARS = 80;

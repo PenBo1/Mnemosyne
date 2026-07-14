@@ -6,6 +6,7 @@ use super::types::*;
 use super::openai::OpenAiProvider;
 use super::ollama::OllamaProvider;
 use super::agnes::AgnesProvider;
+use super::presets::{ProviderPreset, PresetProtocol, PRESETS};
 use crate::shared::error::AppError;
 use crate::infrastructure::fs::data_dir::DataDir;
 
@@ -135,10 +136,27 @@ impl ProviderRegistry {
                 tracing::info!("Anthropic provider registered from env var");
             }
         }
-        if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
-            if !api_key.is_empty() && !providers.contains_key("deepseek") {
-                providers.insert("deepseek".to_string(), Arc::new(OpenAiProvider::new(api_key, Some("https://api.deepseek.com".to_string()))));
-                tracing::info!("DeepSeek provider registered from env var");
+
+        // 遍历 presets 表,自动从环境变量注册所有 OpenAI/Anthropic 兼容 provider。
+        // 这替代了原来一个个硬编码 provider 的方式,新增 provider 只需在 presets.rs 加一条。
+        for preset in PRESETS.iter() {
+            if providers.contains_key(preset.id) {
+                continue;
+            }
+            if let Ok(api_key) = std::env::var(preset.env_var) {
+                if api_key.is_empty() {
+                    continue;
+                }
+                let base_url = std::env::var(preset.env_base_url)
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| preset.base_url.to_string());
+                let provider: Arc<dyn Provider> = match preset.protocol {
+                    PresetProtocol::OpenAi => Arc::new(OpenAiProvider::new(api_key, Some(base_url))),
+                    PresetProtocol::Anthropic => Arc::new(super::anthropic::AnthropicProvider::new(api_key, Some(base_url))),
+                };
+                providers.insert(preset.id.to_string(), provider);
+                tracing::info!(provider = preset.id, "Provider registered from preset env var");
             }
         }
 
@@ -256,6 +274,7 @@ impl ProviderRegistry {
         use super::anthropic::AnthropicProvider;
         use std::sync::Arc;
 
+        // 先尝试内置 provider
         let provider: Arc<dyn Provider> = match provider_name {
             "openai" => Arc::new(OpenAiProvider::new(
                 api_key.to_string(),
@@ -272,11 +291,20 @@ impl ProviderRegistry {
                 api_key.to_string(),
                 if base_url.is_empty() { None } else { Some(base_url.to_string()) },
             )),
-            "deepseek" => Arc::new(OpenAiProvider::new(
-                api_key.to_string(),
-                Some(if base_url.is_empty() { "https://api.deepseek.com".to_string() } else { base_url.to_string() }),
-            )),
-            _ => return Err(AppError::bad_request(format!("Unknown provider: {}", provider_name))),
+            name => {
+                // 查 presets 表,如果是预设 provider 就用对应协议构造
+                let preset = ProviderPreset::find(name)
+                    .ok_or_else(|| AppError::bad_request(format!("Unknown provider: {}", provider_name)))?;
+                let resolved_base_url = if base_url.is_empty() {
+                    preset.base_url.to_string()
+                } else {
+                    base_url.to_string()
+                };
+                match preset.protocol {
+                    PresetProtocol::OpenAi => Arc::new(OpenAiProvider::new(api_key.to_string(), Some(resolved_base_url))),
+                    PresetProtocol::Anthropic => Arc::new(AnthropicProvider::new(api_key.to_string(), Some(resolved_base_url))),
+                }
+            }
         };
 
         provider.test_connection().await

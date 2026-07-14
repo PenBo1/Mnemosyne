@@ -3,13 +3,19 @@
 // 职责：对写完的章节做 37 维度结构审计，输出 JSON 格式的审计结果。
 // 只有 critical 级别问题才判定 passed=false。
 //
-// prompt 策略：保留 37 个维度标签 + 审稿边界 + JSON 输出格式。
-// 精简 fanfic 维度配置、governed context、web search 等高级特性。
+// 维度激活规则：
+// - 默认激活 1-27 + 32-33（基础结构维度）
+// - 当 story/parent_canon.md 存在且非 fanfic 模式 → 激活 28-31（番外审查维度）
+// - 当 book.fanfic_mode 存在 → 激活 34-37（同人审查维度），并按模式覆盖严重度
+//   - canon: 34/35/37 critical, 36 warning
+//   - au:    34 critical, 35/37 info, 36 warning
+//   - ooc:   34 info, 35/36 warning, 37 info；同时把维度 1 (OOC) 降级为 info
+//   - cp:    36 critical, 34/35 warning, 37 info
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
 
-use super::super::types::BookConfig;
+use super::super::types::{BookConfig, FanficMode};
 
 /// 审计问题严重级别
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -67,6 +73,12 @@ pub struct AuditorContext {
     pub style_guide: String,
     pub chapter_memo: String,
     pub previous_chapter: String,
+    /// 正传正典全文（story/parent_canon.md）。空字符串表示不存在。
+    /// 仅当非 fanfic 模式时注入到 user prompt。
+    pub parent_canon: String,
+    /// 同人正典全文（story/fanfic_canon.md）。空字符串表示不存在。
+    /// 仅当 book.fanfic_mode 为 Some 时注入到 user prompt。
+    pub fanfic_canon: String,
 }
 
 /// 审计一章。
@@ -78,8 +90,13 @@ pub async fn audit_chapter(
     chapter_content: &str,
     ctx: &AuditorContext,
 ) -> Result<AuditResult, AppError> {
-    let system_prompt = build_system_prompt(book);
-    let user_message = build_user_message(book, chapter_number, chapter_title, chapter_content, ctx);
+    let fanfic_mode = book.fanfic_mode;
+    let has_parent_canon = !ctx.parent_canon.is_empty() && fanfic_mode.is_none();
+    let has_fanfic_canon = !ctx.fanfic_canon.is_empty() && fanfic_mode.is_some();
+
+    let system_prompt = build_system_prompt(book, fanfic_mode, has_parent_canon);
+    let user_message =
+        build_user_message(book, chapter_number, chapter_title, chapter_content, ctx, has_parent_canon, has_fanfic_canon);
 
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
     Ok(parse_audit_result(&response))
@@ -128,43 +145,205 @@ const DIMENSION_LABELS: &[(u32, &str, &str)] = &[
     (37, "正典事件一致性", "Canon Event Consistency Check"),
 ];
 
-fn build_dimension_list() -> String {
+// ── Fanfic 维度配置 ─────────────────────────────
+
+/// Fanfic 维度的严重度级别
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FanficSeverity {
+    Critical,
+    Warning,
+    Info,
+}
+
+impl FanficSeverity {
+    /// 中文严重度标签。
+    fn label_zh(self) -> &'static str {
+        match self {
+            FanficSeverity::Critical => "（严格检查）",
+            FanficSeverity::Warning => "（警告级别）",
+            FanficSeverity::Info => "（仅记录，不判定失败）",
+        }
+    }
+}
+
+/// Fanfic 维度配置：激活的维度 id + 严重度覆盖
+struct FanficDimensionConfig {
+    /// 激活的同人维度 id（始终是 34-37）
+    active_ids: &'static [u32],
+    /// 维度 id → 严重度。调用方按 baseNote + severity.label_zh() 拼 note。
+    severity_overrides: &'static [(u32, FanficSeverity)],
+}
+
+/// Fanfic 维度的基础说明（中文）
+const FANFIC_DIMENSION_BASE_NOTES: &[(u32, &str)] = &[
+    (34, "检查角色的语癖、说话风格、行为模式是否与 fanfic_canon.md 角色档案一致。偏离必须有情境驱动。"),
+    (35, "检查章节内容是否违反 fanfic_canon.md 中的世界规则（地理、力量体系、阵营关系）。"),
+    (36, "检查角色之间的关系互动是否合理，是否与 fanfic_canon.md 中标注的关键关系一致或有合理发展。"),
+    (37, "检查章节是否与 fanfic_canon.md 关键事件时间线矛盾。"),
+];
+
+/// 番外维度（28-31）说明，仅当 parent_canon.md 存在且非 fanfic 模式时激活。
+const SPINOFF_DIMENSION_NOTES: &[(u32, &str)] = &[
+    (28, "检查番外事件是否与正典约束表矛盾"),
+    (29, "检查角色是否引用了分歧点之后才揭示的信息（参照信息边界表）"),
+    (30, "检查番外是否违反正传世界规则（力量体系、地理、阵营）"),
+    (31, "检查番外是否越权回收正传伏笔（warning级别）"),
+];
+
+/// 返回 fanfic 模式对应的维度配置。
+fn get_fanfic_dimension_config(mode: FanficMode) -> FanficDimensionConfig {
+    // SEVERITY_MAP: mode → { dim_id → severity }
+    // canon: 34 critical, 35 critical, 36 warning, 37 critical
+    // au:    34 critical, 35 info,     36 warning, 37 info
+    // ooc:   34 info,     35 warning,  36 warning, 37 info
+    // cp:    34 warning,  35 warning,  36 critical, 37 info
+    let severity_overrides: &'static [(u32, FanficSeverity)] = match mode {
+        FanficMode::Canon => &[
+            (34, FanficSeverity::Critical),
+            (35, FanficSeverity::Critical),
+            (36, FanficSeverity::Warning),
+            (37, FanficSeverity::Critical),
+        ],
+        FanficMode::Au => &[
+            (34, FanficSeverity::Critical),
+            (35, FanficSeverity::Info),
+            (36, FanficSeverity::Warning),
+            (37, FanficSeverity::Info),
+        ],
+        FanficMode::Ooc => &[
+            (34, FanficSeverity::Info),
+            (35, FanficSeverity::Warning),
+            (36, FanficSeverity::Warning),
+            (37, FanficSeverity::Info),
+        ],
+        FanficMode::Cp => &[
+            (34, FanficSeverity::Warning),
+            (35, FanficSeverity::Warning),
+            (36, FanficSeverity::Critical),
+            (37, FanficSeverity::Info),
+        ],
+    };
+
+    FanficDimensionConfig {
+        active_ids: &[34, 35, 36, 37],
+        severity_overrides,
+    }
+}
+
+/// 构建维度列表（带说明），根据 fanfic_mode 与 has_parent_canon 条件激活维度。
+///
+/// 输出每行格式：`<id>. <名称>（<说明>）`，无说明时省略括号。
+fn build_dimension_list_with_notes(
+    fanfic_mode: Option<FanficMode>,
+    has_parent_canon: bool,
+) -> String {
+    // 确定激活的维度 id 集合
+    let mut active_ids: Vec<u32> = (1..=27).chain([32, 33].into_iter()).collect();
+
+    // 番外维度：parent_canon 存在且非 fanfic → 激活 28-31
+    if has_parent_canon && fanfic_mode.is_none() {
+        active_ids.extend([28, 29, 30, 31]);
+    }
+
+    // 同人维度：fanfic_mode 存在 → 激活 34-37
+    let fanfic_config = fanfic_mode.map(get_fanfic_dimension_config);
+    if let Some(cfg) = &fanfic_config {
+        active_ids.extend_from_slice(cfg.active_ids);
+    }
+
+    active_ids.sort_unstable();
+
+    // 构建 id → note 查找表
+    let mut notes_map: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+
+    // 番外维度说明
+    if has_parent_canon && fanfic_mode.is_none() {
+        for (id, note) in SPINOFF_DIMENSION_NOTES {
+            notes_map.insert(*id, (*note).to_string());
+        }
+    }
+
+    // 同人维度说明 = baseNote + 严重度标签
+    if let Some(cfg) = &fanfic_config {
+        for (id, severity) in cfg.severity_overrides {
+            let base = FANFIC_DIMENSION_BASE_NOTES
+                .iter()
+                .find(|(bid, _)| bid == id)
+                .map(|(_, n)| *n)
+                .unwrap_or("");
+            notes_map.insert(*id, format!("{} {}", base, severity.label_zh()));
+        }
+
+        // OOC 维度 1 的模式特定说明
+        match fanfic_mode {
+            Some(FanficMode::Ooc) => {
+                notes_map.insert(
+                    1,
+                    "OOC模式下角色可偏离性格底色，此维度仅记录不判定失败。参照 fanfic_canon.md 角色档案评估偏离程度。".to_string(),
+                );
+            }
+            Some(FanficMode::Canon) => {
+                notes_map.insert(
+                    1,
+                    "原作向同人：角色必须严格遵守性格底色。参照 fanfic_canon.md 角色档案中的性格底色和行为模式。".to_string(),
+                );
+            }
+            _ => {}
+        }
+    }
+
     DIMENSION_LABELS
         .iter()
-        .map(|(id, zh, _en)| format!("{}. {}", id, zh))
+        .filter(|(id, _, _)| active_ids.contains(id))
+        .map(|(id, zh, _en)| {
+            match notes_map.get(id) {
+                Some(note) if !note.is_empty() => format!("{}. {}（{}）", id, zh, note),
+                _ => format!("{}. {}", id, zh),
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 // ── System Prompt ────────────────────────────────────────────
 
-fn build_system_prompt(book: &BookConfig) -> String {
-    let dim_list = build_dimension_list();
+fn build_system_prompt(
+    book: &BookConfig,
+    fanfic_mode: Option<FanficMode>,
+    has_parent_canon: bool,
+) -> String {
+    let dim_list = build_dimension_list_with_notes(fanfic_mode, has_parent_canon);
 
     format!(
-        r#"你是一位严格的网络小说结构审稿编辑。你只审完成度 + 结构，不审文笔。
+        r#"<identity>
+You are a strict structural editor for web fiction. You audit completeness and structure only — never prose style.
+</identity>
 
-## 审稿边界（硬约束）
+<audit_boundary>
+You do not audit prose, typography, or sentence construction — those belong to the Polisher. Any prose-style issue you happen to notice may only be flagged with severity="info" for the Polisher's reference; it must not influence passed/overall_score and must never be marked critical.
+</audit_boundary>
 
-你不审文笔、不审排版、不审句式——这些归 Polisher。你发现的文笔问题只能以 severity="info" 标注供 Polisher 参考，不计入 passed/overall_score，也绝不可标为 critical。
+<responsibilities>
+You audit twelve structural red-flag categories: sluggish/flat openings, vague or reality-detached worldbuilding, contradictory character setups, chaotic POV, main-line drift or stall, weak conflict or missing payoffs, broken pacing or jarring transitions, before/after character inconsistency, thin characters lacking contrast, stiff emotion or abrupt relationships, unbalanced cheat/golden-finger mechanics, and ungrounded settings. You also retain the engineering dimensions: OOC, timeline consistency, information boundary, hook debt, cross-chapter repetition, lexical fatigue, chapter word count, title fatigue, paragraph shape.
 
-你审 12 条结构类雷点：开篇拖沓/平淡、世界观模糊脱现实、人设矛盾、视角杂乱、主线偏离/停滞、冲突乏力爽点缺失、节奏失控过渡生硬、人设前后矛盾、人物单薄无反差、情感表达生硬/关系突兀、金手指失衡、设定无落地。同时保留工程维度（OOC、timeline 一致、信息越界、hook-debt、跨章重复、词汇疲劳、章节字数、标题疲劳、段落形状）。
+A sparse chapter memo is a legitimate state. Breather / aftermath / transition chapters may have a memo containing only goal + a skeletal body — such memos are not flagged as incomplete, and you must not penalize a finished chapter for paragraphs the memo never specified. Judge drift only against what the memo actually committed to.
+</responsibilities>
 
-稀疏 memo 是合法状态。喘息章 / 后效章 / 过渡章的 memo 可以只有 goal + 骨架 body——此类 memo 不判 incomplete，也不能因为 memo 没写的段落就扣成稿的分。只按 memo 实际写出来的内容判偏离。
+<repair_scope_rules>
+Every issue must carry a repair_scope value as a routing hint:
+- "local" — wording, paragraph shape, minor repetition, sentence-level small fixes.
+- "structural" — main-line drift, timeline break, missing scene or payoff, character-logic collapse, or any problem requiring a scene or whole-chapter rewrite.
+- "unknown" — only when you genuinely cannot tell.
+</repair_scope_rules>
 
-每条 issue 必须给 repair_scope 作为路由提示：
-- "local" 表示措辞、段落形状、小重复、句段级小修
-- "structural" 表示主线偏离、时间线断裂、场面/回报缺失、人物逻辑崩，或任何需要重写场景/整章的问题
-- "unknown" 只有确实无法判断时才写
+## Book Information
+- Title: {title}
+- Target chapter count: {target_chapters} chapters
 
-## 书籍信息
-- 标题：{title}
-- 目标章数：{target_chapters}章
-
-## 审查维度：
+## Audit Dimensions:
 {dim_list}
 
-## 输出格式必须为 JSON：
+## Output Format (must be JSON):
 
 {{
   "passed": true/false,
@@ -173,23 +352,24 @@ fn build_system_prompt(book: &BookConfig) -> String {
     {{
       "severity": "critical|warning|info",
       "repair_scope": "local|structural|unknown",
-      "category": "审查维度名称",
-      "description": "具体问题描述",
-      "suggestion": "修改建议"
+      "category": "audit dimension name",
+      "description": "specific problem description",
+      "suggestion": "revision suggestion"
     }}
   ],
-  "summary": "一句话总结审查结论"
+  "summary": "one-sentence summary of the audit verdict"
 }}
 
-只有当存在 critical 级别问题时，passed 才为 false。
+`passed` is false only when at least one critical-level issue exists.
 
-overall_score 评分校准：
-- 95-100：可直接发布，无明显问题
-- 85-94：有小瑕疵但整体流畅可读，读者不会出戏
-- 75-84：有明显问题但故事主干完整，需要修但不紧急
-- 65-74：多处影响阅读体验的问题，节奏或连续性有断裂
-- < 65：结构性问题，需要大幅重写
-综合评分，不要因为单一小问题大幅拉低分数。"#,
+<scoring_calibration>
+- 95-100: ready to publish, no noticeable issues.
+- 85-94: minor flaws but overall smooth and readable; readers will not be pulled out of the story.
+- 75-84: noticeable problems but the story spine is intact; revision needed but not urgent.
+- 65-74: multiple problems harming the reading experience; pacing or continuity has fractures.
+- < 65: structural problems requiring substantial rewrite.
+Score holistically — do not crater the score over a single minor issue.
+</scoring_calibration>"#,
         title = book.title,
         target_chapters = book.target_chapters,
         dim_list = dim_list,
@@ -204,44 +384,60 @@ fn build_user_message(
     chapter_title: &str,
     chapter_content: &str,
     ctx: &AuditorContext,
+    has_parent_canon: bool,
+    has_fanfic_canon: bool,
 ) -> String {
     let prev_block = if ctx.previous_chapter.is_empty() {
         String::new()
     } else {
-        format!("\n## 上一章全文（用于衔接检查）\n{}\n", ctx.previous_chapter)
+        format!("\n## Previous Chapter Full Text (for continuity check)\n{}\n", ctx.previous_chapter)
     };
 
     let memo_block = if ctx.chapter_memo.is_empty() {
         String::new()
     } else {
-        format!("\n## 章节备忘（用于 memo 偏离检测）\n{}\n", ctx.chapter_memo)
+        format!("\n## Chapter Memo (for memo drift detection)\n{}\n", ctx.chapter_memo)
+    };
+
+    // 正传正典参照块：仅当 has_parent_canon 时注入（番外审查专用）
+    let parent_canon_block = if has_parent_canon {
+        format!("\n## 正传正典参照（番外审查专用）\n{}\n", ctx.parent_canon)
+    } else {
+        String::new()
+    };
+
+    // 同人正典参照块：仅当 has_fanfic_canon 时注入（同人审查专用）
+    let fanfic_canon_block = if has_fanfic_canon {
+        format!("\n## 同人正典参照（同人审查专用）\n{}\n", ctx.fanfic_canon)
+    } else {
+        String::new()
     };
 
     format!(
-        r#"请审查第 {chapter_number} 章「{chapter_title}」。
+        r#"Audit Chapter {chapter_number} "{chapter_title}".
 
-## 当前状态卡
+## Current State Card
 {current_state}
 
-## 伏笔池
+## Hook Pool
 {pending_hooks}
 
-## 章节摘要（用于节奏检查）
+## Chapter Summaries (for pacing check)
 {chapter_summaries}
 
-## 卷纲
+## Volume Outline
 {volume_map}
 
-## 世界观设定
+## World Setting
 {story_frame}
 
-## 规则卡
+## Rule Card
 {book_rules}
 
-## 文风指南
+## Style Guide
 {style_guide}
-{memo_block}{prev_block}
-## 待审章节内容
+{memo_block}{prev_block}{parent_canon_block}{fanfic_canon_block}
+## Chapter Content to Audit
 {chapter_content}"#,
         chapter_number = chapter_number,
         chapter_title = chapter_title,
@@ -252,12 +448,14 @@ fn build_user_message(
         story_frame = ctx.story_frame,
         book_rules = ctx.book_rules,
         style_guide = if ctx.style_guide.is_empty() {
-            "(无文风指南)"
+            "(no style guide)"
         } else {
             &ctx.style_guide
         },
         memo_block = memo_block,
         prev_block = prev_block,
+        parent_canon_block = parent_canon_block,
+        fanfic_canon_block = fanfic_canon_block,
         chapter_content = chapter_content,
     )
 }
@@ -434,9 +632,52 @@ mod tests {
     }
 
     #[test]
-    fn dimension_list_has_37_entries() {
-        let list = build_dimension_list();
+    fn dimension_list_default_has_29_entries() {
+        // 默认场景：1-27 + 32-33 = 29 维度
+        let list = build_dimension_list_with_notes(None, false);
         let count = list.lines().count();
-        assert_eq!(count, 37);
+        assert_eq!(count, 29);
+    }
+
+    #[test]
+    fn dimension_list_with_parent_canon_adds_spinoff_dims() {
+        // parent_canon 存在且非 fanfic → 1-27 + 28-31 + 32-33 = 33 维度
+        let list = build_dimension_list_with_notes(None, true);
+        let count = list.lines().count();
+        assert_eq!(count, 33);
+        assert!(list.contains("28. 正传事件冲突"));
+        assert!(list.contains("31. 番外伏笔隔离"));
+    }
+
+    #[test]
+    fn dimension_list_with_fanfic_mode_adds_fanfic_dims() {
+        // fanfic_mode 存在 → 1-27 + 32-33 + 34-37 = 33 维度
+        let list = build_dimension_list_with_notes(Some(FanficMode::Canon), false);
+        let count = list.lines().count();
+        assert_eq!(count, 33);
+        assert!(list.contains("34. 角色还原度"));
+        assert!(list.contains("37. 正典事件一致性"));
+        // canon 模式下 34/35/37 应为严格检查
+        assert!(list.contains("34. 角色还原度（检查角色的语癖、说话风格、行为模式是否与 fanfic_canon.md 角色档案一致。偏离必须有情境驱动。 （严格检查））"));
+    }
+
+    #[test]
+    fn dimension_list_fanfic_ooc_mode_relaxes_ooc_dim() {
+        let list = build_dimension_list_with_notes(Some(FanficMode::Ooc), false);
+        // 第一行应是 OOC 检查，且带 OOC 模式说明
+        let first_line = list.lines().next().unwrap();
+        assert!(first_line.starts_with("1. OOC检查"));
+        assert!(first_line.contains("OOC模式下角色可偏离性格底色"));
+    }
+
+    #[test]
+    fn dimension_list_fanfic_overrides_parent_canon() {
+        // fanfic_mode + parent_canon 同时存在时：fanfic 优先，不激活番外维度
+        let list = build_dimension_list_with_notes(Some(FanficMode::Au), true);
+        let count = list.lines().count();
+        // 1-27 + 32-33 + 34-37 = 33（不含 28-31）
+        assert_eq!(count, 33);
+        assert!(!list.contains("28. 正传事件冲突"));
+        assert!(list.contains("34. 角色还原度"));
     }
 }

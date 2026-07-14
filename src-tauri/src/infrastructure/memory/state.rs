@@ -1,6 +1,7 @@
-﻿
+
 use std::sync::Arc;
 use super::store::MemoryStore;
+use crate::infrastructure::db::connection::Database;
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -9,16 +10,7 @@ pub struct MemoryState {
 }
 
 impl MemoryState {
-    pub fn new(data_dir: PathBuf) -> Self {
-        let store = MemoryStore::new(data_dir);
-        Self { store }
-    }
-}
-
-impl Default for MemoryState {
-    fn default() -> Self {
-        Self {
-            store: MemoryStore::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
-        }
+    pub fn new(db: Database, data_dir: PathBuf) -> Self {
+        Self { store: MemoryStore::new(db, data_dir) }
     }
 }

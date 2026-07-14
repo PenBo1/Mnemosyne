@@ -127,12 +127,18 @@ export function useChat() {
     loadSessions(undefined, activeWorkspaceId ?? undefined);
   }, [activeWorkspaceId, loadSessions]);
 
-  // 进入页面时若已有会话但未选中，自动选第一个
+  // 读取 pendingClear 标志（用户主动清空会话时为 true）
+  const pendingClear = useAgentStore((s) => s.pendingClear);
+
+  // 初始挂载时若已有会话但未选中，自动选第一个
+  // 但如果用户主动清空（pendingClear=true），则跳过自动选择
+  const initialAutoSelectDone = useRef(false);
   useEffect(() => {
-    if (sessions.length > 0 && !currentSessionId) {
+    if (!initialAutoSelectDone.current && !pendingClear && sessions.length > 0 && !currentSessionId) {
+      initialAutoSelectDone.current = true;
       switchSession(sessions[0].id);
     }
-  }, [sessions, currentSessionId, switchSession]);
+  }, [sessions, currentSessionId, pendingClear, switchSession]);
 
   const sendMessage = useCallback(
     async (content: string, attachments?: AttachmentSpec[]) => {
@@ -176,7 +182,13 @@ export function useChat() {
         // P1: 注入工作区路径（chat-runtime 用于 Rust 端 AGENTS.md + env）
         setCurrentWorkspacePath(workspacePath);
         const customInstructions = await getCustomInstructions();
-        await chatSendMessage(sid, trimmed, contextText, customInstructions);
+        // P2.8: 读取当前激活 agent 的工具白名单，随 IPC request 传递给后端。
+        // 后端 SendMessageRequest 暂未声明 tool_whitelist 字段（serde 忽略未知字段），
+        // 当前为协议预声明 —— 后端补字段后即可启用 per-agent 工具限制，前端无需再改。
+        // filterToolsByWhitelist 辅助函数（agents.ts）用于前端工具列表展示场景，
+        // 此处仅传递白名单，实际过滤由后端 agent engine 执行。
+        const toolWhitelist = useAgentsStore.getState().active().toolWhitelist;
+        await chatSendMessage(sid, trimmed, contextText, customInstructions, toolWhitelist);
       } catch (err) {
         setStreaming(false);
         const msg = err instanceof Error ? err.message : "Failed to send message";

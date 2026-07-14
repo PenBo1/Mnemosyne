@@ -5,12 +5,11 @@
 //    - `../models/input-governance.js`（类型 ContextPackage）→ `@/shared/types/input-governance`
 //    - `./memory-retrieval.js`（parsePendingHooksMarkdown / renderHookSnapshot，re-export
 //      自 story-markdown）→ `./memory-retrieval`（已迁移，re-export 链保留）
-//    - `./hook-lifecycle.js`（isHookWithinChapterWindow）→ `./hook-lifecycle`（已迁移简化版）
+//    - `./hook-lifecycle.js`（isHookWithinChapterWindow）→ `./hook-lifecycle`（已迁移）
 //
-// 2. hook-lifecycle 简化版适配（任务描述要求）：
-//    逐行核查源文件后，本文件**未**调用 resolveHookPayoffTiming / localizeHookPayoffTiming
-//    等 timing 相关函数（任务描述中的"用 hook.payoffTiming ?? "" 替代"在源码中无对应调用点）。
-//    唯一从 hook-lifecycle 导入的是 isHookWithinChapterWindow，简化版签名与原版完全兼容
+// 2. hook-lifecycle 适配说明：
+//    本文件未调用 resolveHookPayoffTiming / localizeHookPayoffTiming 等 timing 相关函数。
+//    唯一从 hook-lifecycle 导入的是 isHookWithinChapterWindow，签名与原版完全兼容
 //    （参数 hook / chapterNumber / recentWindow / lookahead 均未变），故无需任何业务适配。
 //
 // 3. 纯函数，无 I/O —— 不涉及 readFile / join 替换。

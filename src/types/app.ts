@@ -7,6 +7,9 @@
  */
 export type SettingsPage =
   | "settings.general"
+  | "settings.userProfile"
+  | "settings.genres"
+  | "settings.styles"
   | "settings.model"
   | "settings.embedding"
   | "settings.prompts"
@@ -18,6 +21,13 @@ export type SettingsPage =
   | "settings.shortcuts"
   | "settings.system"
   | "settings.logs"
+  | "settings.skillEvolution"
+  | "settings.learnedPreferences"
+  | "settings.shortTermMemory"
+  | "settings.agentAudit"
+  | "settings.dailySummary"
+  | "settings.projectMemory"
+  | "settings.toolLimits"
   | "settings.about";
 
 /** 设置子页默认入口 */
@@ -36,7 +46,7 @@ export type AppPage =
   | "settings"
   | "trends" | "novels" | "skills" | "chat" | "memory"
   | "dashboard" | "knowledge" | "main-agent" | "wiki" | "version"
-  | "loops" | "git" | "novel-reader" | "pipeline";
+  | "loops" | "git" | "novel-reader" | "pipeline" | "audit";
 
 export interface AppState {
   currentPage: AppPage;

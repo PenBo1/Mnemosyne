@@ -22,7 +22,13 @@ impl SubAgent {
         self.role
     }
 
-    pub async fn execute<M>(&self, agent_builder: AgentBuilder<M>, task: &str, context: &str) -> Result<SubAgentResult, AppError>
+    pub async fn execute<M>(
+        &self,
+        agent_builder: AgentBuilder<M>,
+        task: &str,
+        context: &str,
+        skill_prompt: Option<&str>,
+    ) -> Result<SubAgentResult, AppError>
     where
         M: rig::completion::CompletionModel + Send + Sync + 'static,
     {
@@ -31,8 +37,18 @@ impl SubAgent {
             context, task
         );
 
+        // 拼接 role system_prompt 与 skill 行为 prompt(若有)
+        let preamble = match skill_prompt {
+            Some(sp) => format!(
+                "{}\n\n---\n\n# Skill Behavior Constraint\n\n{}",
+                self.role.system_prompt(),
+                sp
+            ),
+            None => self.role.system_prompt().to_string(),
+        };
+
         let agent = agent_builder
-            .preamble(self.role.system_prompt())
+            .preamble(&preamble)
             .max_tokens(4096)
             .build();
 

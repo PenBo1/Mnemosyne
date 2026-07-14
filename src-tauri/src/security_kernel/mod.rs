@@ -2,6 +2,7 @@ pub mod approval;
 pub mod audit;
 pub mod commands;
 pub mod config;
+pub mod hooks;
 pub mod kernel;
 pub mod permission;
 pub mod plugin;
@@ -24,6 +25,17 @@ pub use audit::{
     SecurityEvent, AuditEntry, AuditFilter,
     AuditStore,
     LoggingHandler, MetricsHandler,
+};
+pub use hooks::{
+    HookEngine, HookEngineState, HookRegistry, HookDispatchOutcome,
+    ConfiguredHook, HookAction, HookConfig, HookEvent, HookFn, HookInfo,
+    HookMatcher, HookPayload, HookResult, HookTestRequest, HookTestResult,
+    HookDispatcher, OptionalHookDispatcher, try_dispatch,
+    session_start_payload, user_prompt_submit_payload, stop_payload,
+    subagent_start_payload, subagent_stop_payload,
+    pre_compact_payload, post_compact_payload,
+    handler_for_action,
+    hook_list, hook_register, hook_test_dispatch, hook_unregister,
 };
 pub use kernel::SecurityKernel;
 pub use state::SecurityKernelState;

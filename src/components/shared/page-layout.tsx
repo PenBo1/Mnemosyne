@@ -98,6 +98,32 @@ function PageActions({
   )
 }
 
+function SectionTitle({
+  className,
+  ...props
+}: React.ComponentProps<"h2">) {
+  return (
+    <h2
+      data-slot="section-title"
+      className={cn("trae-section-title", className)}
+      {...props}
+    />
+  )
+}
+
+function SectionHeader({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="section-header"
+      className={cn("flex items-center justify-between gap-3", className)}
+      {...props}
+    />
+  )
+}
+
 export {
   PageContainer,
   PageHeader,
@@ -105,4 +131,6 @@ export {
   PageTitle,
   PageDescription,
   PageActions,
+  SectionTitle,
+  SectionHeader,
 }

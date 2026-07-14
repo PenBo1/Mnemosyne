@@ -39,7 +39,7 @@ export function SlashCommandMenu({
             onMouseEnter={() => onHover(idx)}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors",
-              idx === selectedIndex ? "bg-muted" : "hover:bg-muted/50",
+              idx === selectedIndex ? "bg-muted" : "hover:bg-accent",
             )}
           >
             <cmd.icon className="size-3.5 shrink-0 text-muted-foreground" />

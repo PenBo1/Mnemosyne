@@ -9,6 +9,7 @@ import {
   PageHeading,
   PageTitle,
   PageDescription,
+  SectionTitle,
 } from "@/components/shared/page-layout";
 import { EmptyState } from "@/components/shared/state";
 import {
@@ -63,7 +64,10 @@ export function DashboardPage() {
     <PageContainer>
       <PageHeader>
         <PageHeading>
-          <PageTitle>{t.dashboard.title}</PageTitle>
+          <PageTitle>
+            <TrendingUpIcon />
+            {t.dashboard.title}
+          </PageTitle>
           <PageDescription>{t.dashboard.description}</PageDescription>
         </PageHeading>
       </PageHeader>
@@ -73,12 +77,12 @@ export function DashboardPage() {
         {statCards.map((card) => (
           <Card key={card.label}>
             <CardContent className="flex items-center gap-3 py-4">
-              <div className="rounded-[var(--radius-4)] bg-muted p-2">
-                <card.icon className="size-4 text-primary" />
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-4)] bg-[var(--bg-overlay-l2)]">
+                <card.icon className="size-4 text-[var(--text-brand)]" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{card.value.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">{card.label}</p>
+              <div className="min-w-0">
+                <p className="trae-stat-value">{card.value.toLocaleString()}</p>
+                <p className="trae-eyebrow mt-0.5">{card.label}</p>
               </div>
             </CardContent>
           </Card>
@@ -89,7 +93,7 @@ export function DashboardPage() {
 
       {/* 活跃度热力图 */}
       <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">{t.dashboard.heatmap.title}</h2>
+        <SectionTitle>{t.dashboard.heatmap.title}</SectionTitle>
         <HeatmapGrid
           data={activity}
           title={t.dashboard.heatmap.overview}
@@ -102,9 +106,9 @@ export function DashboardPage() {
         <>
           <Separator />
           <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
+            <SectionTitle className="flex items-center gap-2">
               <BrainIcon className="size-5" /> {t.dashboard.ai.modelUsage}
-            </h2>
+            </SectionTitle>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {aiStats.modelUsage.map((model) => (
                 <Card key={`${model.provider ?? "unknown"}-${model.model}`}>
@@ -114,9 +118,9 @@ export function DashboardPage() {
                       <Badge variant="secondary">{model.calls} calls</Badge>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <div>In: {model.inputTokens.toLocaleString()}</div>
-                      <div>Out: {model.outputTokens.toLocaleString()}</div>
-                      <div>Total: {model.totalTokens.toLocaleString()}</div>
+                      <div className="trae-num">In: {model.inputTokens.toLocaleString()}</div>
+                      <div className="trae-num">Out: {model.outputTokens.toLocaleString()}</div>
+                      <div className="trae-num">Total: {model.totalTokens.toLocaleString()}</div>
                       <div>
                         {model.provider ?? "—"}
                       </div>
@@ -134,10 +138,10 @@ export function DashboardPage() {
         <>
           <Separator />
           <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
+            <SectionTitle className="flex items-center gap-2">
               <AlertTriangleIcon className="size-5 text-muted-foreground" />{" "}
               {t.dashboard.ai.recentAuditEvents}
-            </h2>
+            </SectionTitle>
             <ScrollArea className="h-72">
               <div className="flex flex-col gap-2">
                 {auditEvents.slice(0, 20).map((event) => (
@@ -166,7 +170,7 @@ export function DashboardPage() {
                           </p>
                         )}
                       </div>
-                      <div className="text-right shrink-0 text-muted-foreground">
+                      <div className="text-right shrink-0 text-muted-foreground trae-num">
                         {new Date(event.recordedAt).toLocaleTimeString()}
                       </div>
                     </CardContent>
@@ -183,7 +187,7 @@ export function DashboardPage() {
         <>
           <Separator />
           <EmptyState
-            icon={<BrainIcon />}
+            icon={<BrainIcon className="size-6" />}
             title={t.dashboard.ai.noData}
             description={t.dashboard.ai.noDataHint}
           />

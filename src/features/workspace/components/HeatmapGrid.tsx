@@ -1,4 +1,4 @@
-﻿import { useMemo } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,11 +20,11 @@ function getActivityMap(activities: DailyActivity[]): Map<string, number> {
 }
 
 const COLORS = [
-  "#161b22",
-  "#0e4429",
-  "#006d32",
-  "#26a641",
-  "#39d353",
+  "rgba(224, 226, 242, 0.04)",
+  "rgba(50, 240, 140, 0.15)",
+  "rgba(50, 240, 140, 0.30)",
+  "rgba(50, 240, 140, 0.55)",
+  "rgba(50, 240, 140, 0.80)",
 ];
 
 function getColor(count: number, max: number): string {
@@ -102,7 +102,7 @@ export function HeatmapGrid({ data, title, emptyMessage }: { data: DailyActivity
   if (data.length === 0) {
     return (
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{title}</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="trae-card-eyebrow">{title}</CardTitle></CardHeader>
         <CardContent>
           <Empty><EmptyHeader><EmptyMedia><EmptyTitle>{emptyMessage}</EmptyTitle></EmptyMedia>
             <EmptyDescription>{t.dashboard.heatmap.startHint}</EmptyDescription>
@@ -116,7 +116,7 @@ export function HeatmapGrid({ data, title, emptyMessage }: { data: DailyActivity
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          <CardTitle className="trae-card-eyebrow">{title}</CardTitle>
           <Badge variant="secondary" className="text-xs">{total.toLocaleString()} {t.dashboard.heatmap.contributions}</Badge>
         </div>
       </CardHeader>

@@ -8,10 +8,10 @@ use tauri::State;
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use super::types::{EmbeddingConfig, IndexDocParams, SearchParams};
-use super::{client, chunker};
+use super::{client, chunker, ingest};
 
 /// 允许的文档类型白名单
-const ALLOWED_DOC_TYPES: &[&str] = &["chapter", "wiki", "message"];
+const ALLOWED_DOC_TYPES: &[&str] = &["chapter", "wiki", "message", "material"];
 
 fn validate_doc_type(doc_type: &str) -> Result<(), AppError> {
     if !ALLOWED_DOC_TYPES.contains(&doc_type) {
@@ -190,4 +190,114 @@ pub fn embedding_stats(
 ) -> Result<IpcResponse<super::types::VectorStats>, AppError> {
     let stats = state.db.vector_stats()?;
     Ok(IpcResponse::ok(stats))
+}
+
+/// 摄入文件(PDF/HTML/EPUB/TXT/MD)→ 提取文本 → 切分 → embed → 存入向量表
+///
+/// `file_path` 必须是已通过前端沙箱校验的本地文件路径。
+/// `doc_id` 不传时,基于文件名+时间戳生成。
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestFileParams {
+    /// 本地文件绝对路径
+    pub file_path: String,
+    /// 文档 id(可选,不传则自动生成)
+    pub doc_id: Option<String>,
+    /// 工作空间 id(可选)
+    pub workspace_id: Option<String>,
+}
+
+/// 摄入结果
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestResult {
+    /// 文档类型(pdf/html/epub/text)
+    pub kind: String,
+    /// 提取的标题(可能为空)
+    pub title: Option<String>,
+    /// 提取的纯文本字符数
+    pub char_count: usize,
+    /// 切分后的 chunk 数(=索引条数)
+    pub chunk_count: usize,
+    /// 实际存入 DB 的 doc_id
+    pub doc_id: String,
+    /// 文本前 200 字预览
+    pub excerpt: String,
+}
+
+#[tauri::command]
+pub async fn embedding_ingest_file(
+    state: State<'_, DbState>,
+    params: IngestFileParams,
+) -> Result<IpcResponse<IngestResult>, AppError> {
+    // 基本路径校验(防止空路径/相对路径)
+    let path = std::path::Path::new(&params.file_path);
+    if !path.is_absolute() {
+        return Err(AppError::invalid_input("file_path must be absolute"));
+    }
+    // 防穿越:不允许包含 ..
+    if params.file_path.contains("..") {
+        return Err(AppError::invalid_input("file_path contains '..'"));
+    }
+    if !path.exists() {
+        return Err(AppError::not_found(format!("File not found: {}", params.file_path)));
+    }
+
+    let cfg = read_embedding_config(&state.data_dir.config_path());
+    if !cfg.enabled {
+        return Err(AppError::invalid_input("Embedding is disabled"));
+    }
+
+    // 1. 提取文本
+    let material = ingest::extract_text_from_file(path)?;
+    let char_count = material.text.chars().count();
+    let excerpt = material.text.chars().take(200).collect();
+
+    // 2. 生成 doc_id(如未提供)
+    let doc_id = params.doc_id.unwrap_or_else(|| {
+        let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("material");
+        let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+        format!("{}-{}", filename, timestamp)
+    });
+
+    // 3. 切分
+    let chunks = chunker::split_text(&material.text, None);
+    if chunks.is_empty() {
+        return Err(AppError::invalid_input("Material text is empty after chunking"));
+    }
+    let chunk_count = chunks.len();
+    tracing::info!(
+        kind = ?material.kind,
+        doc_id = %doc_id,
+        char_count,
+        chunks = chunk_count,
+        "Ingesting material"
+    );
+
+    // 4. 批量 embed
+    let embeddings = client::embed_batch(&chunks, &cfg).await?;
+
+    // 5. 组装 (content, embedding) 对
+    let pairs: Vec<(String, Vec<f32>)> = chunks.into_iter()
+        .zip(embeddings.into_iter())
+        .collect();
+
+    // 6. 存入 DB(doc_type = "material")
+    state.db.upsert_vectors(
+        params.workspace_id.as_deref(),
+        "material",
+        &doc_id,
+        &pairs,
+        &cfg.model,
+        cfg.dim,
+    )?;
+
+    Ok(IpcResponse::ok(IngestResult {
+        kind: format!("{:?}", material.kind).to_lowercase(),
+        title: material.title,
+        char_count,
+        chunk_count,
+        doc_id,
+        excerpt,
+    }))
 }

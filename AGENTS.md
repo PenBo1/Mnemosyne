@@ -7,7 +7,7 @@ If subdirectories contain their own AGENTS.md, sub-level rules may supplement bu
 
 ## Project overview
 
-Tauri v2 desktop app with React 19 + TypeScript frontend (Vite) and Rust backend. Early stage (v0.1.0), scaffolded from the official Tauri template. Project name: Thalia (comedic/muse goddess).
+Tauri v2 desktop app with React 19 + TypeScript frontend (Vite) and Rust backend. Early stage (v0.1.0), scaffolded from the official Tauri template. Project name: Mnemosyne (Greek titaness of memory, mother of the nine Muses).
 
 ## Project goals & coding principles
 
@@ -278,51 +278,97 @@ These nine principles govern all code generation and modification in this reposi
 
 ## Layered architecture
 
-Both the renderer process (frontend) and main process (backend) follow a five-layer architecture: **core / features / infrastructure / ipc (or shared) / shared**.
+Both the renderer process (frontend) and main process (backend) follow a layered architecture. The Rust backend uses **6 top-level layers**: `application / core / domain / infrastructure / security_kernel / shared`.
 
 ### Main process (Rust — `src-tauri/src/`)
 
 ```
-ipc/                 IPC 层（Tauri 命令入口，类型安全契约）
-  ├── core/          核心业务逻辑（agent 引擎、interaction 编排、state、init）
-  │     ├── agent/   AI Agent 核心决策引擎（14 子模块）
-  │     └── interaction/  编排层（session ↔ pipeline 桥接）
-  ├── features/      功能模块层（story/session/version/wiki/novel/radar/user_profile/skill_manager）
-  ├── infrastructure/ 基础设施层（db/llm_client/sandbox/file_storage/state_store/ai_services/middleware/utils）
-  └── shared/        跨层共享类型与纯函数（含 errors 错误处理）
+application/         应用层（面向前端的 CRUD 编排 + IPC 命令入口）
+  ├── session/       会话管理（commands/state/types/errors）
+  ├── workspace/     工作区管理（commands/errors）
+  ├── skill/         技能管理（commands/discovery/evolution_commands/state/types）
+  ├── loop_engine/   Loop-Engineering 应用层（commands/builtin_patterns/types）
+  └── init.rs        业务初始化编排（identity 文件生成 + builtin loop patterns seed）
+core/                核心业务逻辑层（无 UI/框架依赖）
+  └── agent/         AI Agent 引擎（13 子模块，见下文）
+domain/              领域层（纯业务逻辑 + 领域命令）
+  ├── pipeline/      Pipeline 工程（agents/runner/state/governance/interactive_film + scheduler + commands）
+  ├── novel/         小说下载/解析（parser/commands/crawler/http/source）
+  ├── story/         故事状态（commands/models/types）
+  ├── version/       版本控制（commands/diff/models/types）
+  ├── wiki/          Wiki 知识库（commands/errors/models/types）
+  ├── radar/         趋势雷达（agent/commands/sources/types）
+  ├── user/          用户画像（commands/learned_commands/store/types）
+  ├── git/           Git 集成（commands/detector/installer/operations/parser）
+  └── feedback/      反馈系统（state/store/types/errors）
+infrastructure/      基础设施层（系统访问，接收 &Database，无 Tauri 依赖）
+  ├── db/            SQLite + rusqlite（state + commands + 各领域 store 文件）
+  ├── fs/            文件 I/O（data_dir/fs_utils/commands/types）
+  ├── llm/           LLM 客户端（openai/anthropic/ollama/agnes + registry + embedding + presets + commands）
+  ├── sandbox/       沙箱执行（commands/policy/types/state/heuristics）
+  ├── memory/        记忆系统（commands/short_term_commands/store/state/types）
+  ├── project_memory/ 项目记忆（commands/state/store/types）
+  ├── tool_limits/   工具限制（commands/state/types）
+  ├── mcp/           MCP 协议客户端（types/config/client/registry/state/commands）
+  ├── workspace/     工作区基础设施（registry/state）
+  ├── net/           网络工具（lm_ping）
+  ├── secrets/       密钥管理（secrets_get/set/delete/get_all）
+  ├── providers/     Provider 管理（provider_list/models/test_connection/refresh）
+  ├── prompts/       提示词管理（CRUD）
+  ├── settings/      系统设置（theme/log_level/git_enabled/log_files）
+  ├── stats/         统计（get_stats/get_daily_activity/get_ai_stats）
+  ├── notifications/ 通知（send_notification）
+  ├── notify/        通知分发（notify_dispatch）
+  ├── validation/    通用校验
+  └── redact/        敏感信息脱敏
+security_kernel/     安全内核（统一安全入口，所有敏感操作必经）
+  ├── kernel.rs      SecurityKernel.execute() 唯一入口
+  ├── validation/    输入校验层（path/url/endpoint/id）
+  ├── policy/        策略引擎（engine/decision/global_policy/temporary_override/user_override/workspace_override）
+  ├── rate_limiter/  频率限制（limiter/policy/store）
+  ├── resource_manager/ 资源配额（enforcer/monitor/quota）
+  ├── permission/    权限管理（session/capability/filesystem_scope/network_scope/shell_scope）
+  ├── approval/      审批管理（store/token/validator）
+  ├── audit/         审计事件总线（bus/event/persistence/store/tauri_emit）
+  ├── plugin/        插件系统（manifest/registry/permission/security）
+  ├── secrets/       内核密钥（keyring/store）
+  ├── commands.rs    安全内核 IPC 命令（audit_*/approval_*/kernel_stats）
+  ├── config.rs      安全配置
+  ├── state.rs       SecurityKernelState
+  └── types.rs       内核类型
+shared/              跨层共享类型与纯函数
+  ├── error.rs       统一 AppError + IpcResponse<T> + status codes
+  ├── story/         故事数据类型（models/types）
+  ├── version/       版本数据类型（types）
+  ├── wiki/          Wiki 数据类型（models/types）
+  └── utils/         纯工具函数
 ```
 
-- `lib.rs` declares 5 top-level modules (core, features, infrastructure, ipc, shared), registers commands, initializes app state (AppState with db)
-- `ipc/commands/` — thin `#[tauri::command]` handlers. Only extract params, validate, delegate. No business logic.
-- `core/` — core business logic with no UI/framework dependencies
-  - `core/agent/` — AI Agent engine (base, pipeline, loop_engine, identity, main_agent, chat_loop, prompts, tools, etc.)
-  - `core/interaction/` — orchestration layer (session ↔ pipeline bridge)
-  - `core/state.rs` — AppState (app_handle, db, provider_registry, skill_manager, sandbox, memory_store, feedback_store, mcp_server, scheduler, sessions, agent_states, main_agent_states)
-  - `core/init.rs` — business initialization orchestration
-- `features/` — feature modules (pure functions/structs, no Tauri dependencies): `story/`, `session/`, `version/`, `wiki/`, `novel/`, `radar/`, `user_profile/`, `skill_manager/`
-- `infrastructure/` — system access layer (no Tauri dependencies, receives `&Database`):
-  - `db/` — SQLite + sqlx (store files per business domain)
-  - `llm_client/` — LLM API providers (OpenAI/Anthropic/Ollama/Agnes + ProviderRegistry)
-  - `sandbox/` — sandbox enforcement + security (policy, enforce, fs_sandbox, exec_sandbox, net_sandbox, timeout, security)
-  - `file_storage/` — file I/O (data_dir, fs_utils, epub, secrets)
-  - `state_store/` — state stores (memory, feedback, gc)
-  - `ai_services/` — AI services (mcp, rag, token_budget, output_validator, proxy_fetch)
-  - `middleware/` — cross-cutting concerns (logging)
-  - `utils/` — utility functions (text_utils with count_words)
-- `shared/` — cross-layer shared types and side-effect-free functions
-  - `shared/errors/` — unified `AppError` type (`app_error.rs`), `IpcResponse<T>` envelope (`ipc.rs`), status codes (`status.rs`)
-  - `shared/memory/`, `shared/text/`, `shared/version/`, `shared/wiki/` — pure data types
+- `lib.rs` declares 6 top-level modules (application, core, domain, infrastructure, security_kernel, shared), registers commands, initializes app state.
+- `#[tauri::command]` handlers live in **each layer's `commands.rs`** (e.g. `application/session/commands.rs`, `domain/novel/commands.rs`, `infrastructure/sandbox/commands.rs`, `security_kernel/commands.rs`, `core/agent/commands.rs`). Only extract params, validate, delegate. No business logic.
+- `core/agent/` — AI Agent engine with 13 submodules:
+  - `types` / `engine` (AgentEngine) / `approval` / `commands` (chat_send_message etc.) / `tools` (edit_tools/fs_tools/todo_tools) / `subagent` (agent/cache/executor/orchestrator/tokens/tools/types) / `prompts` / `identity` / `loop_engine` (budget/prompts/types) / `effort` (EffortLevel) / `collaboration_style` / `daily_summary` / `daily_summary_commands`
+- `domain/pipeline/` — Pipeline engineering system (see "Pipeline engineering system" below)
+- `infrastructure/` — system access layer (no Tauri dependencies, receives `&Database` via State):
+  - `db/` — SQLite + rusqlite (NOT sqlx), WAL mode
+  - `llm/` — LLM API providers (OpenAI/Anthropic/Ollama/Agnes + ProviderRegistry + embedding/RAG)
+  - `sandbox/` — sandbox enforcement (commands/policy/types/state/heuristics)
+  - `mcp/` — MCP (Model Context Protocol) client: config + stdio transport + tool registry + IPC commands
+  - `memory/` — memory system (long-term + short-term daily summaries)
+  - `fs/` — file I/O (DataDir manages all app paths)
+- `security_kernel/` — unified security entry (see "Security Kernel 模型" above)
+- `shared/` — pure data types and side-effect-free functions only
 
 **Rules**:
-- `ipc/commands/` handlers contain NO business logic — only param extraction, validation, delegation.
-- `core/agent/` does NOT depend on any `features/` module — features orchestrate agent, agent does not reverse-depend.
-- No横向 dependencies between `features/` modules — cross-feature orchestration goes through `core/interaction/` or `ipc/commands/`.
-- No Tauri dependencies in `features/`, `core/`, or `infrastructure/` — they receive dependencies via traits and return `Result<T, AppError>`.
-- `infrastructure/` only depends on `shared/`, NOT on any `features/` or `core/agent/` (no reverse dependency).
+- `#[tauri::command]` handlers (in each layer's `commands.rs`) contain NO business logic — only param extraction, validation, delegation.
+- `core/agent/` does NOT depend on any `domain/` module — domain orchestrates agent, agent does not reverse-depend.
+- No横向 dependencies between `domain/` modules — cross-domain orchestration goes through `application/` or `core/`.
+- No Tauri dependencies in `domain/`, `core/`, or `infrastructure/` — they receive dependencies via traits and return `Result<T, AppError>`.
+- `infrastructure/` only depends on `shared/`, NOT on any `domain/` or `core/agent/` (no reverse dependency).
 - `shared/` only contains pure data types and side-effect-free functions — no business logic, no I/O.
-- `core/init.rs` handles business initialization (extracting built-in resources, generating default identity files) — `infrastructure/file_storage/data_dir.rs` must NOT call business functions.
+- `application/init.rs` handles business initialization (extracting built-in resources, generating default identity files, seeding builtin loop patterns) — `infrastructure/fs/data_dir.rs` must NOT call business functions.
 - IPC boundary is the trust seam: always validate in Rust, never trust frontend.
-- All `#[command]` functions must validate inputs before delegating to `core/` or `features/`.
+- All `#[command]` functions must validate inputs before delegating to `core/` or `domain/`.
 - Path components from IPC (book_id, workspace_id) must be validated for traversal before use in filesystem operations.
 
 ### Renderer process (WebView — `src/`)
@@ -431,7 +477,7 @@ src/
 
 - Dev server must be on port 1420 (hardcoded in `tauri.conf.json` and `vite.config.ts`). Vite `strictPort: true` — it will fail, not pick another port.
 - Vite watches `src/` but ignores `src-tauri/` (configured in `vite.config.ts`).
-- Rust lib name is `thalia_lib` (not `thalia`) to avoid Windows bin/lib name conflict (`src-tauri/src/main.rs:5`).
+- Rust lib name is `mnemosyne_lib` (not `mnemosyne`) to avoid Windows bin/lib name conflict (`src-tauri/src/main.rs:5`).
 - Tauri CSP is disabled (`"csp": null` in `tauri.conf.json`) — fine for dev, review before shipping.
 - Capabilities system in `src-tauri/capabilities/default.json` grants permissions per-window. Add new Tauri plugin permissions there.
 - Uses `bun` as the JS runtime (per `beforeDevCommand`/`beforeBuildCommand`), not npm/yarn.
@@ -439,7 +485,7 @@ src/
 
 ## Conventions
 
-- Rust edition 2021, `#[tauri::command]` functions go in `src-tauri/src/lib.rs`
+- Rust edition 2021, `#[tauri::command]` functions live in each layer's `commands.rs` (e.g. `application/session/commands.rs`, `domain/novel/commands.rs`, `infrastructure/sandbox/commands.rs`, `security_kernel/commands.rs`, `core/agent/commands.rs`). All commands are registered in `lib.rs` via `tauri::generate_handler!`.
 - Frontend calls Rust via `import { invoke } from "@tauri-apps/api/core"` then `invoke("command_name", { args })`
 - TypeScript strict mode enabled (`noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`)
 - React 19, JSX transform is `react-jsx` (no React import needed for JSX, but `main.tsx` imports it for `StrictMode`)
@@ -448,9 +494,9 @@ src/
 
 ## App data directory structure
 
-All application data is managed by `DataDir` (`src-tauri/src/infra/data_dir.rs`). On first launch, all directories and default config files are created automatically.
+All application data is managed by `DataDir` (`src-tauri/src/infrastructure/fs/data_dir.rs`). On first launch, all directories and default config files are created automatically.
 
-Agent identity files (SOUL.md, CONTEXT.md, MEMORY.md) are generated by `core/init.rs` per role under `%APPDATA%/com.admin.mnemosyne/agents/<role>/`. Agent behavior prompts live in code (`core/agent/prompts/`).
+Agent identity files (SOUL.md, CONTEXT.md, MEMORY.md) are generated by `application/init.rs` per role under `%APPDATA%/com.admin.mnemosyne/agents/<role>/`. All 16 roles (1 main agent + 15 pipeline agents) have identity files. Agent behavior prompts live in code (`domain/pipeline/agents/*.rs` for pipeline agents, `core/agent/prompts/` for main agent).
 
 ```
 %APPDATA%/com.admin.mnemosyne/       (Windows)
@@ -467,31 +513,58 @@ Agent identity files (SOUL.md, CONTEXT.md, MEMORY.md) are generated by `core/ini
 
 **Rules**:
 - All paths must go through `DataDir` getters — never construct paths manually in commands or services.
-- `DataDir` is stored in `AppState` and accessible from all `#[command]` handlers via `state.data_dir`.
+- `DataDir` is stored as Tauri State and accessible from all `#[command]` handlers via `app.state::<DataDir>()`.
 - Config files use `serde_json` with pretty-print for human readability.
 - The database uses SQLite WAL mode (`PRAGMA journal_mode = WAL`).
-- Agent identity files (SOUL.md/CONTEXT.md/MEMORY.md) are loaded from `%APPDATA%/com.admin.mnemosyne/agents/<role>/` at runtime; behavior prompts live in code (`core/agent/prompts/`).
+- Agent identity files (SOUL.md/CONTEXT.md/MEMORY.md) are loaded from `%APPDATA%/com.admin.mnemosyne/agents/<role>/` at runtime; behavior prompts live in code (`domain/pipeline/agents/*.rs` for pipeline agents, `core/agent/prompts/` for main agent).
 
 ## Pipeline engineering system
 
-The pipeline is orchestrated by `PipelineRunner` (`core/agent/pipeline/runner.rs`), managing the 8-agent novel writing flow. Agent behavior prompts live in code (`core/agent/prompts/`); agent identity files (SOUL.md/CONTEXT.md/MEMORY.md) are loaded from `%APPDATA%/com.admin.mnemosyne/agents/<role>/` at runtime and persisted across sessions.
+The pipeline is orchestrated by `PipelineRunner` (`domain/pipeline/runner/pipeline_runner.rs`), managing the multi-agent novel writing flow. Agent behavior prompts live in code (`domain/pipeline/agents/*.rs`); agent identity files (SOUL.md/CONTEXT.md/MEMORY.md) are loaded from `%APPDATA%/com.admin.mnemosyne/agents/<role>/` at runtime and persisted across sessions.
 
 ### Agent roles and pipeline flow
 
 ```
 Plan → Compose → Write → Audit → Revise (loop) → Reflect
   │        │        │       │         │              │
-  │        │        │       │         │              └ reflector + observer
   │        │        │       │         └ reviser (if audit has critical issues)
-  │        │        │       └ auditor (10 quality dimensions)
-  │        │        └ writer (prose generation)
-  │        └ composer (context assembly)
+  │        │        │       └ foundation_reviewer + state_validator (post-write gates)
+  │        │        └ writer (prose generation) + length_normalizer + polisher
+  │        └ composer (context assembly: semantic section selection + compressible context compilation)
   └ planner (chapter memo)
 ```
 
-Additional standalone agents:
-- **architect**: Creates book structure during `novel_create`
-- **observer**: Extracts facts from chapters (called by reflector)
+### All 15 pipeline agents (`domain/pipeline/agents/`)
+
+| Agent | File | Responsibility |
+|:------|:-----|:---------------|
+| **architect** | `architect.rs` | Creates book structure during `novel_create` |
+| **planner** | `planner.rs` | Per-chapter planning memo (intent + mustAvoid + styleEmphasis) |
+| **composer** | `composer.rs` | Context assembly for writer (semantic section selection + compressible context compilation) |
+| **writer** | `writer.rs` | Prose generation |
+| **continuity** | `continuity.rs` | Continuity audit |
+| **reviser** | `reviser.rs` | Revision when audit finds critical issues |
+| **polisher** | `polisher.rs` | Style polishing |
+| **length_normalizer** | `length_normalizer.rs` | Length normalization to target word count |
+| **foundation_reviewer** | `foundation_reviewer.rs` | Foundation (truth file) review gate |
+| **state_validator** | `state_validator.rs` | Chapter state validation gate |
+| **consolidator** | `consolidator.rs` | Chapter consolidation (facts extraction + truth file update) |
+| **chapter_analyzer** | `chapter_analyzer.rs` | Chapter analysis (called by consolidator) |
+| **short_fiction** | `short_fiction.rs` | Short fiction pipeline runner |
+| **fanfic_canon_importer** | `fanfic_canon_importer.rs` | Fanfic canon import |
+| **script_storyboard** | `script_storyboard.rs` | Script/storyboard pipeline runner |
+
+### Runner sub-modules (`domain/pipeline/runner/`)
+
+- `pipeline_runner.rs` — main PipelineRunner orchestrator
+- `chapter_review_cycle.rs` — Audit↔Revise scoring loop with best-snapshot rollback
+- `chapter_state_recovery.rs` — state validation failure recovery (retry settle + degraded question construction + review note parsing)
+- `chapter_truth_validation.rs` — truth file persistence validation (with state recovery + degraded marker)
+- `ai_tells.rs` — AI-tells structural detection (pure rules, ported from frontend `analyzeAITells`)
+- `sensitive_words.rs` — sensitive word detection (base wordlist + literal match)
+- `post_write_checks.rs` — post-write deterministic checks (normalize + assert_not_empty + rule checks)
+- `short_fiction_runner.rs` — short fiction pipeline runner
+- `script_storyboard_runner.rs` — script/storyboard pipeline runner
 
 ### Per-agent configuration
 
@@ -499,15 +572,23 @@ Currently all agents receive the same standard tool set; per-agent tool filterin
 
 ### Feedback loop
 
-When the auditor finds issues, `LessonTracker` (`core/agent/lesson_tracker/`) records constraint lessons and appends them to the offending agent's `MEMORY.md`. Lessons are reloaded and injected into prompts on subsequent runs.
+When the auditor finds issues, `LessonTracker` records constraint lessons and appends them to the offending agent's `MEMORY.md`. Lessons are reloaded and injected into prompts on subsequent runs.
 
 ### Quality gates
 
-Verification gates are evaluated after write via `VerificationPipeline` (`core/agent/verification/`). Gate failures trigger the revision loop.
+Verification gates are evaluated after write via post-write checks (`runner/post_write_checks.rs` + `runner/ai_tells.rs` + `runner/sensitive_words.rs`). Gate failures trigger the revision loop (`runner/chapter_review_cycle.rs`).
+
+### Loop-Engineering system
+
+Loop-Engineering is split across two layers:
+- `core/agent/loop_engine/` — runtime loop engine (budget/prompts/types), used for `check_budget` and sub-agent prompt injection
+- `application/loop_engine/` — frontend-facing CRUD (commands/builtin_patterns/types), exposes `loop_*` IPC commands
+
+The two layers are linked via `pattern_id` (`LoopPatternId::as_str()`). 4 builtin patterns are seeded on startup by `application/init.rs::seed_builtin_loop_patterns`.
 
 ### Garbage collection
 
-State snapshots are saved per chapter under `<book>/story/snapshots/`. GC of stale snapshots is handled by `infrastructure/state_store/gc/`.
+State snapshots are saved per chapter under `<book>/story/snapshots/`. Snapshot state is managed by `domain/pipeline/state/` (store/manager/reducer/validator/bootstrap).
 
 ## Safety rules
 
@@ -621,7 +702,7 @@ await ipc("agent_send_message", { session_id: sessionId, content });
 
 **Response envelope**: All `#[command]` functions return `Result<IpcResponse<T>, AppError>`. Use `IpcResponse::ok(data)` for success, `AppError` constructors for errors.
 
-**Status codes**: Use the appropriate status code from `src-tauri/src/errors/status.rs`. All `AppError` constructors are available: `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `internal`, etc.
+**Status codes**: Use the appropriate status code from `src-tauri/src/shared/error.rs`. All `AppError` constructors are available: `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `internal`, etc.
 
 **Frontend IPC helpers**: Use `ipc<T>()` for data responses, `ipcVoid()` for void responses. Never use `ipc<void>()` which throws on null data.
 

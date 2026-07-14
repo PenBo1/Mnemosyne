@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { MessageSquareIcon, Trash2Icon, PlusIcon } from "lucide-react";
+import { MessageSquareIcon, Trash2Icon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { useAgentStore } from "@/features/chat/store";
 import { useWorkspaceStore } from "@/features/workspace/store/workspace";
@@ -33,7 +33,6 @@ function formatRelativeTime(iso: string, locale: string): string {
     const d = Math.floor(diff / day);
     return locale === "zh" ? `${d} 天前` : `${d}d ago`;
   }
-  // 超过一周显示日期
   return new Date(then).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US");
 }
 
@@ -42,7 +41,6 @@ function formatRelativeTime(iso: string, locale: string): string {
  *
  * - 根据 workspaceId 加载该工作区下的会话
  * - 点击会话项切换；hover 显示删除按钮
- * - 顶部"+ 新对话"按钮进入空白页（输入消息时才创建）
  */
 export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
   const { t, locale } = useI18n();
@@ -51,31 +49,16 @@ export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
   const loadSessions = useAgentStore((s) => s.loadSessions);
   const switchSession = useAgentStore((s) => s.switchSession);
   const deleteSession = useAgentStore((s) => s.deleteSession);
-  const clearCurrentSession = useAgentStore((s) => s.clearCurrentSession);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
-  // 工作区切换时加载对应会话
   useEffect(() => {
     if (activeWorkspaceId === workspaceId) {
       void loadSessions(undefined, workspaceId);
     }
   }, [workspaceId, activeWorkspaceId, loadSessions]);
 
-  const handleNewChat = () => {
-    clearCurrentSession();
-  };
-
   return (
     <SidebarMenuSub>
-      <SidebarMenuSubItem>
-        <SidebarMenuSubButton
-          isActive={!currentSessionId}
-          onClick={handleNewChat}
-        >
-          <PlusIcon />
-          <span>{t.sidebar.newChat}</span>
-        </SidebarMenuSubButton>
-      </SidebarMenuSubItem>
       {sessions.length === 0 ? (
         <SidebarMenuSubItem>
           <SidebarMenuSubButton>
@@ -105,7 +88,7 @@ export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
                 void deleteSession(s.id);
               }}
             >
-              <Trash2Icon />
+              <Trash2Icon className="size-4" />
             </SidebarMenuAction>
           </SidebarMenuSubItem>
         ))

@@ -1,4 +1,4 @@
-﻿import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,8 +68,8 @@ export function GitLogView({
                   <div
                     key={commit.hash}
                     className={cn(
-                      "flex flex-col gap-1 rounded-[var(--radius-3)] border border-transparent p-2 cursor-pointer transition-colors hover:bg-muted/50",
-                      isSelected && "border-[var(--border-brand-l1)] bg-primary/5"
+                      "flex flex-col gap-1 rounded-[var(--radius-3)] border border-transparent p-2 cursor-pointer transition-colors hover:bg-accent",
+                      isSelected && "border-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]"
                     )}
                     onClick={() => onSelectCommit(commit.hash)}
                   >
@@ -97,7 +97,7 @@ export function GitLogView({
                             onRollback(commit.hash);
                           }}
                         >
-                          <RotateCcwIcon />
+                          <RotateCcwIcon className="size-4" />
                           {t.git.log.rollbackToHere}
                         </Button>
                       )}

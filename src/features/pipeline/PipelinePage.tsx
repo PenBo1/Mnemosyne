@@ -20,7 +20,7 @@ import {
   TruthFileViewer,
 } from "./components";
 import { usePipeline } from "./hooks";
-import { Workflow, PlusIcon, SettingsIcon, FileIcon } from "lucide-react";
+import { WorkflowIcon, PlusIcon, SettingsIcon, FileIcon } from "lucide-react";
 import type { PipelineChapter } from "./types";
 
 export default function PipelinePage() {
@@ -52,7 +52,7 @@ export default function PipelinePage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <Workflow className="size-5" />
+            <WorkflowIcon className="size-4" />
             {t.pipeline.title}
           </PageTitle>
           <PageDescription>{t.pipeline.description}</PageDescription>

@@ -21,7 +21,7 @@ pub struct UpsertRemove<T> {
 }
 
 /// StoryGraphDelta
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StoryGraphDelta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub world_anchor: Option<WorldAnchor>,

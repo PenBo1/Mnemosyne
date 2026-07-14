@@ -146,7 +146,7 @@ export function ApprovalDialog({
             <Badge variant={badgeVariant}>{riskLabel}</Badge>
           </div>
 
-          <div className="rounded bg-muted/50 p-3 flex flex-col gap-2">
+          <div className="rounded bg-[var(--bg-overlay-l1)] p-3 flex flex-col gap-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Clock className="size-3" />
               <span>
@@ -280,7 +280,7 @@ export function ApprovalDialogInline({
             </div>
           </div>
 
-          <div className="mb-3 rounded bg-muted/50 p-2 flex flex-col gap-1">
+          <div className="mb-3 rounded bg-[var(--bg-overlay-l1)] p-2 flex flex-col gap-1">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Hash className="size-3" />
               <span className="font-mono truncate">{token.actionHash.slice(0, 12)}...</span>

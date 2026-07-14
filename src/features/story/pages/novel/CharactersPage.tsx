@@ -171,7 +171,7 @@ export function CharactersPage() {
       {loading ? (
         <LoadingState label={t.common.loading} />
       ) : filtered.length === 0 ? (
-        <EmptyState icon={<UsersIcon />} title={t.characters.empty} />
+        <EmptyState icon={<UsersIcon className="size-6" />} title={t.characters.empty} />
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map((c) => (
@@ -180,7 +180,7 @@ export function CharactersPage() {
               onClick={() => openEdit(c)}
               className={cn(
                 "cursor-pointer transition-colors group",
-                selected?.id === c.id ? "ring-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
+                selected?.id === c.id ? "ring-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]" : "hover:bg-[var(--bg-overlay-l2)]"
               )}
             >
               <CardHeader className="pb-2">

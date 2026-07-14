@@ -158,7 +158,7 @@ export function TimelinePage() {
           {loading ? (
             <LoadingState label={t.common.loading} />
           ) : events.length === 0 ? (
-            <EmptyState icon={<ClockIcon />} title={t.timeline.empty} />
+            <EmptyState icon={<ClockIcon className="size-6" />} title={t.timeline.empty} />
           ) : (
             <Timeline>
               {sorted.map((ev, idx) => (

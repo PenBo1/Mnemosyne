@@ -1,6 +1,8 @@
 pub mod db;
 pub mod fs;
 pub mod memory;
+pub mod project_memory;
+pub mod tool_limits;
 pub mod llm;
 pub mod sandbox;
 pub mod net;
@@ -10,5 +12,9 @@ pub mod prompts;
 pub mod settings;
 pub mod stats;
 pub mod notifications;
+pub mod notify;
 pub mod workspace;
 pub mod validation;
+pub mod redact;
+pub mod mcp;
+pub mod telemetry;

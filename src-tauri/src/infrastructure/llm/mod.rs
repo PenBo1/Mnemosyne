@@ -4,6 +4,7 @@ pub mod openai;
 pub mod ollama;
 pub mod agnes;
 pub mod anthropic;
+pub mod presets;
 pub mod registry;
 pub mod commands;
 pub mod state;

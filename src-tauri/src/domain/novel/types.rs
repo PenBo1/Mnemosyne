@@ -1,4 +1,4 @@
-﻿
+
 use serde::{Deserialize, Serialize};
 
 /// 书源配置
@@ -11,9 +11,12 @@ pub struct BookSource {
     /// 备注说明
     #[serde(default)]
     pub comment: String,
-    /// 是否禁用
-    #[serde(default)]
-    pub disabled: bool,
+    /// 书源语言 (zh/en)
+    #[serde(default = "default_language")]
+    pub language: String,
+    /// 是否启用（缺省时默认启用）
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// 搜索规则
     #[serde(default)]
     pub search: Option<SearchRule>,
@@ -26,6 +29,14 @@ pub struct BookSource {
     /// 章节内容规则
     #[serde(default)]
     pub chapter: Option<ChapterRule>,
+}
+
+fn default_language() -> String {
+    "zh".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// 搜索规则
@@ -255,4 +266,15 @@ pub struct DownloadProgress {
     pub current_chapter: String,
     /// 下载状态
     pub status: String,
+}
+
+/// 本地小说文件信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalBookItem {
+    /// 文件名(含扩展名)
+    pub name: String,
+    /// 文件大小(字节)
+    pub size: u64,
+    /// 最后修改时间(Unix 时间戳,毫秒)
+    pub timestamp: i64,
 }

@@ -159,35 +159,26 @@ pub fn render_script_spec(input: &ScriptCreationInput) -> String {
         ].join("\n")
     } else {
         vec![
-            format!("# {} 剧本创作规格", input.title),
+            format!("# {} Script Creation Spec", input.title),
             String::new(),
-            "## 目标".to_string(),
-            format!("- 交付类型：{}", format_script_target(input.target_format, language)),
-            match input.episode_count {
-                Some(n) => format!("- 集数/段落数：{}", n),
-                None => "- 集数/段落数：未指定，按素材和用户要求判断".to_string(),
-            },
-            match input.episode_duration.as_deref() {
-                Some(d) => format!("- 单集/单段时长：{}", d),
-                None => "- 单集/单段时长：未指定".to_string(),
-            },
-            match input.source_kind.as_deref() {
-                Some(k) => format!("- 原素材：{}", k),
-                None => "- 原素材：用户输入/对话需求".to_string(),
-            },
+            "## Goal".to_string(),
+            format!("- Deliverable: {}", format_script_target(input.target_format, language)),
+            episode_count_line,
+            episode_duration_line,
+            source_kind_line,
             String::new(),
-            "## 用户要求".to_string(),
+            "## User Requirements".to_string(),
             input.requirements.as_deref().map(|r| r.trim()).filter(|r| !r.is_empty())
                 .map(|r| r.to_string())
-                .unwrap_or_else(|| "未单独指定；以用户确认时的 instruction 为准。".to_string()),
+                .unwrap_or_else(|| "Not separately specified; follow the instruction the user confirmed.".to_string()),
             String::new(),
-            "## 改编边界".to_string(),
-            "- 优先保留用户明确指定的人物、关系、冲突、关键事件和禁忌。".to_string(),
-            "- 不替用户擅自决定“忠实改编 / 商业强化 / 低成本拍摄”等强度；只执行用户已确认的规格。".to_string(),
-            "- 如果原素材是小说，内心戏要转成可演的动作、对白、证据、物件或场面后果。".to_string(),
-            "- 如果目标是短剧，每集必须有可见冲突和集尾继续看的理由。".to_string(),
+            "## Adaptation Boundaries".to_string(),
+            "- Preserve the characters, relationships, conflicts, key events, and taboos the user explicitly specified.".to_string(),
+            "- Never decide adaptation intensity (\"faithful adaptation / commercial punch-up / low-budget shoot\") on the user's behalf; execute only the spec the user has confirmed.".to_string(),
+            "- If the source material is a novel, convert interiority into playable action, dialogue, evidence, objects, or on-screen consequences.".to_string(),
+            "- If the target is a short drama, every episode needs visible conflict and an end-of-episode reason to keep watching.".to_string(),
             String::new(),
-            "## 源素材摘要".to_string(),
+            "## Source Material Summary".to_string(),
             summarize_source_for_spec(&input.source_text, language),
         ].join("\n")
     }
@@ -198,24 +189,15 @@ pub fn render_storyboard_spec(input: &StoryboardCreationInput) -> String {
     let language = input.language.unwrap_or_default();
     let granularity_line = match input.granularity.as_deref() {
         Some(g) if !g.trim().is_empty() => g.trim().to_string(),
-        _ => match language {
-            Language::En => "split by scene and key shots".to_string(),
-            Language::Zh => "按场景和关键镜头拆分".to_string(),
-        },
+        _ => "split by scene and key shots".to_string(),
     };
     let aspect_ratio_line = match input.aspect_ratio.as_deref() {
         Some(a) if !a.trim().is_empty() => a.trim().to_string(),
-        _ => match language {
-            Language::En => "unspecified; default to what the user's material and target imply".to_string(),
-            Language::Zh => "未指定，默认按用户素材目标判断".to_string(),
-        },
+        _ => "unspecified; default to what the user's material and target imply".to_string(),
     };
     let visual_style_line = match input.visual_style.as_deref() {
         Some(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ => match language {
-            Language::En => "unspecified; judge from the user's material and target platform".to_string(),
-            Language::Zh => "未指定，按用户素材和目标平台判断".to_string(),
-        },
+        _ => "unspecified; judge from the user's material and target platform".to_string(),
     };
 
     if language == Language::En {
@@ -251,33 +233,33 @@ pub fn render_storyboard_spec(input: &StoryboardCreationInput) -> String {
         ].join("\n")
     } else {
         vec![
-            format!("# {} 分镜创作规格", input.title),
+            format!("# {} Storyboard Creation Spec", input.title),
             String::new(),
-            "## 目标".to_string(),
-            format!("- 分镜粒度：{}", granularity_line),
-            format!("- 画幅：{}", aspect_ratio_line),
-            format!("- 视觉风格：{}", visual_style_line),
+            "## Goal".to_string(),
+            format!("- Shot granularity: {}", granularity_line),
+            format!("- Aspect ratio: {}", aspect_ratio_line),
+            format!("- Visual style: {}", visual_style_line),
             match input.max_shots {
-                Some(n) => format!("- 镜头上限：{}", n),
-                None => "- 镜头上限：未指定".to_string(),
+                Some(n) => format!("- Shot cap: {}", n),
+                None => "- Shot cap: unspecified".to_string(),
             },
             match input.source_kind.as_deref() {
-                Some(k) => format!("- 原素材：{}", k),
-                None => "- 原素材：用户输入/对话需求".to_string(),
+                Some(k) => format!("- Source material: {}", k),
+                None => "- Source material: user input / conversation brief".to_string(),
             },
             String::new(),
-            "## 用户要求".to_string(),
+            "## User Requirements".to_string(),
             input.requirements.as_deref().map(|r| r.trim()).filter(|r| !r.is_empty())
                 .map(|r| r.to_string())
-                .unwrap_or_else(|| "未单独指定；以用户确认时的 instruction 为准。".to_string()),
+                .unwrap_or_else(|| "Not separately specified; follow the instruction the user confirmed.".to_string()),
             String::new(),
-            "## 分镜边界".to_string(),
-            "- 分镜是创作工具，不替用户锁死最终拍法；输出要便于继续讨论、增删、改镜头。".to_string(),
-            "- 每个镜头只写画面能看见、角色能演、镜头能表达的信息。".to_string(),
-            "- 分镜图提示词服务图像生成：角色、动作、景别、场景、光线、情绪和关键道具要清楚。".to_string(),
-            "- 只遵循用户已确认的画风、格式、构图和视觉限制；用户没说的，不写成默认硬限制。".to_string(),
+            "## Storyboard Boundaries".to_string(),
+            "- A storyboard is a creative tool, not a locked-in shooting plan; the output must stay easy to discuss, extend, trim, and re-shoot.".to_string(),
+            "- Each shot carries only what the frame can show, an actor can play, and a camera can express.".to_string(),
+            "- Image prompts serve image generation: subject, action, shot size, setting, lighting, mood, and key props must be explicit.".to_string(),
+            "- Follow only the art style, format, composition, and visual constraints the user has confirmed; never turn unstated preferences into default hard constraints.".to_string(),
             String::new(),
-            "## 源素材摘要".to_string(),
+            "## Source Material Summary".to_string(),
             summarize_source_for_spec(&input.source_text, language),
         ].join("\n")
     }
@@ -335,48 +317,48 @@ pub fn render_interactive_film_spec(input: &InteractiveFilmCreationInput) -> Str
         ].join("\n")
     } else {
         vec![
-            format!("# {} 互动影游创作规格", input.title),
+            format!("# {} Interactive Film Creation Spec", input.title),
             String::new(),
-            "## 目标".to_string(),
-            "- 交付类型：互动影游 / 互动叙事类游戏 / 影游剧本".to_string(),
+            "## Goal".to_string(),
+            "- Deliverable: interactive film / interactive narrative game / film-game script".to_string(),
             match input.episode_count {
-                Some(n) => format!("- 剧情段落/集数：{}", n),
-                None => "- 剧情段落/集数：未指定，按素材和用户要求判断".to_string(),
+                Some(n) => format!("- Story segments/episodes: {}", n),
+                None => "- Story segments/episodes: unspecified; judge from the source material and user requirements".to_string(),
             },
             match input.episode_duration.as_deref() {
-                Some(d) => format!("- 单段/单集时长：{}", d),
-                None => "- 单段/单集时长：未指定".to_string(),
+                Some(d) => format!("- Per-segment/episode duration: {}", d),
+                None => "- Per-segment/episode duration: unspecified".to_string(),
             },
             match input.budget.as_deref() {
-                Some(b) => format!("- 预算约束：{}", b),
-                None => "- 预算约束：未指定".to_string(),
+                Some(b) => format!("- Budget constraint: {}", b),
+                None => "- Budget constraint: unspecified".to_string(),
             },
             match input.target_audience.as_deref() {
-                Some(a) => format!("- 目标受众：{}", a),
-                None => "- 目标受众：未指定".to_string(),
+                Some(a) => format!("- Target audience: {}", a),
+                None => "- Target audience: unspecified".to_string(),
             },
             match input.reference_mode.as_deref() {
-                Some(r) => format!("- 参考模式：{}", r),
-                None => "- 参考模式：用户未指定，不擅自套固定游戏模板".to_string(),
+                Some(r) => format!("- Reference mode: {}", r),
+                None => "- Reference mode: unspecified by the user; do not impose a fixed game template".to_string(),
             },
             match input.source_kind.as_deref() {
-                Some(k) => format!("- 原素材：{}", k),
-                None => "- 原素材：用户输入/对话需求".to_string(),
+                Some(k) => format!("- Source material: {}", k),
+                None => "- Source material: user input / conversation brief".to_string(),
             },
             String::new(),
-            "## 用户要求".to_string(),
+            "## User Requirements".to_string(),
             input.requirements.as_deref().map(|r| r.trim()).filter(|r| !r.is_empty())
                 .map(|r| r.to_string())
-                .unwrap_or_else(|| "未单独指定；以用户确认时的 instruction 为准。".to_string()),
+                .unwrap_or_else(|| "Not separately specified; follow the instruction the user confirmed.".to_string()),
             String::new(),
-            "## 互动影游边界".to_string(),
-            "- 这是创作交付稿，不是硬数值 RPG 引擎设计；变量、旗标、关系和结局条件必须服务剧情分支。".to_string(),
-            "- 必须包含多分支剧情、玩家关键选择、变量/旗标如何改变后续剧情，以及多结局达成条件。".to_string(),
-            "- 变量系统用自然语言说明即可：状态、关系、隐瞒/公开、证据、物品、身份、好感/信任等；不要强行套固定数值或装备等级。".to_string(),
-            "- 交付要适配影游/互动剧制作：剧情树清晰、节点可拍、对白可演、分镜可画、图片提示词可用于资产生成。".to_string(),
-            "- 不替用户擅自决定题材、预算、画风和商业强化强度；未指定处写为可调整。".to_string(),
+            "## Interactive Film Boundaries".to_string(),
+            "- This is a creative deliverable, not a hard-numbers RPG engine design; variables, flags, relationships, and ending conditions must serve story branching.".to_string(),
+            "- It must include branching storylines, key player choices, how variables/flags change later plot, and the conditions for reaching each of the multiple endings.".to_string(),
+            "- Describe the variable system in natural language: states, relationships, secret/public status, evidence, items, identities, affinity/trust, and the like; never force fixed numeric stats or equipment tiers.".to_string(),
+            "- The deliverable must fit interactive film/drama production: a clear story tree, shootable nodes, playable dialogue, drawable storyboards, and image prompts usable for asset generation.".to_string(),
+            "- Never decide subject matter, budget, art style, or commercial punch-up intensity on the user's behalf; mark anything unspecified as adjustable.".to_string(),
             String::new(),
-            "## 源素材摘要".to_string(),
+            "## Source Material Summary".to_string(),
             summarize_source_for_spec(&input.source_text, language),
         ].join("\n")
     }
@@ -497,12 +479,12 @@ fn build_script_system_prompt(language: Language) -> String {
         .join("\n")
     } else {
         vec![
-            "你是剧本创作工具，不是小说续写器。",
-            "你的任务是根据用户确认过的规格，把小说、创意、大纲或已有文本改成可继续制作的剧本。",
-            "不要替用户擅自决定改编强度；只执行规格里已经确认的目标、格式、边界和限制。",
-            "动作行只写观众能看见、演员能演、镜头能拍的信息；内心戏要转成行为、对白、物件、证据或场面后果。",
-            "对白要服务冲突、关系、信息推进或情绪变化，不写空泛解释。",
-            r#"输出 Markdown。不要写流程说明、模型自述或"以下是"。"#,
+            "You are a script-creation tool, not a novel-continuation engine. Write the script in Simplified Chinese.",
+            "Your job is to adapt a novel, concept, outline, or existing text into a script that production can keep working from, following the spec the user has confirmed.",
+            "Never decide adaptation intensity on the user's behalf; execute only the goals, format, boundaries, and constraints already confirmed in the spec.",
+            "Action lines carry only what the audience can see, an actor can play, and a camera can shoot; convert interiority into behavior, dialogue, objects, evidence, or on-screen consequences.",
+            "Dialogue must serve conflict, relationships, information flow, or emotional shifts; no hollow exposition.",
+            r#"Output Markdown in Simplified Chinese. No process notes, no model self-narration, no "Here is" preamble."#,
         ]
         .join("\n")
     }
@@ -518,7 +500,7 @@ fn build_script_user_prompt(input: &ScriptCreationInput, language: Language) -> 
         .map(|s| s.to_string())
         .unwrap_or_else(|| match language {
             Language::En => "The user did not provide full source material; write an extensible script draft strictly from the creation spec and user requirements.".to_string(),
-            Language::Zh => "用户没有提供完整源素材；请严格根据创作规格和用户要求写一个可继续扩展的剧本稿。".to_string(),
+            Language::Zh => "The user did not provide full source material; write an extensible script draft strictly from the creation spec and user requirements. Write the script in Simplified Chinese.".to_string(),
         });
 
     if language == Language::En {
@@ -539,18 +521,18 @@ fn build_script_user_prompt(input: &ScriptCreationInput, language: Language) -> 
         .join("\n")
     } else {
         vec![
-            "## 创作规格",
+            "## Creation Spec",
             &spec,
             "",
-            "## 完整源素材",
+            "## Full Source Material",
             &source,
             "",
-            "## 输出格式",
+            "## Output Format",
             &format!("# {}", input.title),
             "",
-            "## 剧本正文",
+            "## Script",
             "",
-            r#"按目标格式输出。竖屏短剧使用"第N集 / 场次 / 人物 / 动作 / 对白 / 集尾钩子"；标准剧本使用"场景标题 / 动作 / 角色 / 对白"。"#,
+            r#"Follow the target format (in Simplified Chinese). Vertical short drama: "第N集 / 场次 / 人物 / 动作 / 对白 / 集尾钩子". Standard screenplay: "场景标题 / 动作 / 角色 / 对白"."#,
         ]
         .join("\n")
     }
@@ -568,11 +550,11 @@ fn build_storyboard_system_prompt(language: Language) -> String {
         .join("\n")
     } else {
         vec![
-            "你是分镜创作工具，负责把剧本、小说片段或创意拆成可拍、可画、可生图的分镜。",
-            "分镜不是剧情摘要；每个镜头都要有画面、角色位置、动作、景别或视觉重点。",
-            "保留用户确认的视觉规格；不要把用户没有确认的视觉限制写成默认要求。",
-            "图像提示词要便于生图：主体、动作、场景、光线、构图、情绪、关键道具明确。",
-            "输出 Markdown。不要写模型自述或流程解释。",
+            "You are a storyboard-creation tool: you break a script, novel excerpt, or concept into shots that can be filmed, drawn, and fed to image generation. Write the storyboard in Simplified Chinese.",
+            "A storyboard is not a plot summary; every shot needs a visual, character placement, action, shot size, or a visual focus.",
+            "Keep the visual spec the user has confirmed; never promote visual constraints the user did not confirm into default requirements.",
+            "Image prompts must be generation-ready: subject, action, setting, lighting, composition, mood, and key props all explicit.",
+            "Output Markdown in Simplified Chinese. No model self-narration or process explanation.",
         ]
         .join("\n")
     }
@@ -589,7 +571,7 @@ fn build_storyboard_user_prompt(input: &StoryboardCreationInput, language: Langu
         .map(|s| s.to_string())
         .unwrap_or_else(|| match language {
             Language::En => "The user did not provide full source material; write an extensible storyboard draft strictly from the storyboard spec and user requirements.".to_string(),
-            Language::Zh => "用户没有提供完整源素材；请严格根据分镜规格和用户要求写一个可继续扩展的分镜稿。".to_string(),
+            Language::Zh => "The user did not provide full source material; write an extensible storyboard draft strictly from the storyboard spec and user requirements. Write the storyboard in Simplified Chinese.".to_string(),
         });
 
     if language == Language::En {
@@ -614,22 +596,22 @@ fn build_storyboard_user_prompt(input: &StoryboardCreationInput, language: Langu
         .join("\n")
     } else {
         vec![
-            "## 分镜规格",
+            "## Storyboard Spec",
             &spec,
             "",
-            "## 完整源素材",
+            "## Full Source Material",
             &source,
             "",
-            "## 输出格式",
-            &format!("# {} 分镜", input.title),
+            "## Output Format",
+            &format!("# {} Storyboard", input.title),
             "",
-            "## 分镜表",
+            "## Storyboard",
             "",
-            &format!("输出不超过 {} 个镜头。每个镜头包含：镜号、画面、人物/物件、动作、景别/机位、对白/字幕、时长建议、备注。", max_shots),
+            &format!("Output at most {} shots (in Simplified Chinese). Each shot includes: shot number, visual, characters/objects, action, shot size/camera, dialogue/captions, suggested duration, notes.", max_shots),
             "",
-            "## 图像提示词",
+            "## Image Prompts",
             "",
-            "为每个镜头写一条可用于生图的提示词。每条必须单独写成 `Prompt: ...`，不要混入分镜正文、表头或解释；只写用户确认过的视觉限制。",
+            r#"Write one generation-ready image prompt per shot. Each prompt MUST be its own `Prompt: ...` line; never merge it into the storyboard body, table headers, or explanations. Include only the visual constraints the user has confirmed."#,
         ]
         .join("\n")
     }
@@ -647,11 +629,11 @@ fn build_interactive_film_system_prompt(language: Language) -> String {
         .join("\n")
     } else {
         vec![
-            "你是互动影游创作工具，负责把创意、小说、剧本或用户需求整理成可制作的互动影游交付稿。",
-            "互动影游不是普通剧本：必须有剧情树、关键选择、变量/旗标、关系/证据/物品状态、多结局达成条件。",
-            "变量系统只服务剧情推进和分支解锁，不要默认 RPG 数值、战斗公式或装备等级；只有用户明确要求时才写对应规则。",
-            r#"输出必须是 Markdown，包含指定小节。不要写模型自述、流程说明或"以下是"。"#,
-            "分镜图提示词必须写成单独的 `Prompt: ...` 行，便于后续资产管理；只写用户确认过的视觉限制。",
+            "You are an interactive-film creation tool: you turn a concept, novel, script, or user brief into an interactive-film deliverable that production can build from. Write the deliverable in Simplified Chinese.",
+            "An interactive film is not an ordinary script: it must have a story tree, key player choices, variables/flags, relationship/evidence/item states, and the conditions for reaching each of the multiple endings.",
+            "The variable system exists only to drive plot progression and branch unlocking; no default RPG stats, combat formulas, or equipment tiers. Write such rules only when the user explicitly asks for them.",
+            r#"Output must be Markdown in Simplified Chinese with the specified sections. No model self-narration, process notes, or "Here is" preamble."#,
+            r#"Every storyboard image prompt must be its own standalone `Prompt: ...` line so downstream asset management can pick it up; include only the visual constraints the user has confirmed."#,
         ]
         .join("\n")
     }
@@ -667,7 +649,7 @@ fn build_interactive_film_user_prompt(input: &InteractiveFilmCreationInput, lang
         .map(|s| s.to_string())
         .unwrap_or_else(|| match language {
             Language::En => "The user did not provide full source material; write an extensible interactive-film deliverable strictly from the creation spec and user requirements.".to_string(),
-            Language::Zh => "用户没有提供完整源素材；请严格根据创作规格和用户要求写一个可继续扩展的互动影游交付稿。".to_string(),
+            Language::Zh => "The user did not provide full source material; write an extensible interactive-film deliverable strictly from the creation spec and user requirements. Write the deliverable in Simplified Chinese.".to_string(),
         });
 
     if language == Language::En {
@@ -699,29 +681,29 @@ fn build_interactive_film_user_prompt(input: &InteractiveFilmCreationInput, lang
         .join("\n")
     } else {
         vec![
-            "## 互动影游规格",
+            "## Interactive Film Spec",
             &spec,
             "",
-            "## 完整源素材",
+            "## Full Source Material",
             &source,
             "",
-            "## 输出格式",
-            &format!("# {} 互动影游方案", input.title),
+            "## Output Format",
+            &format!("# {} Interactive Film Package", input.title),
             "",
-            "## 剧情树",
-            "用 Markdown 列出主线节点、分支节点、关键选择、回流/不可回流关系。必须能看出多结局结构。",
+            "## Story Tree",
+            "Lay out main-line nodes, branch nodes, key choices, and merge/no-return relationships as Markdown (in Simplified Chinese). The multi-ending structure must be visible at a glance.",
             "",
-            "## 变量与旗标表",
-            "列出变量/旗标名、含义、触发方式、影响范围、对应节点。变量可以是关系、状态、证据、物品、身份、公开/隐瞒、结局门槛等。",
+            "## Variables and Flags",
+            "List each variable/flag: name, meaning, trigger, scope of impact, and related nodes (in Simplified Chinese). Variables may be relationships, states, evidence, items, identities, secret/public status, ending gates, and so on.",
             "",
-            "## 多结局路径",
-            "列出每个结局的达成条件、关键选择链、必需变量/旗标，以及失败或隐藏结局条件。",
+            "## Ending Paths",
+            "For every ending: its unlock conditions, the key choice chain, the required variables/flags, plus any failure or hidden-ending conditions (in Simplified Chinese).",
             "",
-            "## 互动剧本",
-            "按节点写可演剧本：场景、人物、动作、对白、玩家选择、变量变化和分支去向。不要只写摘要。",
+            "## Interactive Script",
+            "Write a playable script per node: scene, characters, action, dialogue, player choices, variable changes, and branch destinations (in Simplified Chinese). Never write summaries only.",
             "",
-            "## 分镜与图像提示词",
-            "列出关键镜头。每个镜头包含画面、人物/物件、动作、景别、时长建议。每个镜头后必须单独写一行 `Prompt: ...`。",
+            "## Storyboard and Image Prompts",
+            "List the key shots. Each shot includes visual, characters/objects, action, shot size, and suggested duration (in Simplified Chinese). After each shot, add exactly one standalone `Prompt: ...` line.",
         ]
         .join("\n")
     }
@@ -731,47 +713,29 @@ fn build_interactive_film_user_prompt(input: &InteractiveFilmCreationInput, lang
 //  内部辅助函数（private）
 // ═══════════════════════════════════════════════════════════════
 
-fn format_script_target(value: Option<ScriptTargetFormat>, language: Language) -> String {
+fn format_script_target(value: Option<ScriptTargetFormat>, _language: Language) -> String {
     let format = value.unwrap_or_default();
-    if language == Language::En {
-        match format {
-            ScriptTargetFormat::VerticalShortDrama => "vertical short drama",
-            ScriptTargetFormat::Screenplay => "standard screenplay",
-            ScriptTargetFormat::AudioDrama => "audio drama",
-            ScriptTargetFormat::InteractiveScript => "interactive script",
-            ScriptTargetFormat::GeneralScript => "general script",
-        }
-    } else {
-        match format {
-            ScriptTargetFormat::VerticalShortDrama => "竖屏短剧",
-            ScriptTargetFormat::Screenplay => "标准剧本",
-            ScriptTargetFormat::AudioDrama => "广播剧/有声剧",
-            ScriptTargetFormat::InteractiveScript => "互动剧本",
-            ScriptTargetFormat::GeneralScript => "通用剧本",
-        }
+    match format {
+        ScriptTargetFormat::VerticalShortDrama => "vertical short drama",
+        ScriptTargetFormat::Screenplay => "standard screenplay",
+        ScriptTargetFormat::AudioDrama => "audio drama",
+        ScriptTargetFormat::InteractiveScript => "interactive script",
+        ScriptTargetFormat::GeneralScript => "general script",
     }
     .to_string()
 }
 
-fn summarize_source_for_spec(source_text: &Option<String>, language: Language) -> String {
+fn summarize_source_for_spec(source_text: &Option<String>, _language: Language) -> String {
     let text = source_text
         .as_deref()
         .map(|s| regex::Regex::new(r"\s+").map(|re| re.replace_all(s, " ").to_string()).unwrap_or_else(|_| s.to_string()))
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
 
-    if language == Language::En {
-        if text.is_empty() {
-            "No full source material provided.".to_string()
-        } else {
-            format!("Full source material provided, about {} characters; the full content will be read during generation.", text.chars().count())
-        }
+    if text.is_empty() {
+        "No full source material provided.".to_string()
     } else {
-        if text.is_empty() {
-            "未提供完整源素材。".to_string()
-        } else {
-            format!("已提供完整源素材，约 {} 字符；生成时会读取完整内容。", text.chars().count())
-        }
+        format!("Full source material provided, about {} characters; the full content will be read during generation.", text.chars().count())
     }
 }
 
@@ -1074,7 +1038,7 @@ mod tests {
 
     #[test]
     fn format_script_target_defaults_to_general() {
-        assert_eq!(format_script_target(None, Language::Zh), "通用剧本");
+        assert_eq!(format_script_target(None, Language::Zh), "general script");
         assert_eq!(format_script_target(None, Language::En), "general script");
     }
 
@@ -1082,7 +1046,7 @@ mod tests {
     fn format_script_target_translates_vertical_drama() {
         assert_eq!(
             format_script_target(Some(ScriptTargetFormat::VerticalShortDrama), Language::Zh),
-            "竖屏短剧"
+            "vertical short drama"
         );
         assert_eq!(
             format_script_target(Some(ScriptTargetFormat::VerticalShortDrama), Language::En),
@@ -1106,8 +1070,8 @@ mod tests {
         };
         let spec = render_script_spec(&input);
         assert!(spec.contains("测试剧本"));
-        assert!(spec.contains("集数/段落数：6"));
-        assert!(spec.contains("通用剧本"));
+        assert!(spec.contains("Episode/segment count: 6"));
+        assert!(spec.contains("general script"));
     }
 
     #[test]

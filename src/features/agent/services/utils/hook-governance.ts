@@ -4,16 +4,16 @@
 // - `../models/runtime-state.js`（类型 HookRecord / RuntimeStateDelta）
 //   → `@/shared/types/runtime-state`
 // - `./hook-lifecycle.js`（describeHookLifecycle）→ `./hook-lifecycle`
-//   （hook-lifecycle.ts 已迁移为简化版，签名兼容，无需额外适配）
+//   （已迁移，签名兼容，无需额外适配；P2.7 已恢复完整 timing 推导）
 //
 // 业务逻辑零改动（collectStaleHookDebt + evaluateHookAdmission +
 // classifyHookDisposition + 内部 normalize/extract helper 全部保留）。
 //
-// 简化版 describeHookLifecycle 返回 { stale, overdue, ... }，
+// describeHookLifecycle 返回 { stale, overdue, ... }，
 // 本模块 collectStaleHookDebt 仅消费 lifecycle.stale / lifecycle.overdue 字段，
-// 简化版的返回类型已包含这两个字段，类型与逻辑均兼容，无需特殊处理。
-// 注意：简化版未传 halfLifeChapters 时退回 HOOK_HEALTH_DEFAULTS.staleAfterChapters
-// 保守阈值，collectStaleHookDebt 调用时也未传 halfLifeChapters，行为一致。
+// 返回类型已包含这两个字段，类型与逻辑均兼容，无需特殊处理。
+// 注意：collectStaleHookDebt 调用时未传 staleAfterChapters 时退回
+// HOOK_HEALTH_DEFAULTS.staleAfterChapters 保守阈值，行为一致。
 
 import type { HookRecord, RuntimeStateDelta } from "@/types/runtime-state";
 import { describeHookLifecycle } from "./hook-lifecycle";
@@ -47,6 +47,7 @@ export function collectStaleHookDebt(params: {
         payoffTiming: hook.payoffTiming,
         expectedPayoff: hook.expectedPayoff,
         notes: hook.notes,
+        type: hook.type,
         startChapter: hook.startChapter,
         lastAdvancedChapter: hook.lastAdvancedChapter,
         status: hook.status,

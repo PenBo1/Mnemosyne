@@ -48,40 +48,42 @@ pub async fn validate_state(
 }
 
 fn build_system_prompt() -> String {
-    r###"你是连续性验证器。你的任务是检查章节结算前后的状态是否自洽，发现 6 类矛盾。
+    r###"<identity>
+You are a continuity validator. Your task is to verify that the chapter's state is self-consistent before and after settlement, surfacing six classes of contradiction.
+</identity>
 
-## 检查类别
+## Check Categories
 
-1. 状态变化无叙事支撑：new_state 里有变化，但 chapter_content 里找不到对应的叙事段
-2. 缺失状态变化：chapter_content 里发生的事，new_state 没有记录
-3. 时间不可能性：时间倒流、同一时间出现在两地、时长不合逻辑
-4. Hook 异常：hook 状态变化与正文不符（未推进却标 progressing、已回收但正文未揭示等）
-5. 追溯性编辑：new_state 篡改了 old_state 里已确立的事实（非增量更新）
-6. 跨真相键冲突：current_state 与 pending_hooks 互相矛盾
+1. State change without narrative support: new_state contains a change, but no corresponding narrative passage can be found in chapter_content.
+2. Missing state change: something happened in chapter_content that new_state fails to record.
+3. Temporal impossibility: time flowing backwards, a character in two places at once, illogical duration.
+4. Hook anomaly: hook status changes contradict the prose (marked progressing without advance, marked resolved without the prose revealing it, etc.).
+5. Retroactive edit: new_state tampers with facts already established in old_state (not an incremental update).
+6. Cross-truth-key conflict: current_state contradicts pending_hooks.
 
-## 判定规则
+## Verdict Rules
 
-- PASS：无硬矛盾，可能有轻微不一致（记为 warning）
-- FAIL：存在硬矛盾（状态完全对不上、hook 凭空消失/出现、时间线断裂）
+- PASS: no hard contradictions; minor inconsistencies may remain (recorded as warnings).
+- FAIL: a hard contradiction exists (state completely mismatches, a hook vanishes or appears out of nowhere, timeline breaks).
 
-## 输出格式（两种皆可）
+## Output Format (either is acceptable)
 
-### 格式 A：JSON
+### Format A: JSON
 
 {
   "passed": true,
   "warnings": [
-    {"category": "类别名", "description": "具体描述"}
+    {"category": "category name", "description": "specific description"}
   ]
 }
 
-### 格式 B：行式
+### Format B: line-based
 
-第一行：PASS 或 FAIL
-后续每行一条 warning（可选 [category] 前缀）：
-[Hook 异常] H007 状态从 open 变 resolved，但正文未揭示
+First line: PASS or FAIL
+Each subsequent line is one warning (an optional [category] prefix is allowed):
+[Hook Anomaly] H007 status flipped from open to resolved, but the prose never reveals it
 
-只输出验证结果，不要输出其他解释。"###
+Emit only the validation result — no other commentary."###
         .to_string()
 }
 
@@ -94,21 +96,21 @@ fn build_user_message(
     new_hooks: &str,
 ) -> String {
     format!(
-        r###"请验证第 {chapter_number} 章的状态连续性。
+        r###"Validate the state continuity of Chapter {chapter_number}.
 
-## 章节正文
+## Chapter Prose
 {chapter_content}
 
-## 旧状态卡（结算前）
+## Old State Card (before settlement)
 {old_state}
 
-## 新状态卡（结算后）
+## New State Card (after settlement)
 {new_state}
 
-## 旧伏笔池（结算前）
+## Old Hook Pool (before settlement)
 {old_hooks}
 
-## 新伏笔池（结算后）
+## New Hook Pool (after settlement)
 {new_hooks}"###,
         chapter_number = chapter_number,
         chapter_content = chapter_content,

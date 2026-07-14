@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -72,8 +72,8 @@ export function GitRollbackDialog({
                 className={cn(
                   "flex items-start gap-2 rounded-[var(--radius-3)] border p-2.5 cursor-pointer transition-colors",
                   mode === "Soft"
-                    ? "border-primary bg-primary/5"
-                    : "border-[var(--border-neutral-l1)] hover:bg-muted/50"
+                    ? "border-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]"
+                    : "border-[var(--border-neutral-l1)] hover:bg-accent"
                 )}
               >
                 <RadioGroupItem value="Soft" id="rollback-soft" className="mt-0.5" />
@@ -85,7 +85,7 @@ export function GitRollbackDialog({
                   "flex items-start gap-2 rounded-[var(--radius-3)] border p-2.5 cursor-pointer transition-colors",
                   mode === "Hard"
                     ? "border-destructive bg-destructive/5"
-                    : "border-[var(--border-neutral-l1)] hover:bg-muted/50"
+                    : "border-[var(--border-neutral-l1)] hover:bg-accent"
                 )}
               >
                 <RadioGroupItem value="Hard" id="rollback-hard" className="mt-0.5" />
@@ -111,7 +111,7 @@ export function GitRollbackDialog({
             onClick={() => onConfirm(mode)}
             disabled={loading || !commitHash}
           >
-            <RotateCcwIcon />
+            <RotateCcwIcon className="size-4" />
             {t.git.rollback.confirm}
           </Button>
         </DialogFooter>

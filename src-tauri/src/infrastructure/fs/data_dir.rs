@@ -27,6 +27,14 @@ impl DataDir {
             .map_err(|e| AppError::internal(format!("Failed to create agents dir: {}", e)))?;
         std::fs::create_dir_all(self.books_dir())
             .map_err(|e| AppError::internal(format!("Failed to create books dir: {}", e)))?;
+        std::fs::create_dir_all(self.novels_dir())
+            .map_err(|e| AppError::internal(format!("Failed to create novels dir: {}", e)))?;
+        std::fs::create_dir_all(self.materials_dir())
+            .map_err(|e| AppError::internal(format!("Failed to create materials dir: {}", e)))?;
+        std::fs::create_dir_all(self.detection_dir())
+            .map_err(|e| AppError::internal(format!("Failed to create detection dir: {}", e)))?;
+        std::fs::create_dir_all(self.play_dir())
+            .map_err(|e| AppError::internal(format!("Failed to create play dir: {}", e)))?;
 
         self.ensure_config_json()?;
 
@@ -60,6 +68,51 @@ impl DataDir {
     /// 创作 pipeline 的书籍工作区目录
     pub fn books_dir(&self) -> PathBuf {
         self.root.join("books")
+    }
+
+    /// 下载小说的本地存储目录(单文件 .txt)
+    pub fn novels_dir(&self) -> PathBuf {
+        self.root.join("novels")
+    }
+
+    /// 辅助材料导入目录 —— 存放 ingest 产出的 markdown 正文 + JSON 清单。
+    /// 每个 material 一对文件: `<id>.md` 与 `<id>.json`,检索时枚举 .json 还原清单。
+    pub fn materials_dir(&self) -> PathBuf {
+        self.root.join("materials")
+    }
+
+    /// AIGC 检测历史目录 —— 按 book_id 分文件存储检测/改写历史(JSON)。
+    pub fn detection_dir(&self) -> PathBuf {
+        self.root.join("detection")
+    }
+
+    /// Play 模式根目录 —— 存放互动小说世界与 run 数据。
+    pub fn play_dir(&self) -> PathBuf {
+        self.root.join("play")
+    }
+
+    /// 工作区级别的应用数据根目录 —— 存放每个 workspace 的 project_memory.md 等文件。
+    ///
+    /// 注意:不在 initialize() 中预先创建,改由 ProjectMemoryStore 在首次写入时按需创建,
+    /// 避免为已删除的 workspace 留下空目录。
+    pub fn workspaces_dir(&self) -> PathBuf {
+        self.root.join("workspaces")
+    }
+
+    /// 单个 workspace 的数据目录 —— `<root>/workspaces/<workspace_id>/`
+    ///
+    /// `workspace_id` 由 IPC 层调用方经过 validate_id_component 校验后传入,
+    /// 此处不再做路径净化,以保持与 agents_dir() 一致的简洁。
+    pub fn workspace_dir(&self, workspace_id: &str) -> PathBuf {
+        self.workspaces_dir().join(workspace_id)
+    }
+
+    /// workspace 级别的项目记忆文件路径 —— `<root>/workspaces/<workspace_id>/project_memory.md`
+    ///
+    /// 这里采用 DataDir 集中存储(而非污染 workspace 的外部 path 目录),
+    /// 便于 delete_workspace 时确定性清理。
+    pub fn workspace_memory_path(&self, workspace_id: &str) -> PathBuf {
+        self.workspace_dir(workspace_id).join("project_memory.md")
     }
 
     pub fn config_path(&self) -> PathBuf {
@@ -124,5 +177,14 @@ mod tests {
         assert_eq!(data_dir.config_path(), root.join("config.json"));
         assert_eq!(data_dir.state_db_path(), root.join("data").join("state.sqlite"));
         assert_eq!(data_dir.feedback_db_path(), root.join("data").join("feedback.sqlite"));
+        assert_eq!(data_dir.workspaces_dir(), root.join("workspaces"));
+        assert_eq!(
+            data_dir.workspace_dir("ws-1"),
+            root.join("workspaces").join("ws-1")
+        );
+        assert_eq!(
+            data_dir.workspace_memory_path("ws-1"),
+            root.join("workspaces").join("ws-1").join("project_memory.md")
+        );
     }
 }

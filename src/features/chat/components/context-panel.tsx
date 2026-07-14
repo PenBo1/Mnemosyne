@@ -18,7 +18,7 @@ export function ContextPanel({ open, workspacePath, sessionId, totalTokens }: Co
   return (
     <aside className="flex w-64 shrink-0 flex-col border-l border-border bg-background">
       <div className="flex h-12 shrink-0 items-center border-b border-border px-3">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h2 className="trae-card-eyebrow">
           {t.agentChat.contextPanel}
         </h2>
       </div>

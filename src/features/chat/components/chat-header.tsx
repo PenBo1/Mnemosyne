@@ -34,7 +34,7 @@ export function ChatHeader({
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-3">
       <div className="flex min-w-0 items-center gap-2">
-        {streaming && <Spinner className="size-3.5 text-primary" />}
+        {streaming && <Spinner className="size-3.5 text-[var(--text-brand)]" />}
         <h1 className="truncate text-sm font-medium text-foreground">{title}</h1>
       </div>
 
@@ -48,7 +48,7 @@ export function ChatHeader({
               aria-label="Plan mode"
               className={cn(
                 "text-muted-foreground hover:text-foreground",
-                planModeActive && "bg-primary/10 text-primary",
+                planModeActive && "bg-[var(--bg-brand-popup)] text-[var(--text-brand)]",
               )}
             >
               <ListChecks className="size-3.5" />

@@ -74,7 +74,7 @@ export function OverviewPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <BookOpenIcon />
+            <BookOpenIcon className="size-4" />
             {t.overview.title}
           </PageTitle>
           <PageDescription>{t.overview.description}</PageDescription>
@@ -115,7 +115,7 @@ export function OverviewPage() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.title_label}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.title_label}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-lg font-medium">{novel.title}</div>
@@ -123,7 +123,7 @@ export function OverviewPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.genre}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.genre}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-lg font-medium capitalize">{novel.genre}</div>
@@ -131,7 +131,7 @@ export function OverviewPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.status}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.status}</CardTitle>
               </CardHeader>
               <CardContent>
                 <Badge variant="secondary" className="capitalize">{novel.status}</Badge>
@@ -139,26 +139,26 @@ export function OverviewPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.wordCount}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.wordCount}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-lg font-medium">{novel.word_count.toLocaleString()}</div>
+                <div className="text-lg font-medium trae-num">{novel.word_count.toLocaleString()}</div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.chapterCount}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.chapterCount}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-lg font-medium">{novel.chapter_count}</div>
+                <div className="text-lg font-medium trae-num">{novel.chapter_count}</div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.createdAt}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.createdAt}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-lg font-medium">{new Date(novel.created_at).toLocaleDateString()}</div>
+                <div className="text-lg font-medium trae-num">{new Date(novel.created_at).toLocaleDateString()}</div>
               </CardContent>
             </Card>
           </div>
@@ -168,26 +168,26 @@ export function OverviewPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.viz.stats.totalWords}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.viz.stats.totalWords}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{novel.word_count.toLocaleString()}</div>
+                <div className="trae-stat-value">{novel.word_count.toLocaleString()}</div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.viz.stats.chapterCount}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.viz.stats.chapterCount}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{novel.chapter_count}</div>
+                <div className="trae-stat-value">{novel.chapter_count}</div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.overview.avgWordsPerChapter}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.overview.avgWordsPerChapter}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
+                <div className="trae-stat-value">
                   {novel.chapter_count > 0
                     ? Math.round(novel.word_count / novel.chapter_count).toLocaleString()
                     : 0}
@@ -196,10 +196,10 @@ export function OverviewPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t.viz.stats.hookCount}</CardTitle>
+                <CardTitle className="trae-card-eyebrow">{t.viz.stats.hookCount}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{storyState?.hooks?.length || 0}</div>
+                <div className="trae-stat-value">{storyState?.hooks?.length || 0}</div>
               </CardContent>
             </Card>
           </div>

@@ -65,75 +65,77 @@ pub async fn analyze_chapter(
 
 fn build_system_prompt(book: &BookConfig) -> String {
     format!(
-        r###"你是一位小说连续性分析师。你的任务是分析已完成的章节正文，提取所有状态变化，更新追踪文件。
+        r###"<identity>
+You are a novel-continuity analyst. Your task is to analyze a finished chapter's prose, extract every state change, and update the tracking files.
+</identity>
 
-## 工作模式
+## Operating Mode
 
-你不是在写作。你的任务是：
-1. 仔细阅读已完成的章节正文
-2. 基于当前追踪文件做增量更新
-3. 严格按照 === TAG === 格式输出 11 个区块
+You are not writing fiction. Your task is:
+1. Read the finished chapter prose carefully.
+2. Apply incremental updates on top of the current tracking files.
+3. Emit exactly eleven blocks in the strict `=== TAG ===` format defined below.
 
-## 分析维度
+## Analysis Dimensions
 
-从正文中提取以下信息：
-- 角色出场、退场、状态变化（受伤/突破/死亡等）
-- 位置移动、场景转换
-- 物品/资源的获得与消耗
-- 伏笔的埋设、推进、回收
-- 情感弧线变化
-- 支线进展
-- 角色间关系变化、新的信息边界
+From the prose, extract:
+- Character entrances, exits, and state changes (injury / breakthrough / death, etc.).
+- Location moves and scene transitions.
+- Acquisition and consumption of items / resources.
+- Planting, advancing, and resolving of hooks.
+- Emotional-arc shifts.
+- Subplot progress.
+- Inter-character relationship changes and new information boundaries.
 
-## 书籍信息
+## Book Information
 
-- 标题：{title}
-- 题材：{genre}
-- 平台：{platform}
+- Title: {title}
+- Genre: {genre}
+- Platform: {platform}
 
-## 输出格式（必须严格遵循 11 个 === TAG === 区块）
+## Output Format (must follow strictly: eleven `=== TAG ===` blocks)
 
 === CHAPTER_TITLE ===
-（提取或推断本章标题，不要书名号，不要章号前缀）
+(extract or infer this chapter's title — no book-title marks, no chapter-number prefix)
 
 === CHAPTER_CONTENT ===
-（原样输出正文内容，不做任何修改）
+(echo the prose verbatim — do not modify anything)
 
 === PRE_WRITE_CHECK ===
-（分析模式留空）
+(leave empty in analysis mode)
 
 === POST_SETTLEMENT ===
-（分析模式留空）
+(leave empty in analysis mode)
 
 === UPDATED_STATE ===
-（Markdown 表格，字段：当前章节 / 当前位置 / 主角状态 / 当前目标 / 当前限制 / 当前敌我 / 当前冲突）
+(Markdown table; fields: current chapter / current location / protagonist state / current goal / current constraint / current friend-foe / current conflict)
 
 === UPDATED_LEDGER ===
-（数值系统表格，无则留空）
+(numerical-system table; leave empty if none)
 
 === UPDATED_HOOKS ===
-（Markdown 表格，字段：hook_id / 起始章节 / 类型 / 状态 / 最近推进 / 预期回收 / 回收节奏 / 备注）
+(Markdown table; fields: hook_id / start chapter / type / status / last advanced / expected payoff / payoff timing / notes)
 
 === CHAPTER_SUMMARY ===
-（单行 Markdown 表格，字段：章节 / 标题 / 出场人物 / 关键事件 / 状态变化 / 伏笔动态 / 情绪基调 / 章节类型）
+(single-row Markdown table; fields: chapter / title / characters present / key events / state changes / hook activity / mood / chapter type)
 
 === UPDATED_SUBPLOTS ===
-（支线进度板表格）
+(subplot progress-board table)
 
 === UPDATED_EMOTIONAL_ARCS ===
-（情感弧线表格）
+(emotional-arc table)
 
 === UPDATED_CHARACTER_MATRIX ===
-（每角色一个 ## 块，bullet list 字段：定位 / 标签 / 反差 / 说话 / 性格 / 动机 / 当前 / 关系 / 已知 / 未知）
+(one `##` block per character; bullet-list fields: role / tags / contrast / speech / personality / motivation / current state / relationships / known / unknown)
 
-## 铁律
-
-1. 增量更新：基于当前追踪文件做增量，不要遗漏任何状态变化
-2. 不遗漏：宁多勿少，不确定是否重要时也要记录
-3. 信息边界准确：明确标注"谁知道什么"、"谁仍不知情"
-4. PRE_WRITE_CHECK 和 POST_SETTLEMENT 在分析模式必须留空
-5. CHAPTER_CONTENT 必须原样输出，不得修改
-6. 只记录正文中实际发生的事，不要推断"###,
+<iron_rules>
+1. Incremental update: build deltas on top of the current tracking files — do not omit any state change.
+2. No omission: err on the side of inclusion; when uncertain whether something matters, record it.
+3. Information-boundary accuracy: explicitly annotate "who knows what" and "who still does not know."
+4. PRE_WRITE_CHECK and POST_SETTLEMENT must be empty in analysis mode.
+5. CHAPTER_CONTENT must be echoed verbatim — no modifications.
+6. Record only what actually happened in the prose — do not infer.
+</iron_rules>"###,
         title = book.title,
         genre = book.genre,
         platform = format!("{:?}", book.platform).to_lowercase(),
@@ -150,44 +152,44 @@ fn build_user_message(
     ctx: &AnalyzerContext,
 ) -> String {
     let title_line = chapter_title
-        .map(|t| format!("章节标题：{}\n", t))
+        .map(|t| format!("Chapter Title: {}\n", t))
         .unwrap_or_default();
 
     format!(
-        r###"请分析第{chapter_number}章正文，更新所有追踪文件。
+        r###"Analyze the prose of Chapter {chapter_number} and update all tracking files.
 {title_line}
-## 正文内容
+## Chapter Prose
 
 {chapter_content}
 
-## 当前状态卡
+## Current State Card
 {current_state}
 
-## 当前伏笔池
+## Current Hook Pool
 {pending_hooks}
 
-## 已有章节摘要
+## Existing Chapter Summaries
 {chapter_summaries}
 
-## 当前支线进度板
+## Current Subplot Board
 {subplot_board}
 
-## 当前情感弧线
+## Current Emotional Arcs
 {emotional_arcs}
 
-## 当前角色矩阵
+## Current Character Matrix
 {character_matrix}
 
-## 卷纲
+## Volume Outline
 {volume_map}
 
-## 世界观设定
+## World Setting
 {story_frame}
 
-## 规则卡
+## Rule Card
 {book_rules}
 
-请严格按照 === TAG === 格式输出分析结果。"###,
+Emit the analysis strictly in the `=== TAG ===` format."###,
         chapter_number = chapter_number,
         title_line = title_line,
         chapter_content = chapter_content,

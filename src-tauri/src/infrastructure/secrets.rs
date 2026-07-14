@@ -1,4 +1,4 @@
-﻿
+
 use std::sync::Mutex;
 
 use tauri::AppHandle;
@@ -111,6 +111,34 @@ fn entry(service: &str, account: &str) -> Result<keyring::Entry, AppError> {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 可复用 helper(供其他模块服务端解析密钥,避免密钥经 IPC 传递)
+// ═══════════════════════════════════════════════════════════════
+
+/// 从平台密钥存储读取一个密钥。供需要密钥的领域命令(如 detection)服务端解析使用,
+/// 而非让前端通过 invoke 传入密钥(符合安全模型"密钥不经 IPC 传递")。
+pub fn get_secret(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, AppError> {
+    #[cfg(target_os = "linux")]
+    {
+        with_store(app, state, |m| m.get(&key(service, account)).cloned())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(err) => Err(AppError::internal(format!("keyring get: {}", err))),
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Tauri 命令
 // ═══════════════════════════════════════════════════════════════
 
@@ -121,22 +149,8 @@ pub async fn secrets_get(
     service: String,
     account: String,
 ) -> Result<IpcResponse<Option<String>>, AppError> {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = state;
-        let val = with_store(&app, &state, |m| m.get(&key(&service, &account)).cloned())?;
-        Ok(IpcResponse::ok(val))
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.get_password() {
-            Ok(v) => Ok(IpcResponse::ok(Some(v))),
-            Err(keyring::Error::NoEntry) => Ok(IpcResponse::ok(None)),
-            Err(err) => Err(AppError::internal(format!("keyring get: {}", err))),
-        }
-    }
+    let val = get_secret(&app, &state, &service, &account)?;
+    Ok(IpcResponse::ok(val))
 }
 
 #[tauri::command]

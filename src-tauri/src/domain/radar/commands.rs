@@ -1,4 +1,6 @@
 use crate::core::agent::commands::AgentState;
+use crate::domain::radar::sources::{builtin_source_infos, default_sources, TextRadarSource};
+use crate::domain::radar::types::RadarSourceInfo;
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::validation::validate_id;
@@ -50,13 +52,32 @@ pub async fn radar_scan_create(
 /// 执行雷达扫描:抓取排行榜 → LLM 分析 → 存储到数据库 → 返回结果。
 ///
 /// 前端调用此命令触发完整扫描流程。
-/// 不需要前端传参,后端自行抓取数据 + 调用 LLM 分析 + 持久化。
+/// `extra_texts` 可选注入外部分析文本(每条作为一个 TextRadarSource),为空时仅用内置数据源。
 #[tauri::command]
 pub async fn radar_scan(
     agent_state: State<'_, AgentState>,
     db_state: State<'_, DbState>,
+    extra_texts: Option<Vec<String>>,
 ) -> Result<IpcResponse<crate::infrastructure::db::types::RadarScan>, AppError> {
-    let outcome = super::agent::scan(&agent_state.engine, None).await?;
+    let sources = match extra_texts {
+        Some(texts) if !texts.is_empty() => {
+            let mut sources = default_sources();
+            for (i, text) in texts.into_iter().enumerate() {
+                let trimmed = text.trim().to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                sources.push(Box::new(TextRadarSource::new(
+                    trimmed,
+                    format!("external-{}", i),
+                )));
+            }
+            Some(sources)
+        }
+        _ => None,
+    };
+
+    let outcome = super::agent::scan(&agent_state.engine, sources).await?;
 
     let scan = db_state.db.create_radar_scan(
         &outcome.result.market_summary,
@@ -71,4 +92,10 @@ pub async fn radar_scan(
     );
 
     Ok(IpcResponse::created(scan))
+}
+
+/// 列出可用数据源元信息(内置自动抓取源 + 文本注入源)。
+#[tauri::command]
+pub async fn radar_list_sources() -> Result<IpcResponse<Vec<RadarSourceInfo>>, AppError> {
+    Ok(IpcResponse::ok(builtin_source_infos()))
 }

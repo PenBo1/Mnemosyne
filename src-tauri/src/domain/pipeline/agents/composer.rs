@@ -105,9 +105,17 @@ pub async fn compile_compressible_context(
 }
 
 fn build_select_system_prompt() -> String {
-    r###"你是创作系统的语义大纲选段器。
-只选择当前章节真正需要的大纲段落。按语义相关性判断，不要按关键词重合机械选择。
-只返回严格 JSON：{"selectedSources":["..."]}。必须使用候选里的精确 source id；不确定时选最安全的相关锚点，不要编造 id。"###.to_string()
+    r###"<identity>
+You are the semantic outline-section selector for the authoring system.
+</identity>
+
+<responsibilities>
+Select only the outline sections this chapter genuinely needs. Judge by semantic relevance, not by mechanical keyword overlap.
+</responsibilities>
+
+<outputs>
+Return only strict JSON: {"selectedSources":["..."]}. You must use the exact source ids from the candidates. When uncertain, pick the safest relevant anchor — never fabricate ids.
+</outputs>"###.to_string()
 }
 
 fn build_select_user_message(request: &OutlineSelectionRequest) -> String {
@@ -120,12 +128,12 @@ fn build_select_user_message(request: &OutlineSelectionRequest) -> String {
         .join("\n\n");
 
     format!(
-        r###"文件：{file_name}
-章节：第{chapter_number}章
-目标：{goal}
-大纲节点：{outline_node}
+        r###"File: {file_name}
+Chapter: {chapter_number}
+Goal: {goal}
+Outline node: {outline_node}
 
-候选段落：
+Candidate sections:
 {candidates}"###,
         file_name = request.file_name,
         chapter_number = request.chapter_number,
@@ -136,9 +144,14 @@ fn build_select_user_message(request: &OutlineSelectionRequest) -> String {
 }
 
 fn build_compile_system_prompt() -> String {
-    r###"你是创作系统的语义上下文编译器。
-只能编译【可压缩上下文】。【受保护上下文】是绑定参照，不得改写、不得替代总结、不得削弱。
-输出简洁 Markdown，保留来源指针。保留会影响下一章的人名、未兑现承诺、证据、时间点和约束，丢弃低相关噪声。"###.to_string()
+    r###"<identity>
+You are the semantic context compiler for the authoring system.
+</identity>
+
+<rules>
+You may compile only the [compressible context]. The [protected context] is a bound reference: do not rewrite it, do not replace it with a summary, do not weaken it.
+Emit concise Markdown with source pointers preserved. Retain names, unfulfilled promises, evidence, time points, and constraints that will affect the next chapter; discard low-relevance noise.
+</rules>"###.to_string()
 }
 
 fn build_compile_user_message(request: &CompressibleContextRequest) -> String {
@@ -146,25 +159,25 @@ fn build_compile_user_message(request: &CompressibleContextRequest) -> String {
     let compressible_block = render_context_entries(&request.compressible_entries);
 
     format!(
-        r###"章节：第{chapter_number}章
-目标：{goal}
-压缩后目标预算：不超过 {max_input_tokens} 估算输入 tokens
+        r###"Chapter: {chapter_number}
+Goal: {goal}
+Post-compression target budget: no more than {max_input_tokens} estimated input tokens
 
-## 受保护上下文（只作为参照，不要编译它）
+## Protected Context (reference only — do not compile this)
 {protected_block}
 
-## 可压缩上下文（只编译这一部分）
+## Compressible Context (compile only this part)
 {compressible_block}"###,
         chapter_number = request.chapter_number,
         goal = request.goal,
         max_input_tokens = request.max_input_tokens,
         protected_block = if protected_block.is_empty() {
-            "（无）".to_string()
+            "(none)".to_string()
         } else {
             protected_block
         },
         compressible_block = if compressible_block.is_empty() {
-            "（无）".to_string()
+            "(none)".to_string()
         } else {
             compressible_block
         },

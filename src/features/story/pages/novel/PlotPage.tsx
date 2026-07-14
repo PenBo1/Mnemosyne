@@ -143,7 +143,7 @@ export function PlotPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <GitBranchIcon />
+            <GitBranchIcon className="size-4" />
             {t.plot.title}
           </PageTitle>
           <PageDescription>{t.plot.description}</PageDescription>
@@ -167,7 +167,7 @@ export function PlotPage() {
           {loading ? (
             <LoadingState label={t.common.loading} />
           ) : outlineItems.length === 0 ? (
-            <EmptyState icon={<GitBranchIcon />} title={t.plot.empty} />
+            <EmptyState icon={<GitBranchIcon className="size-6" />} title={t.plot.empty} />
           ) : (
             <div className="flex flex-col gap-2">
               {outlineItems.map((p) => (
@@ -177,7 +177,7 @@ export function PlotPage() {
                   style={{ marginLeft: `${(p.type === "act" ? 0 : p.type === "chapter" ? 1 : 2) * 24}px` }}
                   className={cn(
                     "cursor-pointer transition-colors group",
-                    selected?.id === p.id ? "ring-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
+                    selected?.id === p.id ? "ring-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]" : "hover:bg-[var(--bg-overlay-l2)]"
                   )}
                 >
                   <CardContent className="flex items-center gap-3 py-3">
@@ -247,7 +247,7 @@ export function PlotPage() {
           {loading ? (
             <LoadingState label={t.common.loading} />
           ) : points.length === 0 ? (
-            <EmptyState icon={<TreePineIcon />} title={t.plot.empty} />
+            <EmptyState icon={<TreePineIcon className="size-6" />} title={t.plot.empty} />
           ) : (
             <div className="flex flex-col gap-4">
               {["act", "chapter", "scene"].map((type) => {

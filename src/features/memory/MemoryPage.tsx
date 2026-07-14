@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,7 +125,7 @@ export function MemoryPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <DatabaseIcon />
+            <DatabaseIcon className="size-4" />
             {t.memory.title}
           </PageTitle>
           <PageDescription>{t.memory.description}</PageDescription>
@@ -174,7 +174,7 @@ export function MemoryPage() {
       </div>
 
       {memories.length === 0 ? (
-        <EmptyState icon={<DatabaseIcon />} title={t.memory.empty} />
+        <EmptyState icon={<DatabaseIcon className="size-6" />} title={t.memory.empty} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {memories.map((memory) => (

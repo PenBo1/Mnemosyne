@@ -5,18 +5,9 @@
 // - `./story-markdown.js`（normalizeHookId）→ `./story-markdown`（已迁移到同目录）
 // - `./hook-governance.js`（evaluateHookAdmission）→ `./hook-governance`（已迁移到同目录）
 //
-// 简化适配（hook-lifecycle.ts 是简化版）：
-//   原版 mergeCandidateIntoExistingHook / createCanonicalHook 调用
-//   resolveHookPayoffTiming(...) 推导 timing enum。简化版返回 string | undefined，
-//   与 HookRecord.payoffTiming 字段类型（HookPayoffTiming | undefined）不兼容。
-//   适配为直接使用原始 payoffTiming 值：
-//     - mergeCandidateIntoExistingHook: candidate.payoffTiming ?? existing.payoffTiming
-//     - createCanonicalHook: params.candidate.payoffTiming
-//   原因：该值已由 zod schema 校验为 HookPayoffTiming enum，类型为 HookPayoffTiming | undefined，
-//   与字段类型兼容；简化版 resolveHookPayoffTiming 的 trim 对 enum 值是 no-op，等价。
-//   移除 hook-lifecycle import（不再使用）。
-//
-// TODO: P2 阶段 7 三层记忆接入时恢复 resolveHookPayoffTiming timing 推导。
+// timing 推导已恢复（P2.7）：mergeCandidateIntoExistingHook / createCanonicalHook
+// 调用 resolveHookPayoffTiming(...) 按 5 级优先级推导 timing enum
+// （显式 payoffTiming → expectedPayoff 关键词 → notes 关键词 → hook.type 默认 → 章节跨度）。
 //
 // 业务逻辑零改动（arbitrateRuntimeStateDeltaHooks：处理 upsert/mention/resolve/defer/
 // newHookCandidates，admission 检测重复 family，创建规范 hook id 全部保留）。
@@ -29,6 +20,7 @@ import {
 } from "@/types/runtime-state";
 import { normalizeHookId } from "./story-markdown";
 import { evaluateHookAdmission } from "./hook-governance";
+import { resolveHookPayoffTiming } from "./hook-lifecycle";
 
 export interface HookArbiterDecision {
   readonly action: "created" | "mapped" | "mentioned" | "rejected";
@@ -172,16 +164,24 @@ function mergeCandidateIntoExistingHook(
   candidate: NewHookCandidate,
   chapter: number,
 ): HookRecord {
+  const type = preferRicherText(existing.type, candidate.type);
+  const expectedPayoff = preferRicherText(existing.expectedPayoff, candidate.expectedPayoff);
+  const notes = preferRicherText(existing.notes, candidate.notes);
   return {
     ...existing,
-    type: preferRicherText(existing.type, candidate.type),
+    type,
     status: existing.status === "resolved" ? "resolved" : "progressing",
     lastAdvancedChapter: Math.max(existing.lastAdvancedChapter, chapter),
-    expectedPayoff: preferRicherText(existing.expectedPayoff, candidate.expectedPayoff),
-    // 简化适配：直接使用原始 payoffTiming 值，不调用 resolveHookPayoffTiming。
-    // 详见文件头注释。
-    payoffTiming: candidate.payoffTiming ?? existing.payoffTiming,
-    notes: preferRicherText(existing.notes, candidate.notes),
+    expectedPayoff,
+    payoffTiming: resolveHookPayoffTiming({
+      payoffTiming: candidate.payoffTiming ?? existing.payoffTiming,
+      expectedPayoff,
+      notes,
+      type,
+      startChapter: existing.startChapter,
+      currentChapter: chapter,
+    }),
+    notes,
   };
 }
 
@@ -190,17 +190,25 @@ function createCanonicalHook(params: {
   readonly chapter: number;
   readonly existingIds: ReadonlySet<string>;
 }): HookRecord {
+  const type = params.candidate.type.trim();
+  const expectedPayoff = params.candidate.expectedPayoff.trim();
+  const notes = params.candidate.notes.trim();
   return {
     hookId: buildCanonicalHookId(params.candidate, params.existingIds),
     startChapter: params.chapter,
-    type: params.candidate.type.trim(),
+    type,
     status: "open",
     lastAdvancedChapter: params.chapter,
-    expectedPayoff: params.candidate.expectedPayoff.trim(),
-    // 简化适配：直接使用原始 payoffTiming 值，不调用 resolveHookPayoffTiming。
-    // 详见文件头注释。
-    payoffTiming: params.candidate.payoffTiming,
-    notes: params.candidate.notes.trim(),
+    expectedPayoff,
+    payoffTiming: resolveHookPayoffTiming({
+      payoffTiming: params.candidate.payoffTiming,
+      expectedPayoff,
+      notes,
+      type,
+      startChapter: params.chapter,
+      currentChapter: params.chapter,
+    }),
+    notes,
   };
 }
 

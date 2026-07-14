@@ -21,6 +21,7 @@ import {
   PageDescription,
 } from "@/components/shared/page-layout";
 import { isValidHandle, normalizeHandle, type Snippet } from "@/services/settings";
+import { AgentIdentityBlock } from "@/features/settings/sections/AgentIdentityBlock";
 
 export function AgentsSettings() {
   const { t } = useI18n();
@@ -43,6 +44,8 @@ export function AgentsSettings() {
         loaded={customInstructions.loaded}
         onSave={(text) => void customInstructions.save(text)}
       />
+
+      <AgentIdentityBlock />
 
       <SettingsSection title={t.agents.snippets} description={t.agents.snippetsDesc}>
         <div className="flex flex-col gap-3 px-4 py-3">
@@ -80,7 +83,7 @@ export function AgentsSettings() {
                   key={s.id}
                   className="flex items-center gap-2 rounded-lg border px-3 py-2"
                 >
-                  <code className="rounded bg-muted/50 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  <code className="rounded bg-[var(--bg-overlay-l1)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                     #{s.handle}
                   </code>
                   <div className="flex min-w-0 flex-1 flex-col">

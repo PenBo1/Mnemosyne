@@ -5,18 +5,8 @@
 // - `../utils/hook-governance.js`（evaluateHookAdmission）→ `../utils/hook-governance`（已迁移）
 // - `./state-validator.js`（validateRuntimeState）→ `./state-validator`（已迁移到同目录）
 //
-// 简化适配（hook-lifecycle.ts 是简化版）：
-//   原版 mergeHookRecord 调用 resolveHookPayoffTiming({ payoffTiming, expectedPayoff, notes })
-//   推导 timing enum。简化版 resolveHookPayoffTiming 仅 trim 原始字符串返回 string | undefined，
-//   与 HookRecord.payoffTiming 字段类型（HookPayoffTiming | undefined）不兼容。
-//   适配为直接使用原始 payoffTiming 值（incoming.payoffTiming ?? existing.payoffTiming）：
-//     - 该值已由 zod schema 校验为 HookPayoffTiming enum，类型为 HookPayoffTiming | undefined，
-//       与字段类型兼容；
-//     - 简化版 resolveHookPayoffTiming 的 trim 对 enum 值是 no-op（enum 字面量无空白），等价；
-//     - 缺失 payoffTiming 时原版会从 expectedPayoff/notes 推断，简化版退回 undefined（保守下界）。
-//   移除 hook-lifecycle import（不再使用）。
-//
-// TODO: P2 阶段 7 三层记忆接入时恢复 resolveHookPayoffTiming timing 推导。
+// timing 推导已恢复（P2.7）：mergeHookRecord 调用 resolveHookPayoffTiming(...)
+// 按 5 级优先级推导 timing enum。
 //
 // 业务逻辑零改动（hookOps upsert/resolve/defer + 同族去重合并 + currentStatePatch
 // 别名替换 + chapterSummary 增量，经 schema + state-validator 双重校验全部保留）。
@@ -35,6 +25,7 @@ import {
   type StateManifest,
 } from "@/types/runtime-state";
 import { evaluateHookAdmission } from "../utils/hook-governance";
+import { resolveHookPayoffTiming } from "../utils/hook-lifecycle";
 import { validateRuntimeState } from "./state-validator";
 
 export interface RuntimeStateSnapshot {
@@ -173,19 +164,26 @@ function mergeDuplicateHookFamily(existing: HookRecord, incoming: HookRecord): H
 function mergeHookRecord(existing: HookRecord, incoming: HookRecord): HookRecord {
   const expectedPayoff = preferRicherText(existing.expectedPayoff, incoming.expectedPayoff);
   const notes = preferRicherText(existing.notes, incoming.notes);
+  const type = preferRicherText(existing.type, incoming.type);
   const advanced = Math.max(existing.lastAdvancedChapter, incoming.lastAdvancedChapter);
   const progressed = advanced > existing.lastAdvancedChapter;
+  const startChapter = Math.min(existing.startChapter, incoming.startChapter);
 
   return {
     ...existing,
-    startChapter: Math.min(existing.startChapter, incoming.startChapter),
-    type: preferRicherText(existing.type, incoming.type),
+    startChapter,
+    type,
     status: mergeHookStatus(existing.status, incoming.status, progressed),
     lastAdvancedChapter: advanced,
     expectedPayoff,
-    // 简化适配：直接使用原始 payoffTiming 值，不调用 resolveHookPayoffTiming。
-    // 详见文件头注释。
-    payoffTiming: incoming.payoffTiming ?? existing.payoffTiming,
+    payoffTiming: resolveHookPayoffTiming({
+      payoffTiming: incoming.payoffTiming ?? existing.payoffTiming,
+      expectedPayoff,
+      notes,
+      type,
+      startChapter,
+      currentChapter: advanced,
+    }),
     notes,
   };
 }

@@ -190,7 +190,7 @@ function parsePendingHookRow(row: ReadonlyArray<string | undefined>): StoredHook
 /**
  * 规范化 payoffTiming 字符串。
  *
- * 简化版（原版用 hook-lifecycle.ts 的 enum 推导）：
+ * story-markdown 层直接保留原始字符串（不做 enum 推导）：
  * Mnemosyne 直接保留原始字符串，LLM 写什么就存什么
  * （"立即"/"近期"/"中程"/"慢烧"/"终局" 等中文，或 "immediate"/"near"/"mid"/"slow"/"endgame" 等英文）。
  */

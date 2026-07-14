@@ -50,7 +50,7 @@ function StreamingCursor() {
 /** AI 头像 —— Sparkles 图标 + primary 淡色背景 */
 function AssistantAvatar() {
   return (
-    <div className="flex size-7 shrink-0 items-center justify-center self-start rounded-full bg-primary/10 text-primary">
+    <div className="flex size-7 shrink-0 items-center justify-center self-start rounded-full bg-[var(--bg-brand-popup)] text-[var(--text-brand)]">
       <Sparkles className="size-3.5" />
     </div>
   );
@@ -119,7 +119,7 @@ function ToolCallCard({ call }: { call: ActiveToolCall }) {
         ) : call.status === "error" ? (
           <AlertCircle className="size-3 text-destructive" />
         ) : (
-          <CheckCircle2 className="size-3 text-primary" />
+          <CheckCircle2 className="size-3 text-[var(--text-brand)]" />
         )}
       </MarkerIcon>
       <MarkerContent className="flex items-baseline gap-1">
@@ -265,7 +265,7 @@ export const MessageBubble = memo(function MessageBubble({
                   className="size-6 text-muted-foreground hover:text-foreground"
                 >
                   {copied ? (
-                    <Check className="size-3 text-primary" />
+                    <Check className="size-3 text-[var(--text-brand)]" />
                   ) : (
                     <Copy className="size-3" />
                   )}

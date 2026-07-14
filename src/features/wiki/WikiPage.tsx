@@ -173,7 +173,7 @@ export function WikiPage() {
         <PageHeader>
           <PageHeading>
             <PageTitle>
-              <BookOpenIcon />
+              <NetworkIcon className="size-4" />
               {t.wiki.title}
             </PageTitle>
             <PageDescription>{t.wiki.description}</PageDescription>
@@ -194,7 +194,7 @@ export function WikiPage() {
         <PageHeader>
           <PageHeading>
             <PageTitle>
-              <BookOpenIcon />
+              <NetworkIcon />
               {t.wiki.title}
             </PageTitle>
             <PageDescription>{t.wiki.description}</PageDescription>
@@ -215,7 +215,7 @@ export function WikiPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <BookOpenIcon />
+            <NetworkIcon />
             {t.wiki.title}
           </PageTitle>
           <PageDescription>{t.wiki.description}</PageDescription>
@@ -338,7 +338,7 @@ export function WikiPage() {
                         {semanticResults.map((result) => (
                           <div
                             key={`${result.docId}-${result.chunkIdx}`}
-                            className="flex items-start gap-4 px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer"
+                            className="flex items-start gap-4 px-4 py-3 hover:bg-accent transition-colors cursor-pointer"
                             onClick={() => handleSemanticResultClick(result)}
                           >
                             <div className="flex-1 min-w-0 flex flex-col gap-2">
@@ -363,13 +363,13 @@ export function WikiPage() {
                 </ScrollArea>
               ) : searchMode === "semantic" && searchQuery.trim() && semanticResults.length === 0 ? (
                 <EmptyState
-                  icon={<SparklesIcon />}
+                  icon={<SparklesIcon className="size-6" />}
                   title={t.wiki.semanticEmpty}
                   description={t.wiki.semanticEmptyHint}
                 />
               ) : filteredEntries.length === 0 ? (
                 <EmptyState
-                  icon={<BookOpenIcon />}
+                  icon={<BookOpenIcon className="size-6" />}
                   title={t.wiki.empty}
                   description={t.wiki.emptyHint}
                 >
@@ -386,7 +386,7 @@ export function WikiPage() {
                         {filteredEntries.map((entry) => (
                           <div
                             key={entry.id}
-                            className="flex items-start gap-4 px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer"
+                            className="flex items-start gap-4 px-4 py-3 hover:bg-accent transition-colors cursor-pointer"
                             onClick={() => setEditingEntry(entry)}
                           >
                             <div className="flex-1 min-w-0 flex flex-col gap-2">

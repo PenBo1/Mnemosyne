@@ -79,7 +79,7 @@ export default function LoopPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <CpuIcon />
+            <CpuIcon className="size-4" />
             {t.loop.title}
           </PageTitle>
           <PageDescription>{t.loop.common.noLoops}</PageDescription>
@@ -106,7 +106,7 @@ export default function LoopPage() {
               <div className="lg:col-span-2">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <CardTitle className="trae-card-eyebrow">
                       {t.loop.dashboard}
                     </CardTitle>
                   </CardHeader>
@@ -127,7 +127,7 @@ export default function LoopPage() {
               <div>
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <CardTitle className="trae-card-eyebrow">
                       {t.loop.runLogs}
                     </CardTitle>
                   </CardHeader>
@@ -145,7 +145,7 @@ export default function LoopPage() {
           <TabsContent value="logs">
             <Card>
               <CardHeader>
-                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <CardTitle className="trae-card-eyebrow">
                   {t.loop.runLogs}
                 </CardTitle>
               </CardHeader>

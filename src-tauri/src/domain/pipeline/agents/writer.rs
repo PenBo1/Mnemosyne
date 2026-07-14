@@ -59,17 +59,24 @@ pub async fn write_chapter(
     let observer_user = build_observer_user_message(chapter_number, &creative.title, &creative.content);
     let observations = engine.prompt_once(&observer_system, &observer_user).await?;
 
-    // ── Phase 3: Settler — merge into truth files ──
-    let settler_system = build_settler_system_prompt(book);
-    let settler_user = build_settler_user_message(
-        chapter_number,
-        &creative.title,
-        &creative.content,
-        ctx,
-        &observations,
-    );
-    let settler_response = engine.prompt_once(&settler_system, &settler_user).await?;
-    let (post_settlement, runtime_state_delta) = parse_settler_output(&settler_response)?;
+    // ── Phase 3: Settler — merge into truth files（调用独立入口）──
+    let settle_output = settle_chapter_state(
+        engine,
+        SettleChapterStateInput {
+            book,
+            chapter_number,
+            title: &creative.title,
+            content: &creative.content,
+            current_state: &ctx.current_state,
+            pending_hooks: &ctx.pending_hooks,
+            chapter_summaries: &ctx.chapter_summaries,
+            observations: &observations,
+            validation_feedback: None,
+        },
+    )
+    .await?;
+    let post_settlement = settle_output.post_settlement;
+    let runtime_state_delta = settle_output.runtime_state_delta;
 
     let word_count = count_chars(&creative.content);
 
@@ -85,39 +92,97 @@ pub async fn write_chapter(
     })
 }
 
+// ── 独立 Settler 入口 ───────────────────────────────────────
+
+/// `settle_chapter_state` 输入。
+///
+/// 用于独立触发 Settler phase（不重写正文），供：
+/// - `write_chapter` Phase 3 内部调用
+/// - `chapter_truth_validation::retry_settlement` 重试结算
+/// - `chapter_state_recovery` 状态恢复
+///
+/// `validation_feedback` 存在时表示这是一次重试，会注入到 settler user message 中
+/// 提醒模型修正上一次校验发现的问题。
+pub struct SettleChapterStateInput<'a> {
+    pub book: &'a BookConfig,
+    pub chapter_number: u32,
+    pub title: &'a str,
+    pub content: &'a str,
+    pub current_state: &'a str,
+    pub pending_hooks: &'a str,
+    pub chapter_summaries: &'a str,
+    pub observations: &'a str,
+    /// 重试场景下上一次校验的反馈文本（None 表示首次结算）
+    pub validation_feedback: Option<&'a str>,
+}
+
+/// `settle_chapter_state` 输出。
+#[derive(Debug, Clone)]
+pub struct SettleChapterStateOutput {
+    pub post_settlement: String,
+    pub runtime_state_delta: Option<RuntimeStateDelta>,
+}
+
+/// 独立触发 Settler phase：给定章节正文 + 当前 truth 文件 + 观察日志，
+/// 产出状态增量 delta（不重写正文）。
+pub async fn settle_chapter_state(
+    engine: &AgentEngine,
+    input: SettleChapterStateInput<'_>,
+) -> Result<SettleChapterStateOutput, AppError> {
+    let system_prompt = build_settler_system_prompt(input.book);
+    let user_message = build_settler_user_message(
+        input.chapter_number,
+        input.title,
+        input.content,
+        input.current_state,
+        input.pending_hooks,
+        input.chapter_summaries,
+        input.observations,
+        input.validation_feedback,
+    );
+    let response = engine.prompt_once(&system_prompt, &user_message).await?;
+    let (post_settlement, runtime_state_delta) = parse_settler_output(&response)?;
+    Ok(SettleChapterStateOutput {
+        post_settlement,
+        runtime_state_delta,
+    })
+}
+
 // ── Phase 1: Creative ───────────────────────────────────────
 
 fn build_creative_system_prompt(book: &BookConfig) -> String {
     format!(
-        r#"你是一位专业的网络小说作家。你为{platform}平台写作。
+        r#"<identity>
+You are a professional web-fiction novelist writing for the {platform} platform.
+</identity>
 
-## 核心规则
+<core_rules>
+1. Write in Simplified Chinese. Alternate long and short sentences. Paragraphs should suit mobile reading (3-5 lines per paragraph).
+2. Every chapter must have a clear advancement goal. No chronicle drift (流水账).
+3. Scene description must include concrete visualizable sensory detail (five senses made concrete).
+4. Character behavior is driven jointly by past experience, current interest, and core personality. Never let the antagonist suddenly dumb down, never let the protagonist suddenly turn saintly.
+5. Different characters must speak differently. No "the crowd gasped in unison."
+6. Externalize emotion through action (do not write "he felt angry" — write the action). Convey values through behavior.
+7. Stack bad on bad. Each layer must be worse than the last.
+8. End every chapter on a hook.
+9. The chapter memo's "Current Task", "Do Not", and "Changes That Must Occur at Chapter End" must be carried out in the prose.
+10. Every hook_id listed in the hook ledger's advance/resolve must have a concrete, locatable payoff passage in the prose (≥ 60 characters).
+</core_rules>
 
-1. 以简体中文工作，句子长短交替，段落适合手机阅读（3-5行/段）
-2. 每章必须有明确的推进目标，不允许流水账
-3. 场景描写必须有具体可视化感官细节（五感具体化）
-4. 角色行为由"过往经历 + 当前利益 + 性格底色"共同驱动，禁止反派突然降智、主角突然圣母
-5. 不同角色说话方式必须不同，禁止"众人齐声惊呼"
-6. 情绪用动作外化（不写"他感到愤怒"，写动作）。价值观通过行为传达
-7. 坏事叠坏事，每层比上一层过分
-8. 每章章尾留钩
-9. 章节备忘（chapter_memo）中的"当前任务"、"不要做"、"章尾必须发生的改变"必须落实到正文
-10. 伏笔账本中 advance/resolve 的每个 hook_id 都必须在正文里有具体可定位的兑现段（≥60字）
+## Word-Count Governance
+- Target word count: {target_words} words
+- Acceptable range: {soft_min}-{soft_max} words
 
-## 字数治理
-- 目标字数：{target_words}字
-- 允许区间：{soft_min}-{soft_max}字
+## Output Format (strict)
 
-## 输出格式（严格遵守）
-
-先输出写作自检表，再写正文。只需输出三个区块：
+Emit the pre-write self-check first, then the prose. Output exactly three blocks:
 
 === PRE_WRITE_CHECK ===
-（写作前自检：列出本章要完成的任务、要兑现的伏笔、要避免的事项）
+(pre-write self-check: list this chapter's tasks, the hooks to pay off, and the items to avoid)
 === CHAPTER_TITLE ===
-（章节标题，不要书名号，不要章号前缀）
+(chapter title — no book-title marks, no "Chapter N" prefix)
 === CHAPTER_CONTENT ===
-（正文内容）"#,
+(prose content)"#,
         platform = format!("{:?}", book.platform).to_lowercase(),
         target_words = book.chapter_word_count,
         soft_min = (book.chapter_word_count as f32 * 0.85) as u32,
@@ -127,41 +192,41 @@ fn build_creative_system_prompt(book: &BookConfig) -> String {
 
 fn build_creative_user_message(_book: &BookConfig, chapter_number: u32, ctx: &WriterContext) -> String {
     let external = match &ctx.external_context {
-        Some(e) if !e.trim().is_empty() => format!("\n## 本章用户指令（最高优先级）\n{}\n", e),
+        Some(e) if !e.trim().is_empty() => format!("\n## This Chapter's User Instructions (highest priority)\n{}\n", e),
         _ => String::new(),
     };
 
     format!(
-        r#"请续写第 {chapter_number} 章。
+        r#"Continue with Chapter {chapter_number}.
 {external}
-## 章节备忘
+## Chapter Memo
 {chapter_memo}
 
-## 当前状态卡
+## Current State Card
 {current_state}
 
-## 伏笔池
+## Hook Pool
 {pending_hooks}
 
-## 章节摘要（历史章节压缩）
+## Chapter Summaries (compressed history)
 {chapter_summaries}
 
-## 最近章节
+## Recent Chapters
 {recent_chapters}
 
-## 世界观设定
+## World Setting
 {story_frame}
 
-## 卷纲
+## Volume Outline
 {volume_map}
 
-## 规则卡
+## Book Rules
 {book_rules}
 
-## 文风指南
+## Style Guide
 {style_guide}
 
-请基于以上信息，先输出 PRE_WRITE_CHECK 自检表，再写正文。"#,
+Based on the information above, first emit the PRE_WRITE_CHECK self-check, then write the prose."#,
         chapter_number = chapter_number,
         external = external,
         chapter_memo = ctx.chapter_memo,
@@ -169,7 +234,7 @@ fn build_creative_user_message(_book: &BookConfig, chapter_number: u32, ctx: &Wr
         pending_hooks = ctx.pending_hooks,
         chapter_summaries = ctx.chapter_summaries,
         recent_chapters = if ctx.recent_chapters.is_empty() {
-            "(这是第一章，无前文)".to_string()
+            "(This is the first chapter; there is no prior text.)".to_string()
         } else {
             ctx.recent_chapters.clone()
         },
@@ -177,7 +242,7 @@ fn build_creative_user_message(_book: &BookConfig, chapter_number: u32, ctx: &Wr
         volume_map = ctx.volume_map,
         book_rules = ctx.book_rules,
         style_guide = if ctx.style_guide.is_empty() {
-            "(无文风指南)"
+            "(No style guide.)"
         } else {
             &ctx.style_guide
         },
@@ -223,68 +288,78 @@ fn parse_creative_output(chapter_number: u32, response: &str) -> Result<Creative
 // ── Phase 2: Observer ───────────────────────────────────────
 
 fn build_observer_system_prompt(_book: &BookConfig) -> String {
-    r#"你是一个事实提取专家。阅读章节正文，提取每一个可观察到的事实变化。
+    r#"<identity>
+You are a fact-extraction specialist. You read chapter prose and surface every observable change that occurred within it.
+</identity>
 
-## 提取类别
+<responsibilities>
+- Extract every factual change the chapter actually commits to on the page — nothing inferred, nothing hypothetical.
+- Cover nine categories in lockstep: character behavior, location, resources, relationships, emotion, information flow, plot threads, time progression, and physical state.
+- Make each entry specific and locatable so the settler agent can update truth files without re-reading the chapter.
+</responsibilities>
 
-1. **角色行为**：谁做了什么，对谁，为什么
-2. **位置变化**：谁去了哪里，从哪里来
-3. **资源变化**：获得、失去、消耗了什么，具体数量
-4. **关系变化**：新相遇、信任/不信任转变、结盟、背叛
-5. **情绪变化**：角色情绪从X到Y，触发事件是什么
-6. **信息流动**：谁知道了什么新信息，谁仍然不知情
-7. **剧情线索**：新埋下的悬念、已有线索的推进、线索的解答
-8. **时间推进**：过了多少时间，提到的时间标记
-9. **身体状态**：受伤、恢复、疲劳、战力变化
+## Extraction Categories
 
-## 规则
+1. **Character behavior**: Who did what, to whom, and why.
+2. **Location changes**: Who went where, and from where.
+3. **Resource changes**: What was gained, lost, or consumed — with exact quantities.
+4. **Relationship changes**: New meetings, trust/distrust shifts, alliances formed, betrayals.
+5. **Emotional changes**: A character's affect moved from X to Y, triggered by which event.
+6. **Information flow**: Who learned a new fact, and through what channel; who still does not know.
+7. **Plot threads**: Newly planted hooks, advances on existing threads, resolutions of prior threads.
+8. **Time progression**: How much time elapsed, any in-text time markers mentioned.
+9. **Physical state**: Injuries, recoveries, fatigue, combat-power fluctuations.
 
-- 只从正文提取——不推测可能发生的事
-- 宁多勿少：不确定是否重要时也要记录
-- 具体化："陆承烬左肩旧伤开裂" 而非 "陆承烬受伤了"
-- 记录章节内的时间标记
-- 标注每个场景中在场的角色
+<rules>
+- Extract only from the prose — never speculate about what might have happened off-page.
+- Err on the side of inclusion: when uncertain whether something matters, record it.
+- Be concrete: write "the old wound on Lu Chengjin's left shoulder reopened" rather than "Lu Chengjin got hurt."
+- Capture every in-chapter time marker explicitly.
+- Note which characters are present in each scene.
+</rules>
 
-## 输出格式
+## Output Format
 
 === OBSERVATIONS ===
 
-[角色行为]
-- <角色名>: <行为/状态变化> (场景: <地点>)
+[Character Behavior]
+- <Character>: <Action / state change> (Scene: <Location>)
 
-[位置变化]
-- <角色> 从 <A> 到 <B>
+[Location Changes]
+- <Character> from <A> to <B>
 
-[资源变化]
-- <角色> 获得/失去 <物品> (数量: <n>)
+[Resource Changes]
+- <Character> gained / lost <Item> (Quantity: <n>)
 
-[关系变化]
-- <角色A> → <角色B>: <变化描述>
+[Relationship Changes]
+- <Character A> → <Character B>: <Change description>
 
-[情绪变化]
-- <角色>: <之前> → <之后> (触发: <事件>)
+[Emotional Changes]
+- <Character>: <Before> → <After> (Trigger: <Event>)
 
-[信息流动]
-- <角色> 得知: <事实> (来源: <途径>)
-- <角色> 仍不知: <事实>
+[Information Flow]
+- <Character> learned: <Fact> (Source: <Channel>)
+- <Character> still unaware of: <Fact>
 
-[剧情线索]
-- 新埋: <描述>
-- 推进: <已有线索> — <进展>
-- 回收: <线索> — <解答>
+[Plot Threads]
+- Planted: <Description>
+- Advanced: <Existing thread> — <Progress>
+- Resolved: <Thread> — <Resolution>
 
-[时间]
-- <时间标记、时长>
+[Time]
+- <Time markers, elapsed duration>
 
-[身体状态]
-- <角色>: <受伤/恢复/疲劳/战力变化>"#
+[Physical State]
+- <Character>: <Injury / recovery / fatigue / combat-power change>"#
         .to_string()
 }
 
 fn build_observer_user_message(chapter_number: u32, title: &str, content: &str) -> String {
     format!(
-        "请提取第{}章「{}」中的所有事实：\n\n{}",
-        chapter_number, title, content
+        "Extract every observable fact from Chapter {chapter_number} \"{title}\":\n\n{content}",
+        chapter_number = chapter_number,
+        title = title,
+        content = content,
     )
 }
 
@@ -292,57 +367,59 @@ fn build_observer_user_message(chapter_number: u32, title: &str, content: &str) 
 
 fn build_settler_system_prompt(book: &BookConfig) -> String {
     format!(
-        r#"你是状态追踪分析师。给定新章节正文和当前 truth 文件，你的任务是产出更新后的 truth 文件。
+        r#"<identity>
+You are a state-tracking analyst. Given the new chapter's prose and the current truth files, your job is to produce the updated truth-file delta.
+</identity>
 
-## 工作模式
+## Operating Mode
 
-你不是在写作。你的任务是：
-1. 仔细阅读正文，提取所有状态变化
-2. 基于"当前追踪文件"做增量更新
-3. 严格按照 === TAG === 格式输出
+You are not writing fiction. Your task is:
+1. Read the prose carefully and extract every state change.
+2. Apply incremental updates on top of the "current tracking files."
+3. Emit strictly in the `=== TAG ===` format defined below.
 
-## 分析维度
+## Analysis Dimensions
 
-从正文中提取以下信息：
-- 角色出场、退场、状态变化（受伤/突破/死亡等）
-- 位置移动、场景转换
-- 物品/资源的获得与消耗
-- 伏笔的埋设、推进、回收
-- 情感弧线变化
-- 支线进展
-- 角色间关系变化、新的信息边界
+From the prose, extract:
+- Character entrances, exits, and state changes (injury / breakthrough / death, etc.).
+- Location moves and scene transitions.
+- Acquisition and consumption of items / resources.
+- Planting, advancing, and resolving of hooks (伏笔).
+- Emotional-arc shifts.
+- Subplot progress.
+- Inter-character relationship changes and new information boundaries.
 
-## 书籍信息
+## Book Information
 
-- 标题：{title}
-- 目标章数：{target_chapters}章
+- Title: {title}
+- Target chapter count: {target_chapters} chapters
 
-## 伏笔追踪规则（严格执行）
+## Hook Tracking Rules (enforce strictly)
 
-- 新伏笔：只有当正文中出现一个会延续到后续章节、且有具体回收方向的未解问题时，才新增 hook_id
-- 提及伏笔：已有伏笔被提到，但没有新增信息 → 放入 mention 数组，不要更新最近推进
-- 推进伏笔：已有伏笔出现了新事实、证据、关系变化 → 必须更新 lastAdvancedChapter 为当前章节号
-- 回收伏笔：伏笔被明确揭示、解决 → 状态改为"已回收"
-- 延后伏笔：正文明确显示该线被主动搁置 → 标注"延后"
-- brand-new unresolved thread：不要直接发明新的 hookId。把候选放进 newHookCandidates
+- New hook: only add a new hook_id when the prose raises an unresolved question that carries into later chapters and has a concrete payoff direction.
+- Mentioned hook: an existing hook is referenced but gains no new information → put it in the mention array; do not update lastAdvancedChapter.
+- Advanced hook: an existing hook acquires new facts, evidence, or relationship change → you must update lastAdvancedChapter to the current chapter number.
+- Resolved hook: a hook is explicitly revealed or solved → set status to "resolved".
+- Deferred hook: the prose clearly shows the thread is being shelved on purpose → mark it as "deferred".
+- Brand-new unresolved thread: never invent a new hookId on your own. Put candidates into newHookCandidates.
 
-## 输出格式（必须严格遵循）
+## Output Format (must be followed strictly)
 
 === POST_SETTLEMENT ===
-（简要说明本章有哪些状态变动、伏笔推进、结算注意事项）
+(Concisely describe this chapter's state changes, hook advances, and any settlement caveats.)
 
 === RUNTIME_STATE_DELTA ===
-（必须输出 JSON，不要输出 Markdown，不要加解释）
+(Must output JSON — no Markdown, no extra commentary.)
 ```json
 {{
   "chapter": {chapter_example},
   "currentStatePatch": {{
-    "currentLocation": "可选",
-    "protagonistState": "可选",
-    "currentGoal": "可选",
-    "currentConstraint": "可选",
-    "currentAlliances": "可选",
-    "currentConflict": "可选"
+    "currentLocation": "optional",
+    "protagonistState": "optional",
+    "currentGoal": "optional",
+    "currentConstraint": "optional",
+    "currentAlliances": "optional",
+    "currentConflict": "optional"
   }},
   "hookOps": {{
     "upsert": [
@@ -352,32 +429,32 @@ fn build_settler_system_prompt(book: &BookConfig) -> String {
         "type": "relationship",
         "status": "progressing",
         "lastAdvancedChapter": 12,
-        "expectedPayoff": "揭开师债真相",
+        "expectedPayoff": "reveal the truth behind the master's debt",
         "payoffTiming": "slow-burn",
-        "notes": "本章为何推进/延后/回收"
+        "notes": "why this chapter advances / defers / resolves the hook"
       }}
     ],
-    "mention": ["本章只是被提到、没有真实推进的 hookId"],
-    "resolve": ["已回收的 hookId"],
-    "defer": ["需要标记延后的 hookId"]
+    "mention": ["hookId that was only referenced this chapter, no real advance"],
+    "resolve": ["hookId that has been resolved"],
+    "defer": ["hookId that must be marked as deferred"]
   }},
   "newHookCandidates": [
     {{
       "type": "mystery",
-      "expectedPayoff": "新伏笔未来要回收到哪里",
+      "expectedPayoff": "where the new hook should pay off in the future",
       "payoffTiming": "near-term",
-      "notes": "本章为什么会形成新的未解问题"
+      "notes": "why this chapter produces a new unresolved question"
     }}
   ],
   "chapterSummary": {{
     "chapter": {chapter_example},
-    "title": "本章标题",
-    "characters": "角色1,角色2",
-    "events": "一句话概括关键事件",
-    "stateChanges": "一句话概括状态变化",
+    "title": "chapter title",
+    "characters": "Character1,Character2",
+    "events": "one-sentence summary of key events",
+    "stateChanges": "one-sentence summary of state changes",
     "hookActivity": "mentor-oath advanced",
-    "mood": "紧绷",
-    "chapterType": "主线推进"
+    "mood": "tense",
+    "chapterType": "main-line advancement"
   }},
   "subplotOps": [],
   "emotionalArcOps": [],
@@ -386,14 +463,14 @@ fn build_settler_system_prompt(book: &BookConfig) -> String {
 }}
 ```
 
-## 铁律
-
-1. 只输出增量，不要重写完整 truth files
-2. 所有章节号字段都必须是整数
-3. hookOps.upsert 里只能写"当前伏笔池里已经存在"的 hookId
-4. brand-new unresolved thread 一律写进 newHookCandidates
-5. 只记录正文中实际发生的事，不要推断
-6. chapterSummary.chapter 必须等于当前章节号"#,
+<iron_rules>
+1. Emit only the delta — never rewrite the full truth files.
+2. Every chapter-number field must be an integer.
+3. Every hookId in hookOps.upsert must already exist in the current hook pool.
+4. Brand-new unresolved threads always go into newHookCandidates.
+5. Record only what actually happened in the prose — do not infer.
+6. chapterSummary.chapter must equal the current chapter number.
+</iron_rules>"#,
         title = book.title,
         target_chapters = book.target_chapters,
         chapter_example = 12,
@@ -404,35 +481,45 @@ fn build_settler_user_message(
     chapter_number: u32,
     title: &str,
     content: &str,
-    ctx: &WriterContext,
+    current_state: &str,
+    pending_hooks: &str,
+    chapter_summaries: &str,
     observations: &str,
+    validation_feedback: Option<&str>,
 ) -> String {
+    let feedback_section = match validation_feedback {
+        Some(fb) if !fb.trim().is_empty() => format!(
+            "\n## Validation Feedback (from previous attempt — must fix)\n{fb}\n",
+            fb = fb
+        ),
+        _ => String::new(),
+    };
     format!(
-        r#"请为第 {chapter_number} 章「{title}」结算状态。
+        r#"Settle the state for Chapter {chapter_number} "{title}".
 
-## 当前状态卡
+## Current State Card
 {current_state}
 
-## 当前伏笔池
+## Current Hook Pool
 {pending_hooks}
 
-## 已有章节摘要
+## Existing Chapter Summaries
 {chapter_summaries}
 
-## 观察日志（由 Observer 提取）
+## Observation Log (extracted by the Observer)
 {observations}
 
-## 章节正文
+## Chapter Prose
 {content}
-
-基于以上观察日志和正文，输出 POST_SETTLEMENT 和 RUNTIME_STATE_DELTA。"#,
+{feedback_section}Based on the observation log and prose above, emit POST_SETTLEMENT and RUNTIME_STATE_DELTA."#,
         chapter_number = chapter_number,
         title = title,
-        current_state = ctx.current_state,
-        pending_hooks = ctx.pending_hooks,
-        chapter_summaries = ctx.chapter_summaries,
+        current_state = current_state,
+        pending_hooks = pending_hooks,
+        chapter_summaries = chapter_summaries,
         observations = observations,
         content = content,
+        feedback_section = feedback_section,
     )
 }
 

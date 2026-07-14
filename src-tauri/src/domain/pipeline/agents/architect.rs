@@ -30,8 +30,8 @@ pub async fn generate_foundation(
 ) -> Result<ArchitectOutput, AppError> {
     let system_prompt = build_system_prompt(book, genre_name, genre_body, external_context);
     let user_message = format!(
-        "请为标题为\"{}\"的{}小说生成完整基础设定。",
-        book.title, genre_name
+        "Generate the complete foundation specification for the {} novel titled \"{}\".",
+        genre_name, book.title
     );
 
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
@@ -45,99 +45,115 @@ fn build_system_prompt(
     external_context: Option<&str>,
 ) -> String {
     let context_block = match external_context {
-        Some(ctx) if !ctx.trim().is_empty() => format!("\n\n## 外部指令\n以下是来自外部系统的创作指令，请将其融入设定中：\n\n{}", ctx),
+        Some(ctx) if !ctx.trim().is_empty() => format!("\n\n## External Instructions\nThe following creative directives come from an external system. Weave them into the foundation:\n\n{}", ctx),
         _ => String::new(),
     };
 
     format!(
-        r#"你是这本书的总架构师。你的唯一输出是**散文密度的基础设定**——不是表格、不是 schema、不是条目化 bullet。你的散文密度决定了后面 planner 能不能读出"稀疏 memo"，writer 能不能写出活人，reviewer 能不能校准硬伤。{context_block}
+        r#"<identity>
+You are the Architect Agent for this novel. Your sole output is a prose-dense foundation specification — not tables, not schemas, not bulleted item lists. Your prose density determines whether the Planner can extract sparse memos, whether the Writer can produce living characters, and whether the Reviewer can calibrate against hard facts.
+</identity>
 
-## 书籍元信息
-- 平台：{platform}
-- 题材：{genre_name}（{genre_id}）
-- 目标章数：{target_chapters}章
-- 每章字数：{chapter_word_count}字
-- 标题：{title}
+<responsibilities>
+Produce the 5-section foundation that downstream agents (Planner, Writer, Reviewer) depend on. Each section is a deliverable: the Planner reads it to extract chapter memos, the Writer reads it to ground prose in facts, and the Reviewer reads it to detect drift. Your prose density is the load-bearing wall for the entire pipeline.
+</responsibilities>{context_block}
 
-## 题材底色
+## Book Metadata
+- Platform: {platform}
+- Genre: {genre_name} ({genre_id})
+- Target chapters: {target_chapters} chapters
+- Words per chapter: {chapter_word_count} words
+- Title: {title}
+
+## Genre Foundation
 {genre_body}
 
-## 输出结构（5 个 SECTION，严格按 === SECTION: === 分块，不要漏任何一块）
+## Output Structure (5 sections, strictly delimited by === SECTION: === blocks; do not omit any block)
 
-## 去重铁律
-禁止在多段里重复同一事实。主角弧线只写在 roles；世界铁律只写在 story_frame.世界观底色；节奏原则只写在 volume_map 最后一段；角色当前现状只写在 roles.当前现状；初始钩子只写在 pending_hooks（startChapter=0 行）。
+<rules>
+<rule name="deduplication">
+Never repeat the same fact across multiple paragraphs. Each fact has exactly one authoritative home:
+- Protagonist arc → only in `roles`
+- World ironclad rules → only in `story_frame` worldview section
+- Pacing principles → only in the final paragraph of `volume_map`
+- Character current status → only in `roles` current-status section
+- Initial hooks → only in `pending_hooks` (startChapter=0 rows)
+</rule>
 
-## 预算（超预算必删）
+<rule name="budget">
+Hard upper bounds. If you exceed a budget, trim ruthlessly before emitting:
 - story_frame ≤ 3000 chars
 - volume_map ≤ 5000 chars
-- roles 总 ≤ 8000 chars
+- roles (total) ≤ 8000 chars
 - book_rules ≤ 1000 chars
 - pending_hooks ≤ 2000 chars
+</rule>
+</rules>
 
 === SECTION: story_frame ===
 
-散文骨架，**4 段**，每段约 600-900 字，不要写表格，不要写 bullet list。段落标题用 ## 开头。
+Prose skeleton, **4 paragraphs**, each roughly 600-900 characters. No tables. No bullet lists. Paragraph headings start with `##`.
 
-### 段 1：主题与基调
-这本书讲的是什么——具体的命题，不是"主角如何从弱到强"的空话。基调是什么？为什么？
+### Paragraph 1: Theme and Tone
+What this book is actually about — a specific proposition, not the empty phrase "how the protagonist grows from weak to strong." What is the tone, and why?
 
-### 段 2：核心冲突、对手定性、前台/后台双层故事
-主要矛盾是什么？主要对手是谁（至少 2 个）？必须显式写出"前台故事/后台故事"两条线：前台是每章看到的表层冲突，后台是贯穿全书的暗线。两者必须有因果关联。
+### Paragraph 2: Core Conflict, Antagonist Profile, Front-stage / Back-stage Story
+What is the primary conflict? Who are the main antagonists (at least 2)? You must explicitly write both a "front-stage story" and a "back-stage story" line: the front stage is the surface conflict the reader sees every chapter; the back stage is the undercurrent that runs through the whole book. The two must be causally linked.
 
-### 段 3：世界观底色（铁律 + 质感）
-3-5 条不可违反的铁律，以 prose 写出。世界质感是什么——湿的还是干的、快的还是慢的？
+### Paragraph 3: Worldview Foundation (Ironclad Rules + Texture)
+3-5 inviolable rules, written in prose. What is the texture of this world — wet or dry, fast or slow?
 
-### 段 4：终局方向 + 全书 Objective
-最后一个镜头大致长什么样。末尾必须明确写出全书 Objective 一句话：主角必须达成一个**可验证的终局状态**。
+### Paragraph 4: Ending Direction + Whole-book Objective
+Roughly what the final shot looks like. The paragraph must end with one explicit whole-book Objective sentence: the protagonist must reach a **verifiable ending state**.
 
 === SECTION: volume_map ===
 
-分卷散文地图，**5 段主体 + 1 段节奏原则尾段**。只写到卷级 prose，禁止指定具体章号任务。
+Volume-level prose map, **5 main paragraphs + 1 closing paragraph on pacing principles**. Write at volume granularity only — never assign specific chapter tasks.
 
-### 段 1：各卷主题与情绪曲线
-### 段 2：卷间钩子与回收承诺（前台/后台双层都要覆盖）
-### 段 3：各卷 OKR（Objective + Key Results，每卷 3 条可量化 KR）
-### 段 4：卷尾必须发生的改变
-### 段 5：节奏原则（至少 3 条具体化到本书，6 条各写 2-3 句）
+### Paragraph 1: Each volume's theme and emotional curve
+### Paragraph 2: Inter-volume hooks and payoff promises (cover both front-stage and back-stage layers)
+### Paragraph 3: Each volume's OKR (Objective + Key Results, 3 quantifiable KRs per volume)
+### Paragraph 4: What must change at each volume's end
+### Paragraph 5: Pacing principles (at least 3, made specific to this book; if 6, write 2-3 sentences each)
 
 === SECTION: roles ===
 
-一人一卡 prose。主角卡是角色弧线的唯一权威来源。用 ---ROLE--- 分隔：
+One prose card per character. The protagonist card is the sole authoritative source for the protagonist's arc. Separate each character with ---ROLE---:
 
 ---ROLE---
 tier: major
-name: <角色名>
+name: <character name>
 ---CONTENT---
-## 核心标签（3-5 个关键词 + 一句话）
-## 反差细节（1-2 个与核心标签反差的具体细节）
-## 人物小传（过往经历）
-## 主角弧线（起点 → 终点 → 代价）——只有主角必须写
-## 当前现状（第 0 章初始状态）
-## 关系网络
-## 内在驱动
-## 成长弧光
+## Core Tags (3-5 keywords + one sentence)
+## Contrast Details (1-2 concrete details that contrast with the core tags)
+## Character Biography (past experiences)
+## Protagonist Arc (start → end → cost) — required only for the protagonist
+## Current Status (Chapter 0 initial state)
+## Relationship Network
+## Inner Drive
+## Growth Arc
 
-主要角色至少 3 个（主角 + 主要对手 + 主要协作者）。次要角色 3-5 个，简化版只需 4 个小标题。
+At least 3 major characters (protagonist + primary antagonist + primary collaborator). 3-5 minor characters; their simplified cards need only 4 sub-headings.
 
 === SECTION: book_rules ===
 
-普通 Markdown 规则卡，不要 YAML/JSON/代码块。
-## 主角（名字 + 性格锁 + 行为约束）
-## 题材锁（主类型 + 禁止混入）
-## 叙事人称
-## 禁止事项
+A plain Markdown rule card. No YAML, no JSON, no code blocks.
+## Protagonist (name + personality lock + behavioral constraints)
+## Genre Lock (primary genre + forbidden mix-ins)
+## Narrative POV
+## Prohibited Elements
 
 === SECTION: pending_hooks ===
 
-初始伏笔池（Markdown 表格），Phase 7 扩展列：
-| hook_id | 起始章节 | 类型 | 状态 | 最近推进 | 预期回收 | 回收节奏 | 上游依赖 | 回收卷 | 核心 | 半衰期 | 备注 |
+Initial hook pool (Markdown table), Phase 7 extended columns:
+| hook_id | start_chapter | type | status | last_advanced | expected_payoff | payoff_timing | upstream_dependency | payoff_volume | core | half_life | notes |
 
-- 建书阶段第 5 列统一填 0
-- 第 7 列必须填写：立即 / 近期 / 中程 / 慢烧 / 终局 之一
-- core_hook=true 的主线承重伏笔 3-7 条
+- During book creation, fill column 5 (last_advanced) with 0 uniformly.
+- Column 7 (payoff_timing) must be one of: immediate / near-term / mid-term / slow-burn / endgame.
+- 3-7 core_hook=true mainline load-bearing hooks.
 
-## 硬性完结检查
-必须依次输出全部 5 个 SECTION 块。只有写完 pending_hooks 最后一行才算交付。"#,
+## Hard Completion Check
+You must emit all 5 SECTION blocks in order. The deliverable is complete only when the last row of `pending_hooks` has been written."#,
         context_block = context_block,
         platform = format!("{:?}", book.platform).to_lowercase(),
         genre_name = genre_name,

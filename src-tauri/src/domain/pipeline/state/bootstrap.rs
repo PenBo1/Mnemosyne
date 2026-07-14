@@ -3,17 +3,15 @@
 // 职责：从 markdown 真相文件（current_state.md / pending_hooks.md / chapter_summaries.md）
 // 引导出 JSON 加速索引。首次访问书籍状态时调用。
 //
-// 简化说明：完整版本包含完整的 markdown 解析（parseCurrentStateFacts / parsePendingHooksMarkdown /
-// parseChapterSummariesMarkdown），这些解析器依赖 story-markdown.ts 工具模块。
-// Rust 版先实现最小骨架：若 JSON 不存在，创建空索引 + 记录 warning。
-// 完整的 markdown → JSON 解析在 agents 阶段补充（settler agent 输出 delta 后由 reducer 更新索引，
-// bootstrap 仅用于首次初始化或从纯 markdown 恢复的场景）。
+// 已实现：完整的 markdown → JSON 解析（parse_current_state_facts /
+// parse_pending_hooks_markdown / parse_chapter_summaries_markdown）。
 
 use std::path::Path;
 
 use super::super::types::Language;
 use super::types::*;
 use super::store::{load_runtime_state_snapshot, save_runtime_state_snapshot};
+use crate::domain::pipeline::utils::story_markdown;
 use crate::shared::error::AppError;
 
 /// bootstrap 结果
@@ -24,7 +22,12 @@ pub struct BootstrapResult {
 }
 
 /// 从 markdown 真相文件引导出 JSON 索引。
-/// 若 JSON 索引已存在，直接加载返回；否则创建空索引。
+///
+/// 流程：
+/// 1. 若 manifest.json 已存在 → 直接加载返回
+/// 2. 否则读取 markdown 真相文件，解析为结构化数据
+/// 3. 写入 JSON 索引文件（manifest.json + 3 个 .json 文件）
+/// 4. markdown 缺失时创建空索引 + 记录 warning
 pub fn bootstrap_structured_state_from_markdown(
     book_dir: &Path,
     fallback_language: Language,
@@ -46,24 +49,68 @@ pub fn bootstrap_structured_state_from_markdown(
         });
     }
 
-    // 首次引导：创建空索引（language 从 book.json 推断，fallback 到参数）
     let resolved_language = resolve_language(book_dir, fallback_language);
-    let new_snapshot = RuntimeStateSnapshot::empty(resolved_language);
-    save_runtime_state_snapshot(book_dir, &new_snapshot)?;
+    let story_dir = book_dir.join("story");
+
+    // 读取 markdown 真相文件（缺失视为空字符串）
+    let current_state_md = read_md_or_empty(&story_dir, "current_state.md");
+    let pending_hooks_md = read_md_or_empty(&story_dir, "pending_hooks.md");
+    let chapter_summaries_md = read_md_or_empty(&story_dir, "chapter_summaries.md");
 
     let mut warnings = Vec::new();
-    // 检查 markdown 真相文件是否存在，若存在则记录 warning（提示需要手动解析或后续 agent 会填充）
-    let story_dir = book_dir.join("story");
-    let markdown_files = ["current_state.md", "pending_hooks.md", "chapter_summaries.md"];
-    for md_file in &markdown_files {
-        if story_dir.join(md_file).exists() {
-            warnings.push(format!(
-                "markdown truth file '{}' exists but JSON index was empty; \
-                 structured state will be populated by settler agent on next chapter write",
-                md_file
-            ));
+    let last_applied_chapter = infer_last_chapter(&chapter_summaries_md);
+
+    // 解析 markdown → 结构化数据
+    let facts = if current_state_md.trim().is_empty() {
+        Vec::new()
+    } else {
+        let parsed = story_markdown::parse_current_state_facts(
+            &current_state_md,
+            last_applied_chapter,
+            resolved_language,
+        );
+        if parsed.is_empty() {
+            warnings.push("current_state.md exists but no facts parsed".to_string());
         }
-    }
+        parsed
+    };
+
+    let hooks = if pending_hooks_md.trim().is_empty() {
+        Vec::new()
+    } else {
+        let parsed = story_markdown::parse_pending_hooks_markdown(&pending_hooks_md, resolved_language);
+        if parsed.is_empty() {
+            warnings.push("pending_hooks.md exists but no hooks parsed".to_string());
+        }
+        parsed
+    };
+
+    let summary_rows = if chapter_summaries_md.trim().is_empty() {
+        Vec::new()
+    } else {
+        let parsed = story_markdown::parse_chapter_summaries_markdown(&chapter_summaries_md);
+        if parsed.is_empty() {
+            warnings.push("chapter_summaries.md exists but no rows parsed".to_string());
+        }
+        parsed
+    };
+
+    let new_snapshot = RuntimeStateSnapshot {
+        manifest: StateManifest {
+            schema_version: 2,
+            language: resolved_language,
+            last_applied_chapter,
+            projection_version: 1,
+            migration_warnings: Vec::new(),
+        },
+        current_state: CurrentStateState {
+            chapter: last_applied_chapter,
+            facts,
+        },
+        hooks: HooksState { hooks },
+        chapter_summaries: ChapterSummariesState { rows: summary_rows },
+    };
+    save_runtime_state_snapshot(book_dir, &new_snapshot)?;
 
     Ok(BootstrapResult {
         created_files: vec![
@@ -101,5 +148,52 @@ pub fn resolve_language(book_dir: &Path, fallback: Language) -> Language {
             fallback
         }
         Err(_) => fallback,
+    }
+}
+
+// ── 内部辅助 ─────────────────────────────────────────────────
+
+fn read_md_or_empty(story_dir: &Path, file_name: &str) -> String {
+    std::fs::read_to_string(story_dir.join(file_name)).unwrap_or_default()
+}
+
+/// 从 chapter_summaries.md 表中提取最大章节号作为 last_applied_chapter。
+/// 若无法解析返回 0。
+fn infer_last_chapter(summaries_md: &str) -> u32 {
+    let rows = story_markdown::parse_chapter_summaries_markdown(summaries_md);
+    rows.iter().map(|r| r.chapter).max().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn infer_last_chapter_from_summaries() {
+        let md = "| 章节 | 标题 |\n|---|---|\n| 1 | a |\n| 5 | b |\n| 3 | c |";
+        assert_eq!(infer_last_chapter(md), 5);
+    }
+
+    #[test]
+    fn infer_last_chapter_empty() {
+        assert_eq!(infer_last_chapter(""), 0);
+    }
+
+    #[test]
+    fn resolves_language_falls_back_when_book_json_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_language(tmp.path(), Language::Zh), Language::Zh);
+        assert_eq!(resolve_language(tmp.path(), Language::En), Language::En);
+    }
+
+    #[test]
+    fn resolves_language_from_book_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("book.json"),
+            r#"{"language": "en"}"#,
+        )
+        .unwrap();
+        assert_eq!(resolve_language(tmp.path(), Language::Zh), Language::En);
     }
 }

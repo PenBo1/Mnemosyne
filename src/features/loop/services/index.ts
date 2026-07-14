@@ -1,4 +1,4 @@
-﻿import { ipc } from "@/services/ipc";
+import { ipc } from "@/services/ipc";
 import type { LoopState, LoopPattern, LoopRunLog, CreateLoopStateRequest, UpdateLoopStateRequest, UpsertLoopPatternRequest } from "@/features/loop/types";
 
 export async function createLoopState(
@@ -7,10 +7,10 @@ export async function createLoopState(
 ): Promise<LoopState> {
   return ipc<LoopState>("loop_create_state", {
     novelId,
-    patternId: req.pattern_id,
-    readinessLevel: req.readiness_level,
+    patternId: req.patternId,
+    readinessLevel: req.readinessLevel,
     config: req.config,
-    tokenCapDaily: req.token_cap_daily,
+    tokenCapDaily: req.tokenCapDaily,
   });
 }
 
@@ -25,9 +25,9 @@ export async function updateLoopState(
   return ipc<LoopState>("loop_update_state", {
     stateId,
     status: req.status,
-    readinessLevel: req.readiness_level,
+    readinessLevel: req.readinessLevel,
     config: req.config,
-    tokenCapDaily: req.token_cap_daily,
+    tokenCapDaily: req.tokenCapDaily,
   });
 }
 
@@ -62,13 +62,13 @@ export async function upsertPattern(
     description: req.description,
     goal: req.goal,
     cadence: req.cadence,
-    riskLevel: req.risk_level,
+    riskLevel: req.riskLevel,
     phases: req.phases,
-    humanGates: req.human_gates,
-    costConfig: req.cost_config,
-    skillsRequired: req.skills_required,
-    stateSchema: req.state_schema ?? undefined,
-    isActive: req.is_active,
+    humanGates: req.humanGates,
+    costConfig: req.costConfig,
+    skillsRequired: req.skillsRequired,
+    stateSchema: req.stateSchema ?? undefined,
+    isActive: req.isActive,
   });
 }
 

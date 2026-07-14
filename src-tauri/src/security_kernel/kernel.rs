@@ -7,6 +7,7 @@ use crate::shared::error::AppError;
 
 use super::approval::{ApprovalManager, ApprovalId};
 use super::audit::{AuditEventBus, SecurityEvent, SharedAuditEventBus, LoggingHandler, MetricsHandler};
+use super::hooks::{HookEngine, HookEvent, HookPayload, HookRegistry};
 use super::permission::{PermissionManager, Operation};
 use super::policy::{PolicyEngine, PolicyDecision};
 use super::rate_limiter::RateLimiter;
@@ -48,6 +49,9 @@ pub struct SecurityKernel {
     resource_manager: Arc<Mutex<ResourceManager>>,
     audit_bus: SharedAuditEventBus,
     secrets: Arc<Mutex<SecretManager>>,
+    /// Hook 引擎 —— 在 execute 的关键节点派发 PreToolUse / PermissionRequest / PostToolUse。
+    /// 通过 Arc 共享给需要派发 hook 的调用方（AgentEngine、SubAgentExecutor）。
+    hook_engine: Arc<HookEngine>,
 }
 
 impl SecurityKernel {
@@ -87,6 +91,12 @@ impl SecurityKernel {
             );
         }
 
+        let audit_bus_for_hooks = audit_bus.clone();
+        let hook_engine = Arc::new(HookEngine::new(
+            Arc::new(HookRegistry::new()),
+            audit_bus_for_hooks,
+        ));
+
         Self {
             policy: Arc::new(RwLock::new(policy)),
             permission: Arc::new(Mutex::new(PermissionManager::new())),
@@ -96,6 +106,7 @@ impl SecurityKernel {
             resource_manager: Arc::new(Mutex::new(resource_manager)),
             audit_bus,
             secrets: Arc::new(Mutex::new(SecretManager::memory_only())),
+            hook_engine,
         }
     }
 
@@ -113,6 +124,12 @@ impl SecurityKernel {
         shared_audit_bus.subscribe(Box::new(LoggingHandler));
         shared_audit_bus.subscribe(Box::new(MetricsHandler::new()));
 
+        let audit_bus_for_hooks = shared_audit_bus.clone();
+        let hook_engine = Arc::new(HookEngine::new(
+            Arc::new(HookRegistry::new()),
+            audit_bus_for_hooks,
+        ));
+
         Self {
             policy: Arc::new(RwLock::new(policy)),
             permission: Arc::new(Mutex::new(permission_manager)),
@@ -122,6 +139,7 @@ impl SecurityKernel {
             resource_manager: Arc::new(Mutex::new(resource_manager)),
             audit_bus: shared_audit_bus,
             secrets: Arc::new(Mutex::new(secret_manager)),
+            hook_engine,
         }
     }
 
@@ -157,6 +175,19 @@ impl SecurityKernel {
     /// `enforce_quota` 为 false 时跳过资源配额检查（用于不消耗配额的系统操作）。
     /// 审计事件（OperationStart/PolicyDenied/ApprovalRequested/OperationComplete）
     /// 与频率记录行为在两种入口下保持一致。
+    ///
+    /// Hook 集成：
+    /// - PreToolUse：在 OperationStart emit 之后、Validation 之前派发；aborted 则直接返回 Err。
+    /// - PermissionRequest：在 PolicyDecision::RequireApproval 命中时派发（在 approval_token
+    ///   校验之前）；aborted 则返回 Err。
+    /// - PostToolUse：在 executor 完成后派发（无论成功/失败）；aborted 仅记录警告，
+    ///   不覆盖 executor 的结果（操作已经发生）。
+    ///
+    /// 同步派发 async hook：使用 `tokio::task::block_in_place` + `Handle::current().block_on`。
+    /// 若 registry 为空则跳过派发（避免无 tokio runtime 时 panic）。
+    ///
+    /// **约束**：hook handler 不得回调 SecurityKernel 的任何加锁方法（validation/policy/rate/
+    /// resource_manager/permission），否则会死锁。内置 action（Log/Audit/Block/Custom）均不回调。
     fn execute_internal<F, T>(
         &self,
         operation_name: &str,
@@ -175,6 +206,9 @@ impl SecurityKernel {
             workspace: ctx.workspace,
             timestamp: Utc::now(),
         });
+
+        // PreToolUse hook —— aborted 则直接拒绝操作。
+        self.dispatch_hook_sync(HookEvent::PreToolUse, operation_name, ctx, None)?;
 
         let start = Instant::now();
 
@@ -197,6 +231,15 @@ impl SecurityKernel {
                 )));
             }
             PolicyDecision::RequireApproval => {
+                // PermissionRequest hook —— 在 approval_token 校验之前派发，
+                // 让 hook 有机会记录或拦截审批请求。aborted 则返回 Err。
+                self.dispatch_hook_sync(
+                    HookEvent::PermissionRequest,
+                    operation_name,
+                    ctx,
+                    None,
+                )?;
+
                 if let Some(token_id) = &ctx.approval_token {
                     let approval = self.approval.lock().unwrap();
                     approval.validate(&ApprovalId(token_id.0), op, &ctx.workspace)?;
@@ -216,15 +259,37 @@ impl SecurityKernel {
         }
 
         let rate = self.rate_limiter.read().unwrap();
-        rate.check_and_fail(operation_name, ctx.workspace)?;
+        if let Err(e) = rate.check_and_fail(operation_name, ctx.workspace) {
+            self.audit_bus.emit(SecurityEvent::RateLimited {
+                operation: operation_name.to_string(),
+                workspace: ctx.workspace,
+                reason: e.to_string(),
+            });
+            return Err(e);
+        }
 
         if enforce_quota {
             let rm = self.resource_manager.lock().unwrap();
-            rm.check_quota(&ctx.workspace)?;
+            if let Err(e) = rm.check_quota(&ctx.workspace) {
+                self.audit_bus.emit(SecurityEvent::ResourceExceeded {
+                    workspace: ctx.workspace,
+                    resource: "quota".to_string(),
+                    quota: e.to_string(),
+                });
+                return Err(e);
+            }
         }
 
         let permission = self.permission.lock().unwrap();
-        permission.check(op, &workspace_id_str)?;
+        if let Err(e) = permission.check(op, &workspace_id_str) {
+            // Permission 拒绝目前复用 PolicyDenied 事件 —— reason 区分
+            self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                operation: operation_name.to_string(),
+                workspace: ctx.workspace,
+                reason: format!("Permission denied: {}", e),
+            });
+            return Err(e);
+        }
 
         let result = executor();
 
@@ -241,7 +306,64 @@ impl SecurityKernel {
             rate.record(operation_name, ctx.workspace);
         }
 
+        // PostToolUse hook —— 操作已发生，aborted 仅记录警告，不覆盖 result。
+        let success = result.is_ok();
+        self.dispatch_hook_sync_post(operation_name, ctx, success);
+
         result
+    }
+
+    /// 同步派发 hook（用于 PreToolUse / PermissionRequest）—— aborted 时返回 Err。
+    ///
+    /// 快速路径：registry 为空时直接返回 Ok（避免无 tokio runtime 时 panic）。
+    ///
+    /// `success_meta`：可选的 `success: bool` 元数据，PostToolUse 用。
+    fn dispatch_hook_sync(
+        &self,
+        event: HookEvent,
+        operation_name: &str,
+        ctx: &OperationContext,
+        success_meta: Option<bool>,
+    ) -> Result<(), AppError> {
+        if self.hook_engine.registry().count() == 0 {
+            return Ok(());
+        }
+
+        let mut payload = HookPayload::new(event)
+            .with_tool_name(operation_name)
+            .with_workspace(ctx.workspace.0.to_string())
+            .with_session(ctx.session.0.to_string());
+        if let Some(s) = success_meta {
+            payload = payload.with_metadata(
+                "success",
+                serde_json::Value::Bool(s),
+            );
+        }
+
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.hook_engine.dispatch(&payload).await
+            })
+        })?;
+        Ok(())
+    }
+
+    /// PostToolUse 专用派发 —— 不传播 abort 错误（操作已发生）。
+    fn dispatch_hook_sync_post(&self, operation_name: &str, ctx: &OperationContext, success: bool) {
+        if self.hook_engine.registry().count() == 0 {
+            return;
+        }
+
+        match self.dispatch_hook_sync(HookEvent::PostToolUse, operation_name, ctx, Some(success)) {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    operation = operation_name,
+                    "PostToolUse hook aborted (operation already completed — abort ignored)"
+                );
+            }
+        }
     }
 
     pub fn request_approval(
@@ -335,6 +457,12 @@ impl SecurityKernel {
         &self.secrets
     }
 
+    /// Hook 引擎引用 —— 供 AgentEngine / SubAgentExecutor 派发 SessionStart / Stop / Subagent* 事件，
+    /// 以及 IPC 命令通过 HookEngineState 操作 registry。
+    pub fn hook_engine(&self) -> &Arc<HookEngine> {
+        &self.hook_engine
+    }
+
     pub fn cleanup(&self) {
         let policy = self.policy.read().unwrap();
         policy.cleanup_expired();
@@ -377,7 +505,8 @@ impl Default for SecurityKernel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KernelStats {
     pub policy_workspaces: usize,
     pub policy_users: usize,

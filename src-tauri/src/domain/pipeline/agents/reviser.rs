@@ -175,18 +175,18 @@ fn resolve_auto_output_mode(issues: &[AuditIssue]) -> AutoOutputMode {
 
 fn build_system_prompt(book: &BookConfig, mode: ReviseMode, auto_output_mode: AutoOutputMode) -> String {
     let mode_desc = match mode {
-        ReviseMode::Polish => "润色：只改表达、节奏、段落呼吸，不改事实与剧情结论。只允许：替换用词、调整句序、修改标点节奏",
-        ReviseMode::Rewrite => "改写：允许重组问题段落、调整画面和叙述力度，但优先保留原文的绝大部分句段",
-        ReviseMode::Rework => "重写：可重构场景推进和冲突组织，但不改主设定和大事件结果",
-        ReviseMode::AntiDetect => "反检测改写：在保持剧情不变的前提下，降低AI生成可检测性。打破句式规律、口语化替代、减少\"了\"字密度、转折词降频、情绪外化、删掉叙述者结论、群像反应具体化、段落长度差异化",
-        ReviseMode::SpotFix => "定点修复：只修改审稿意见指出的具体句子或段落，其余所有内容必须原封不动保留",
+        ReviseMode::Polish => "Polish: only touch expression, rhythm, and paragraph breathing — never facts or plot outcomes. Allowed operations: word substitution, sentence reordering, punctuation-rhythm tweaks.",
+        ReviseMode::Rewrite => "Rewrite: you may restructure problem paragraphs and adjust imagery and narrative force, but prefer to retain the vast majority of the original sentences.",
+        ReviseMode::Rework => "Rework: you may restructure scene progression and conflict organization, but you must not alter the main setup or major-event outcomes.",
+        ReviseMode::AntiDetect => "Anti-detection rewrite: keep the plot intact while lowering AI-generation detectability. Break sentence-pattern regularity, substitute with colloquial phrasing, reduce the density of the character \"了\" (le), lower transition-word frequency, externalize emotion, drop narrator conclusions, particularize crowd reactions, differentiate paragraph lengths.",
+        ReviseMode::SpotFix => "Spot-fix: only modify the specific sentences or paragraphs the audit flagged — every other piece of content must remain untouched.",
         ReviseMode::Auto => "",
     };
 
     let routing_directive = if mode == ReviseMode::Auto {
         match auto_output_mode {
-            AutoOutputMode::RewriteOnly => "\n\n分流指令：reviewer 报告的阻塞问题属于结构/语义错（人设崩、主线偏、爽点缺、时间线错、伏笔未收、memo 偏离等）。你必须输出 REVISED_CONTENT——禁止输出 PATCHES。",
-            AutoOutputMode::PatchOnly => "\n\n分流指令：reviewer 报告的阻塞问题属于局部错（措辞、段落形状、疲劳词、信息越界、知识污染）。你必须只输出 PATCHES——不要整章改写。",
+            AutoOutputMode::RewriteOnly => "\n\nRouting directive: the blocking issues the reviewer reported are structural/semantic errors (character-logic collapse, main-line drift, missing payoff, timeline error, unresolved hook, memo drift, etc.). You must output REVISED_CONTENT — outputting PATCHES is forbidden.",
+            AutoOutputMode::PatchOnly => "\n\nRouting directive: the blocking issues the reviewer reported are local errors (wording, paragraph shape, fatigue words, information boundary, knowledge pollution). You must output only PATCHES — do not rewrite the whole chapter.",
             AutoOutputMode::AllowFull => "",
         }
     } else {
@@ -195,60 +195,62 @@ fn build_system_prompt(book: &BookConfig, mode: ReviseMode, auto_output_mode: Au
 
     let output_format = if mode == ReviseMode::SpotFix || auto_output_mode == AutoOutputMode::PatchOnly {
         r#"=== FIXED_ISSUES ===
-（逐条说明修正了什么）
+(itemize what each fix addressed)
 
 === PATCHES ===
 --- PATCH 1 ---
 TARGET_TEXT:
-（从原文中精确复制、且能唯一命中的原句或原段）
+(the exact original sentence or paragraph copied verbatim from the source, uniquely matchable)
 REPLACEMENT_TEXT:
-（替换后的局部文本）
+(the local replacement text)
 --- END PATCH ---
 
 === UPDATED_STATE ===
-（更新后的完整状态卡）
+(the full updated state card)
 
 === UPDATED_HOOKS ===
-（更新后的完整伏笔池）"#
+(the full updated hook pool)"#
     } else {
         r#"=== FIXED_ISSUES ===
-（逐条说明修正了什么）
+(itemize what each fix addressed)
 
 === REVISED_CONTENT ===
-（修正后的完整正文）
+(the full revised prose)
 
 === UPDATED_STATE ===
-（更新后的完整状态卡）
+(the full updated state card)
 
 === UPDATED_HOOKS ===
-（更新后的完整伏笔池）"#
+(the full updated hook pool)"#
     };
 
     format!(
-        r#"你是一位专业的网络小说修稿编辑。你的任务是根据审稿意见对章节进行修正。
+        r#"<identity>
+You are a professional web-fiction revision editor. Your task is to correct a chapter based on the audit feedback.
+</identity>
 
-## 书籍信息
-- 标题：{title}
-- 目标章数：{target_chapters}章{mode_block}{routing_directive}
+## Book Information
+- Title: {title}
+- Target chapter count: {target_chapters} chapters{mode_block}{routing_directive}
 
-## 修稿原则
+<revision_principles>
+1. Fix the root cause — do not apply surface-level polish.
+2. Hook status must stay in sync with the hook pool.
+3. Do not alter the plot direction or the core conflict.
+4. Preserve the original's voice, rhythm, and breathing — do not compress transitions or delete deceleration passages.
+5. Externalize emotion through action (do not write "he felt angry" — write the action). Convey values through behavior.
+6. Different characters must speak differently. "The crowd gasped in unison" is forbidden.
+7. Stack bad on bad — each layer must be worse than the last.
+8. After revising, synchronously update the state card and the hook pool.
+</revision_principles>
 
-1. 修根因，不做表面润色
-2. 伏笔状态必须与伏笔池同步
-3. 不改变剧情走向和核心冲突
-4. 保持原文的语言风格、节奏和呼吸——不要压缩过渡段、不要删掉减速段
-5. 情绪用动作外化（不写"他感到愤怒"，写动作）。价值观通过行为传达
-6. 不同角色说话方式必须不同。禁止"众人齐声惊呼"
-7. 坏事叠坏事，每层比上一层过分
-8. 修改后同步更新状态卡、伏笔池
+## Small-Goal Cycle Revision Guidance
 
-## 小目标周期修稿指引
+- If this chapter should be in the "aftermath" phase but is still applying pressure, rewrite the densest conflict passage into one that shows change — who lost what, whose attitude shifted, what the new normal is.
+- If this chapter should be in the "eruption" phase but did not clearly deliver, find the scene closest to a payoff and amplify it — make the promised release exceed reader expectations.
+- If a slice-of-life passage does not serve the main line, rewrite it as "bait": insert a future-pointing detail, a hint, or a character reaction.
 
-- 如果本章应该是"后效"阶段但仍在加压，把最密集的冲突段落改写为展示改变的段落——谁失去了什么、谁的态度变了、新的常态是什么
-- 如果本章应该是"爆发"阶段但没有明确兑现，找到最接近回报的场景并放大它——让承诺的释放超过读者预期
-- 日常段落如果不服务主线，改写为"饵"：加入一个指向未来的细节、一句暗示、一个角色反应
-
-## 输出格式
+## Output Format
 
 {output_format}"#,
         title = book.title,
@@ -256,7 +258,7 @@ REPLACEMENT_TEXT:
         mode_block = if mode_desc.is_empty() {
             String::new()
         } else {
-            format!("\n\n## 修稿模式：{}", mode_desc)
+            format!("\n\n## Revision Mode: {}", mode_desc)
         },
         routing_directive = routing_directive,
         output_format = output_format,
@@ -280,7 +282,7 @@ fn build_user_message(
             .iter()
             .map(|i| {
                 format!(
-                    "- [{:?}] {}: {}\n  建议: {}",
+                    "- [{:?}] {}: {}\n  Suggestion: {}",
                     i.severity, i.category, i.description, i.suggestion
                 )
             })
@@ -291,37 +293,37 @@ fn build_user_message(
     let memo_block = if ctx.chapter_memo.is_empty() {
         String::new()
     } else {
-        format!("\n## 章节备忘\n{}\n", ctx.chapter_memo)
+        format!("\n## Chapter Memo\n{}\n", ctx.chapter_memo)
     };
 
     format!(
-        r#"请修正第 {chapter_number} 章。
+        r#"Revise Chapter {chapter_number}.
 
-## 审稿问题
+## Audit Issues
 {issue_list}
 
-## 当前状态卡
+## Current State Card
 {current_state}
 
-## 伏笔池
+## Hook Pool
 {pending_hooks}
 
-## 章节摘要
+## Chapter Summaries
 {chapter_summaries}
 
-## 卷纲
+## Volume Outline
 {volume_map}
 
-## 世界观设定
+## World Setting
 {story_frame}
 
-## 规则卡
+## Rule Card
 {book_rules}
 
-## 文风指南
+## Style Guide
 {style_guide}
 {memo_block}
-## 待修正章节
+## Chapter to Revise
 {chapter_content}"#,
         chapter_number = chapter_number,
         issue_list = issue_list,
@@ -332,7 +334,7 @@ fn build_user_message(
         story_frame = ctx.story_frame,
         book_rules = ctx.book_rules,
         style_guide = if ctx.style_guide.is_empty() {
-            "(无文风指南)"
+            "(no style guide)"
         } else {
             &ctx.style_guide
         },
@@ -341,7 +343,7 @@ fn build_user_message(
     )
 }
 
-/// 构建分层问题列表（auto 模式用）
+/// Build a tiered issue list (used in Auto mode).
 fn build_tiered_issue_list(issues: &[AuditIssue]) -> String {
     let mut critical = Vec::new();
     let mut high = Vec::new();
@@ -358,13 +360,13 @@ fn build_tiered_issue_list(issues: &[AuditIssue]) -> String {
 
     let mut parts = Vec::new();
     if !critical.is_empty() {
-        parts.push(format!("## Critical（必须解决）\n{}", critical.join("\n")));
+        parts.push(format!("## Critical (must resolve)\n{}", critical.join("\n")));
     }
     if !high.is_empty() {
-        parts.push(format!("## High（应当改善）\n{}", high.join("\n")));
+        parts.push(format!("## High (should improve)\n{}", high.join("\n")));
     }
     if !medium.is_empty() {
-        parts.push(format!("## Medium（参考建议）\n{}", medium.join("\n")));
+        parts.push(format!("## Medium (reference suggestions)\n{}", medium.join("\n")));
     }
 
     parts.join("\n\n")
@@ -391,14 +393,14 @@ fn parse_output(
 
     let updated_state = extract("UPDATED_STATE");
     let updated_state = if updated_state.is_empty() {
-        "(状态卡未更新)".to_string()
+        "(state card not updated)".to_string()
     } else {
         updated_state
     };
 
     let updated_hooks = extract("UPDATED_HOOKS");
     let updated_hooks = if updated_hooks.is_empty() {
-        "(伏笔池未更新)".to_string()
+        "(hook pool not updated)".to_string()
     } else {
         updated_hooks
     };

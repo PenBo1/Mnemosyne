@@ -1,53 +1,18 @@
 // 记忆检索。
 //
-// 迁移要点：
-// 1. import 路径调整：
-//    - `node:fs/promises`（readFile）→ `@/services/ipc`（ipc）+ `./path-utils`（joinPath）
-//    - `node:path`（join）→ `./path-utils`（joinPath）
-//    - `./outline-paths.js` → `./outline-paths`（已迁移）
-//    - `../models/runtime-state.js`（schema）→ `@/shared/types/runtime-state`
-//    - `../state/memory-db.js`（类型 StoredHook / StoredSummary）→ `@/shared/types/hook`
-//      Fact 类型未迁移到 @/shared/types/hook（原 Fact 含可选 id 主键，服务于
-//      node:sqlite MemoryDB；Mnemosyne 用 Rust rusqlite 替代，运行时 DB 类型在 Rust 端定义），
-//      故本文件局部定义 Fact 接口（同 state-bootstrap.ts 的处理方式）。
-//    - `../state/state-bootstrap.js` → `../state/state-bootstrap`（已迁移）
-//    - `./hook-lifecycle.js` → `./hook-lifecycle`（已迁移简化版；
-//      简化版 resolveHookPayoffTiming 返回 string | undefined 原始字符串，本文件未直接调用
-//      resolveHookPayoffTiming / localizeHookPayoffTiming，仅用 filterActiveHooks /
-//      isFuturePlannedHook / isHookWithinChapterWindow，三个函数签名与简化版兼容）
-//    - `./story-markdown.js` → `./story-markdown`（已迁移，含 parsePendingHooksMarkdown /
-//      renderHookSnapshot / renderSummarySnapshot；parseChapterSummariesMarkdown /
-//      parseCurrentStateFacts 在 Mnemosyne story-markdown.ts 中未含，已迁至 state-bootstrap.ts，
-//      故这两个函数从 `../state/state-bootstrap` 导入）
+// P2.2 已接入 rusqlite 加速层：retrieveMemorySelection 优先调用
+// memory_retrieve_selection IPC（后端查询 story_facts / chapter_summaries 表），
+// 如果 IPC 成功且返回 hasData=true，直接使用 SQLite 数据作为 facts + summaries。
+// 如果 IPC 失败或返回空，显式 log warning 并降级到 markdown/JSON 文件读取。
 //
-// 2. I/O 改造（node:fs/promises → Tauri IPC）：
-//    - `readFile(path, "utf-8").catch(() => "")` → `ipc<string>("fs_read_file", { path }).catch(() => "")`
-//    - `readFile(path, "utf-8")`（readStructuredState 内）→ `ipc<string>("fs_read_file", { path })`，
-//      失败由外层 try/catch 降级为 null（语义等价）
-//    - `join(...)` → `joinPath(...)`（浏览器端无 node:path）
-//    - 涉及文件：current_state.md / pending_hooks.md / volume_summaries.md /
-//      chapter_summaries.md / state/current_state.json / state/hooks.json /
-//      state/chapter_summaries.json
+// hooks 和 volume_summaries 目前无 SQLite 表（hooks 存于 state.json/pending_hooks.md，
+// volume_summaries 仅 markdown），在 IPC 路径下仍从 markdown 读取。
 //
-// 3. MemoryDB 跳过（TODO: P2 阶段 7 接入 rusqlite memory_db）：
-//    原实现用 `node:sqlite` MemoryDB 加速 summaries/facts/hooks 检索（hot path 走 SQLite，
-//    cold path 走 markdown/JSON 兜底）。Mnemosyne 用 Rust rusqlite 替代（P2 阶段 7 接入）。
-//    本次迁移跳过 MemoryDB 相关代码：
-//      - 移除 `openMemoryDB` 函数（仅服务于 MemoryDB 实例化）
-//      - 移除 `if (memoryDb) { ... }` 整段分支（lines 111-151 of source）
-//      - 保留原 fallback 路径作为唯一执行路径（直接从 markdown/JSON 文件读取）
-//    语义等价：fallback 路径本身就是"无 MemoryDB 时的完整功能"，跳过 MemoryDB 后
-//    只是失去加速层，业务结果一致。
-//
-// 4. dbPath 字段保留：MemorySelection.dbPath 原本仅 MemoryDB 分支返回（指向 memory.db），
-//    跳过 MemoryDB 后永远 undefined。保留字段以维持 API 形状（可选字段，不破坏调用方）。
-//
-// 5. strict 模式适配（Mnemosyne tsconfig 启用 noUnusedLocals，原项目未启用）：
-//    - 仅 re-export 不在文件内调用的函数（renderHookSnapshot / renderSummarySnapshot）
-//      改用 `export { ... } from` 形式，不再走 import+export 双语句（避免 TS6133）。
-//    - 删除源文件死代码 buildLegacyQueryTerms（从未被调用、也不导出；
-//      与 state-bootstrap.ts 迁移时删除 parseStrictIntegerWithWarning 死代码链一致）。
-//    上述调整均不涉及函数逻辑/正则/常量改动。
+// 迁移历史：
+// 1. import 路径调整（node:fs/promises → Tauri IPC + joinPath）
+// 2. I/O 改造（readFile → ipc("fs_read_file")）
+// 3. P2.2: 接入 rusqlite memory_db 加速层（memory_retrieve_selection IPC）
+// 4. strict 模式适配（noUnusedLocals）
 //
 // 业务逻辑零改动（函数逻辑、正则、常量值、排序规则、阈值全部保留）。
 
@@ -89,11 +54,8 @@ export {
 } from "../state/state-bootstrap";
 
 /**
- * 局部 Fact 类型 —— state/memory-db.ts 的 Fact 未迁移到 @/shared/types/hook
- * （原 Fact 含可选 id 主键，服务于 node:sqlite MemoryDB；Mnemosyne 用 Rust
- * rusqlite 替代，运行时 DB 类型在 Rust 端定义）。此处保留与 state-bootstrap.ts
- * 一致的形状，供 selectRelevantFacts / parseCurrentStateFacts 返回类型使用。
- * TODO: 后续若 @/shared/types/hook 补 Fact 类型，可移除本局部定义并改回 import。
+ * 局部 Fact 类型 —— 与后端 RetrievedFact DTO（camelCase 序列化）对齐。
+ * 后端 memory_retrieve_selection IPC 直接返回此形状的数据。
  */
 interface Fact {
   readonly id?: number;
@@ -117,18 +79,145 @@ export interface MemorySelection {
   readonly recyclableHooks: ReadonlyArray<StoredHook>;
   readonly facts: ReadonlyArray<Fact>;
   readonly volumeSummaries: ReadonlyArray<VolumeSummarySelection>;
-  /**
-   * 原本仅 MemoryDB 分支返回（指向 memory.db）。Mnemosyne 跳过 MemoryDB 后
-   * 永远 undefined。保留字段以维持 API 形状。
-   * TODO: P2 阶段 7 接入 rusqlite memory_db 后恢复。
-   */
-  readonly dbPath?: string;
 }
 
 export interface VolumeSummarySelection {
   readonly heading: string;
   readonly content: string;
   readonly anchor: string;
+}
+
+// ── P2.2 SQLite IPC 加速层类型 ──────────────────────────────
+
+/** 后端 memory_retrieve_selection IPC 返回结构（camelCase）。 */
+interface MemoryRetrievalResult {
+  readonly facts: ReadonlyArray<RetrievedFactDto>;
+  readonly summaries: ReadonlyArray<RetrievedSummaryDto>;
+  readonly hasData: boolean;
+}
+
+interface RetrievedFactDto {
+  readonly id: number | null;
+  readonly subject: string;
+  readonly predicate: string;
+  readonly object: string;
+  readonly validFromChapter: number;
+  readonly validUntilChapter: number | null;
+  readonly sourceChapter: number;
+}
+
+interface RetrievedSummaryDto {
+  readonly chapter: number;
+  readonly title: string;
+  readonly characters: string;
+  readonly events: string;
+  readonly stateChanges: string;
+  readonly hookActivity: string;
+  readonly mood: string;
+  readonly chapterType: string;
+}
+
+/** 从 bookDir 路径提取 book_id（路径最后一段非空组件）。 */
+function extractBookId(bookDir: string): string {
+  const trimmed = bookDir.replace(/[\\/]+$/, "");
+  const parts = trimmed.split(/[\\/]+/);
+  return parts[parts.length - 1] ?? "";
+}
+
+/**
+ * P2.2: 尝试通过 SQLite IPC 检索 facts + summaries。
+ *
+ * 成功且有数据时返回 MemorySelection（facts/summaries 来自 SQLite，
+ * hooks/volume_summaries 仍从 markdown 读取）。
+ * 失败或无数据时返回 null，调用方降级到全量 markdown 路径。
+ *
+ * 不 silent fallback：IPC 失败时 console.warn 显式记录。
+ */
+async function tryRetrieveSelectionFromSqlite(params: {
+  readonly bookDir: string;
+  readonly chapterNumber: number;
+  readonly goal: string;
+  readonly outlineNode?: string;
+  readonly mustKeep?: ReadonlyArray<string>;
+}): Promise<MemorySelection | null> {
+  const bookId = extractBookId(params.bookDir);
+  if (!bookId) {
+    console.warn("[memory-retrieval] Cannot extract bookId from bookDir, falling back to markdown");
+    return null;
+  }
+
+  let result: MemoryRetrievalResult;
+  try {
+    result = await ipc<MemoryRetrievalResult>("memory_retrieve_selection", {
+      bookId,
+      chapterNumber: params.chapterNumber,
+      goal: params.goal,
+      includeFacts: true,
+      includeHooks: false,
+      includeSummaries: true,
+      includeVolumeSummaries: false,
+      maxItemsPerCategory: 20,
+    });
+  } catch (err) {
+    console.warn(
+      "[memory-retrieval] IPC memory_retrieve_selection failed, falling back to markdown:",
+      err,
+    );
+    return null;
+  }
+
+  if (!result.hasData) {
+    console.warn("[memory-retrieval] IPC returned hasData=false, falling back to markdown");
+    return null;
+  }
+
+  // IPC 有数据：仍需从 markdown 读取 hooks + volume_summaries（无 SQLite 表）
+  const storyDir = joinPath(params.bookDir, "story");
+  const [hooksMarkdown, volumeSummariesMarkdown] = await Promise.all([
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "pending_hooks.md") }).catch(() => ""),
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "volume_summaries.md") }).catch(() => ""),
+  ]);
+
+  const narrativeQueryTerms = extractQueryTerms(params.goal, params.outlineNode, []);
+  const factQueryTerms = extractQueryTerms(params.goal, params.outlineNode, params.mustKeep ?? []);
+
+  const volumeSummaries = selectRelevantVolumeSummaries(
+    parseVolumeSummariesMarkdown(volumeSummariesMarkdown),
+    narrativeQueryTerms,
+  );
+
+  const hooks = parsePendingHooksMarkdown(hooksMarkdown);
+  const activeHooks = filterActiveHooks(hooks);
+
+  const facts: Fact[] = result.facts.map((f) => ({
+    id: f.id ?? undefined,
+    subject: f.subject,
+    predicate: f.predicate,
+    object: f.object,
+    validFromChapter: f.validFromChapter,
+    validUntilChapter: f.validUntilChapter,
+    sourceChapter: f.sourceChapter,
+  }));
+
+  const summaries: StoredSummary[] = result.summaries.map((s) => ({
+    chapter: s.chapter,
+    title: s.title,
+    characters: s.characters,
+    events: s.events,
+    stateChanges: s.stateChanges,
+    hookActivity: s.hookActivity,
+    mood: s.mood,
+    chapterType: s.chapterType,
+  }));
+
+  return {
+    summaries: selectRelevantSummaries(summaries, params.chapterNumber, narrativeQueryTerms),
+    hooks: selectRelevantHooks(activeHooks, narrativeQueryTerms, params.chapterNumber),
+    activeHooks,
+    recyclableHooks: computeRecyclableHooks(activeHooks, params.chapterNumber),
+    facts: selectRelevantFacts(facts, factQueryTerms),
+    volumeSummaries,
+  };
 }
 
 export async function retrieveMemorySelection(params: {
@@ -138,6 +227,13 @@ export async function retrieveMemorySelection(params: {
   readonly outlineNode?: string;
   readonly mustKeep?: ReadonlyArray<string>;
 }): Promise<MemorySelection> {
+  // P2.2: 优先通过 SQLite IPC 检索 facts + summaries（加速层）
+  const ipcSelection = await tryRetrieveSelectionFromSqlite(params);
+  if (ipcSelection !== null) {
+    return ipcSelection;
+  }
+
+  // 降级路径：从 markdown/JSON 文件读取（原有逻辑，保持不变）
   const storyDir = joinPath(params.bookDir, "story");
   const stateDir = joinPath(storyDir, "state");
   const fallbackChapter = Math.max(0, params.chapterNumber - 1);
@@ -188,8 +284,6 @@ export async function retrieveMemorySelection(params: {
   const hooks = structuredHooks?.hooks ?? parsePendingHooksMarkdown(hooksMarkdown);
   const activeHooks = filterActiveHooks(hooks);
 
-  // TODO: P2 阶段 7 接入 rusqlite memory_db（原实现用 node:sqlite MemoryDB 加速检索）。
-  // 当前跳过 MemoryDB 加速层，直接从 markdown/JSON 文件读取，逻辑等价于原 fallback 路径。
   const summaries = structuredSummaries?.rows ?? parseChapterSummariesMarkdown(chapterSummariesMarkdown);
 
   return {

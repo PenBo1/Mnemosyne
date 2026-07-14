@@ -4,15 +4,17 @@
 // 流程：normalize（硬漂移）→ assess（audit + score）→ revise（auto）→ re-assess → 选最佳快照。
 //
 // 实现差异：
-// - analyzeAITells / analyzeSensitiveWords / runPostWriteChecks 尚未移植到 Rust，
-//   当前 assess 直接使用 LLM audit 结果。后续移植这些工具后在此合并。
-// - normalizePostWriteSurface / assertChapterContentNotEmpty 未引入（identity / no-op）。
+// - analyzeAITells / analyzeSensitiveWords / runPostWriteChecks 已移植到 Rust
+//   （ai_tells.rs / sensitive_words.rs / post_write_checks.rs），在 assess 中合并。
+// - normalizePostWriteSurface / assertChapterContentNotEmpty 已引入（post_write_checks.rs）。
 // - logWarn / logStage 用 tracing::warn! / tracing::info! 替代。
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
 
-use super::super::agents::continuity::{audit_chapter, AuditResult, AuditorContext};
+use super::super::agents::continuity::{
+    audit_chapter, AuditIssue, AuditResult, AuditorContext, IssueSeverity, RepairScope,
+};
 use super::super::agents::length_normalizer::normalize_chapter;
 use super::super::agents::reviser::{revise_chapter, ReviserContext, ReviseMode};
 use super::super::governance::input::GovernedArtifacts;
@@ -20,6 +22,11 @@ use super::super::governance::length::{
     count_chapter_length, is_outside_hard_range, LengthSpec,
 };
 use super::super::types::BookConfig;
+use super::ai_tells::analyze_ai_tells;
+use super::post_write_checks::{
+    assert_chapter_content_not_empty, normalize_post_write_surface, run_post_write_checks,
+};
+use super::sensitive_words::analyze_sensitive_words;
 
 // ── 常量 ─────────────────────────────────────────────────────
 
@@ -301,7 +308,11 @@ pub async fn run_chapter_review_cycle(
 
 // ── 辅助函数 ─────────────────────────────────────────────────
 
-/// 评估章节：audit + 计算 score + 判定 length_in_range
+/// 评估章节：audit + 规则检测 + 计算 score + 判定 length_in_range
+///
+/// 合并 LLM audit 结果与 analyzeAITells / analyzeSensitiveWords / runPostWriteChecks
+/// 的规则检测结果。Critical 级别问题强制 passed=false 并扣 10 分，Warning 扣 3 分，
+/// Info 扣 1 分。
 async fn assess(
     engine: &AgentEngine,
     book: &BookConfig,
@@ -311,8 +322,34 @@ async fn assess(
     length_spec: &LengthSpec,
     governed_artifacts: Option<&GovernedArtifacts>,
 ) -> Result<Assessment, AppError> {
+    let language = book.language.unwrap_or_default();
+    let normalized = normalize_post_write_surface(content, language);
+
+    // 章节内容非空断言（normalize 后）：空内容跳过 LLM audit，直接返回 0 分
+    if let Err(e) = assert_chapter_content_not_empty(&normalized) {
+        tracing::warn!("章节内容为空，跳过 LLM audit");
+        let mut audit_result = AuditResult::default();
+        audit_result.passed = false;
+        audit_result.overall_score = Some(0.0);
+        audit_result.parse_failed = true;
+        audit_result.issues.push(AuditIssue {
+            severity: IssueSeverity::Critical,
+            repair_scope: Some(RepairScope::Structural),
+            category: "章节内容为空".to_string(),
+            description: e.message,
+            suggestion: "章节内容不能为空，请检查写作输出".to_string(),
+        });
+        let word_count = count_chapter_length(content, length_spec.counting_mode);
+        let length_in_range = !is_outside_hard_range(word_count, length_spec);
+        return Ok(Assessment {
+            audit_result,
+            score: 0.0,
+            length_in_range,
+        });
+    }
+
     // 调用 continuity auditor
-    let audit_result = audit_chapter(
+    let mut audit_result = audit_chapter(
         engine,
         book,
         chapter_number,
@@ -322,7 +359,34 @@ async fn assess(
     )
     .await?;
 
-    let score = audit_result.overall_score.unwrap_or(0.0);
+    // 运行规则检测（analyzeAITells + analyzeSensitiveWords + runPostWriteChecks）
+    // 在原始 content 上检测（em-dash 等检查需看到原始字符）
+    let mut additional_issues: Vec<AuditIssue> = Vec::new();
+    additional_issues.extend(analyze_ai_tells(content, language));
+    additional_issues.extend(analyze_sensitive_words(content));
+    additional_issues.extend(run_post_write_checks(content, language));
+
+    // 合并 issues 并重新计算 score / passed
+    let mut score = audit_result.overall_score.unwrap_or(0.0);
+    let mut passed = audit_result.passed;
+    for issue in &additional_issues {
+        match issue.severity {
+            IssueSeverity::Critical => {
+                score = (score - 10.0).max(0.0);
+                passed = false;
+            }
+            IssueSeverity::Warning => {
+                score = (score - 3.0).max(0.0);
+            }
+            IssueSeverity::Info => {
+                score = (score - 1.0).max(0.0);
+            }
+        }
+    }
+    audit_result.issues.extend(additional_issues);
+    audit_result.overall_score = Some(score);
+    audit_result.passed = passed;
+
     let word_count = count_chapter_length(content, length_spec.counting_mode);
     let length_in_range = !is_outside_hard_range(word_count, length_spec);
 
@@ -355,6 +419,8 @@ fn build_auditor_context(
         style_guide: read_safe("style_guide.md"),
         chapter_memo,
         previous_chapter: String::new(), // 由 caller 在需要时填充
+        parent_canon: read_safe("parent_canon.md"),
+        fanfic_canon: read_safe("fanfic_canon.md"),
     }
 }
 

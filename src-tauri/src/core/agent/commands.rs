@@ -7,6 +7,8 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::core::agent::approval::ApprovalManager;
+use crate::core::agent::collaboration_style::CollaborationStyle;
+use crate::core::agent::effort::EffortLevel;
 use crate::core::agent::engine::AgentEngine;
 use crate::core::agent::types::ChatEvent;
 use crate::shared::error::{AppError, IpcResponse};
@@ -32,6 +34,14 @@ pub struct SendMessageRequest {
     pub content: String,
     pub context_text: Option<String>,
     pub custom_instructions: Option<String>,
+    /// Effort 级别覆盖(low/medium/high/ultra)
+    /// 缺省时由 AgentEngine 使用 DEFAULT_EFFORT(Medium)
+    #[serde(default)]
+    pub effort: Option<EffortLevel>,
+    /// 协作风格覆盖(efficient/thoughtful/patient/decisive)
+    /// 缺省时使用 CollaborationStyle::default()(Efficient)
+    #[serde(default)]
+    pub collaboration_style: Option<CollaborationStyle>,
 }
 
 #[tauri::command]
@@ -66,6 +76,8 @@ pub async fn chat_send_message(
         content: request.content,
         context_text: request.context_text,
         custom_instructions: request.custom_instructions,
+        effort: request.effort,
+        collaboration_style: request.collaboration_style,
     };
 
     let result = state.engine.send_message(chat_request, root, approval, tx).await;

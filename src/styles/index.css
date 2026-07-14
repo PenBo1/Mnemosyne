@@ -642,3 +642,55 @@
 .md-scrollbar::-webkit-scrollbar-thumb:hover {
     background-color: var(--text-tertiary);
 }
+
+/* ============================================
+   TRAE Design System Utility Classes
+   ============================================ */
+
+/* Numeric values: mono font + tabular-nums for aligned digits */
+.trae-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+/* Large stat value: mono, tabular-nums, heading-lg size, semibold */
+.trae-stat-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+    font-size: 1.375rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    color: var(--text-default);
+    letter-spacing: -0.02em;
+}
+
+/* Section title: heading-sm size, semibold */
+.trae-section-title {
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    color: var(--text-default);
+    letter-spacing: -0.01em;
+}
+
+/* Eyebrow label: body-xs, uppercase, tracking */
+.trae-eyebrow {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+/* Card eyebrow: same as eyebrow but with secondary text color */
+.trae-card-eyebrow {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}

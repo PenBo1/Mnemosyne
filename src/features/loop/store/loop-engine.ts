@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import type { LoopState, LoopEngineState, CreateLoopStateRequest, LoopConfig } from "@/features/loop/types";
 import * as loopService from "@/features/loop/services";
 import { toast } from "sonner";
@@ -36,18 +36,18 @@ export const useLoopEngineStore = create<LoopEngineState>((set, _get) => ({
     const tempId = `temp-${Date.now()}`;
     const optimistic: LoopState = {
       id: tempId,
-      novel_id: novelId,
-      pattern_id: req.pattern_id,
+      novelId,
+      patternId: req.patternId,
       status: "idle",
-      readiness_level: req.readiness_level ?? "L0",
-      state_payload: {},
-      config: (req.config ?? { cadence: "1d", denylist: [], human_gates: [], max_retries: 3 }) as LoopConfig,
-      token_usage_today: 0,
-      token_cap_daily: req.token_cap_daily ?? 50000,
-      last_run_at: null,
-      last_run_result: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      readinessLevel: req.readinessLevel ?? "L0",
+      statePayload: {},
+      config: (req.config ?? { cadence: "1d", denylist: [], humanGates: [], maxRetries: 3 }) as LoopConfig,
+      tokenUsageToday: 0,
+      tokenCapDaily: req.tokenCapDaily ?? 50000,
+      lastRunAt: null,
+      lastRunResult: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     set((state) => ({ states: [...state.states, optimistic] }));
@@ -96,7 +96,7 @@ export const useLoopEngineStore = create<LoopEngineState>((set, _get) => ({
         runLogs: [log, ...s.runLogs],
         states: s.states.map((ls) =>
           ls.id === stateId
-            ? { ...ls, status: "idle" as const, last_run_at: log.created_at, last_run_result: { findings: log.findings, actions: log.actions_taken, escalations: log.escalations } }
+            ? { ...ls, status: "idle" as const, lastRunAt: log.createdAt, lastRunResult: { findings: log.findings, actions: log.actionsTaken, escalations: log.escalations } }
             : ls
         ),
       }));

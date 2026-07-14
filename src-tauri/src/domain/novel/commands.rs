@@ -1,11 +1,14 @@
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::validation::validate_id;
-use crate::domain::novel::types::BookSource;
+use crate::domain::novel::crawler;
+use crate::domain::novel::source;
+use crate::domain::novel::types::{BookSource, LocalBookItem, SearchBookResult};
 use tauri::State;
 
 const MAX_TITLE_LEN: usize = 500;
 const MAX_GENRE_LEN: usize = 100;
+const MAX_KEYWORD_LEN: usize = 200;
 
 fn validate_novel_id(id: &str) -> Result<(), AppError> {
     validate_id(id, "novel_id").map_err(|e| AppError::invalid_input(e))
@@ -155,7 +158,7 @@ pub async fn novel_source_toggle(
     
     for source in &mut sources {
         if source.name == name {
-            source.disabled = !enabled;
+            source.enabled = enabled;
             updated = true;
             break;
         }
@@ -170,6 +173,82 @@ pub async fn novel_source_toggle(
     
     std::fs::write(&sources_path, json)
         .map_err(|_| AppError::file_write_error(sources_path.display().to_string()))?;
-    
+
     Ok(IpcResponse::ok(true))
+}
+
+/// 加载书源列表的内部辅助。文件不存在时返回空 Vec。
+fn load_sources(state: &DbState) -> Result<Vec<BookSource>, AppError> {
+    let path = state.data_dir.root().join("novel_sources.json");
+    source::load_sources(&path)
+}
+
+/// 搜索小说。`source_name = "all"` 时聚合所有未禁用且支持搜索的书源。
+#[tauri::command]
+pub async fn novel_search(
+    state: State<'_, DbState>,
+    source_name: String,
+    keyword: String,
+) -> Result<IpcResponse<Vec<SearchBookResult>>, AppError> {
+    if source_name.trim().is_empty() {
+        return Err(AppError::invalid_input("source_name cannot be empty"));
+    }
+    let kw = keyword.trim();
+    if kw.is_empty() {
+        return Err(AppError::invalid_input("keyword cannot be empty"));
+    }
+    if kw.len() > MAX_KEYWORD_LEN {
+        return Err(AppError::invalid_input(format!(
+            "keyword too long (max {} chars)",
+            MAX_KEYWORD_LEN
+        )));
+    }
+
+    let sources = load_sources(&state)?;
+    let results = crawler::search(&sources, &source_name, kw).await?;
+    Ok(IpcResponse::ok(results))
+}
+
+/// 下载整本小说。返回最终 TXT 文件的绝对路径。
+#[tauri::command]
+pub async fn novel_download(
+    state: State<'_, DbState>,
+    source_name: String,
+    book_url: String,
+    book_name: String,
+) -> Result<IpcResponse<String>, AppError> {
+    if source_name.trim().is_empty() {
+        return Err(AppError::invalid_input("source_name cannot be empty"));
+    }
+    if book_url.trim().is_empty() {
+        return Err(AppError::invalid_input("book_url cannot be empty"));
+    }
+    if book_name.trim().is_empty() {
+        return Err(AppError::invalid_input("book_name cannot be empty"));
+    }
+
+    let sources = load_sources(&state)?;
+    let source = source::find_source(&sources, &source_name).ok_or_else(|| {
+        AppError::not_found(format!("book source `{}` not found", source_name))
+    })?;
+    if !source.enabled {
+        return Err(AppError::invalid_input(format!(
+            "book source `{}` is disabled",
+            source_name
+        )));
+    }
+
+    let novels_dir = state.data_dir.novels_dir();
+    let path = crawler::download(source, &book_url, &novels_dir).await?;
+    Ok(IpcResponse::ok(path.display().to_string()))
+}
+
+/// 列出本地已下载的小说文件。
+#[tauri::command]
+pub async fn novel_list_local(
+    state: State<'_, DbState>,
+) -> Result<IpcResponse<Vec<LocalBookItem>>, AppError> {
+    let novels_dir = state.data_dir.novels_dir();
+    let items = crawler::list_local(&novels_dir)?;
+    Ok(IpcResponse::ok(items))
 }

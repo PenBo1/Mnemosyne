@@ -1,4 +1,4 @@
-﻿import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -17,12 +17,12 @@ import { useI18n } from "@/locales/i18n";
 import type { WikiGraphView, WikiCategory, WikiEntry } from "@/features/wiki/types";
 
 const CATEGORY_COLORS: Record<WikiCategory, string> = {
-  general: "#6b7280",
-  character: "#3b82f6",
-  location: "#10b981",
-  event: "#f59e0b",
-  concept: "#8b5cf6",
-  reference: "#ec4899",
+  general: "#9599A6",
+  character: "#5B9BD5",
+  location: "#32F08C",
+  event: "#F5A623",
+  concept: "#A78BFA",
+  reference: "#F472B6",
 };
 
 interface WikiGraphViewProps {
@@ -47,13 +47,13 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
         importance: n.importance,
       },
       style: {
-        backgroundColor: CATEGORY_COLORS[n.category] || "#6b7280",
+        backgroundColor: CATEGORY_COLORS[n.category] || "#9599A6",
         color: "white",
         borderRadius: "8px",
         padding: "8px 12px",
         fontSize: "12px",
         fontWeight: n.importance >= 5 ? 600 : 400,
-        border: n.importance >= 5 ? "2px solid #fff" : "none",
+        border: n.importance >= 5 ? "2px solid var(--text-default)" : "none",
       },
     }));
 
@@ -64,9 +64,9 @@ export function WikiGraphViewComponent({ graph, entries, onNodeClick, className 
       label: l.relation,
       type: "default",
       animated: false,
-      style: { stroke: "#94a3b8", strokeWidth: 1.5 },
-      labelStyle: { fontSize: 10, fill: "#64748b" },
-      labelBgStyle: { fill: "white", fillOpacity: 0.8 },
+      style: { stroke: "#3A3D42", strokeWidth: 1.5 },
+      labelStyle: { fontSize: 10, fill: "#666B75" },
+      labelBgStyle: { fill: "#222427", fillOpacity: 0.9 },
       labelBgPadding: [4, 2] as [number, number],
     }));
 

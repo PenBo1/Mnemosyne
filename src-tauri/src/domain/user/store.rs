@@ -1,4 +1,4 @@
-﻿
+
 use std::path::PathBuf;
 use crate::shared::error::AppError;
 use super::types::UserProfile;
@@ -44,16 +44,6 @@ impl UserProfileStore {
     }
 
     pub fn format_for_prompt(&self) -> String {
-        let p = self.get();
-        let mut sections = Vec::new();
-        sections.push(format!("User: {}", p.name));
-        sections.push(format!("Language: {}", p.language));
-        sections.push(format!("Style: formality={}, pacing={}, descriptions={}, dialogue={}", p.style.formality, p.style.pacing, p.style.description_density, p.style.dialogue_style));
-        sections.push(format!("Target readers: {}", p.reader_type));
-        if !p.genres.is_empty() { sections.push(format!("Preferred genres: {}", p.genres.join(", "))); }
-        if let Some(ref tone) = p.tone { sections.push(format!("Tone: {}", tone)); }
-        if let Some(ref wc) = p.word_count_preference { sections.push(format!("Word count: {}-{} (target {})", wc.min_words, wc.max_words, wc.target_words)); }
-        for inst in &p.custom_instructions { sections.push(format!("Instruction: {}", inst)); }
-        format!("## User Profile\n{}\n", sections.join("\n"))
+        self.get().format_for_prompt()
     }
 }

@@ -65,8 +65,8 @@ export function VersionTimeline({
           <Card
             key={version.id}
             className={cn(
-              "cursor-pointer transition-colors hover:bg-muted/50",
-              isSelected && "ring-2 ring-primary bg-primary/5"
+              "cursor-pointer transition-colors hover:bg-accent",
+              isSelected && "ring-2 ring-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]"
             )}
             onClick={() => onSelectVersion(version)}
           >

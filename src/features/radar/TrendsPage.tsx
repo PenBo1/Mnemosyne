@@ -27,10 +27,10 @@ import type { RadarRecommendation } from "@/features/radar/types";
 function ConfidenceBadge({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
   let color = "bg-muted text-muted-foreground";
-  if (confidence >= 0.7) color = "bg-primary/10 text-primary";
-  else if (confidence >= 0.4) color = "bg-destructive/10 text-destructive";
+  if (confidence >= 0.7) color = "bg-[var(--bg-brand-popup)] text-[var(--text-brand)]";
+  else if (confidence >= 0.4) color = "bg-[var(--status-warning-default)]/10 text-[var(--status-warning-default)]";
   return (
-    <Badge variant="outline" className={cn(color, "border-0 font-mono text-xs")}>
+    <Badge variant="outline" className={cn(color, "border-0 trae-num text-xs")}>
       {pct}%
     </Badge>
   );
@@ -40,9 +40,9 @@ function RecommendationCard({ rec }: { rec: RadarRecommendation }) {
   return (
     <Card className="transition-shadow">
       <CardHeader>
-        <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <CardTitle className="trae-card-eyebrow flex items-center gap-1">
           {rec.platform}
-          <span className="text-border">·</span>
+          <span className="text-[var(--border-neutral-l1)]">·</span>
           <span className="text-primary">{rec.genre}</span>
         </CardTitle>
         <CardAction>
@@ -106,7 +106,7 @@ export function TrendsPage() {
         <div className="flex flex-col gap-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <CardTitle className="trae-card-eyebrow flex items-center gap-2">
                 <TrendingUpIcon className="size-4 text-muted-foreground" />
                 {t.trends.summary}
               </CardTitle>
@@ -128,7 +128,7 @@ export function TrendsPage() {
 
       {!currentResult && !scanning && !error && (
         <EmptyState
-          icon={<RadarIcon />}
+          icon={<RadarIcon className="size-6" />}
           title={t.trends.empty}
           description={t.trends.emptyHint}
         />
@@ -137,7 +137,7 @@ export function TrendsPage() {
       {history.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <CardTitle className="trae-card-eyebrow flex items-center gap-2">
               <ClockIcon className="size-4 text-muted-foreground" />
               {t.trends.history}
             </CardTitle>

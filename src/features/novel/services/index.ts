@@ -1,8 +1,8 @@
-﻿import { ipc } from "@/services/ipc";
+import { ipc } from "@/services/ipc";
 import type { Novel, BookSource, SearchBookResult } from "@/features/novel/types";
 
 export async function fetchNovels(): Promise<Novel[]> {
-  return ipc<Novel[]>("list_novels");
+  return ipc<Novel[]>("novel_list");
 }
 
 export async function createNovelList(
@@ -10,11 +10,11 @@ export async function createNovelList(
   title: string,
   genre: string
 ): Promise<Novel> {
-  return ipc<Novel>("create_novel", { workspaceId, title, genre });
+  return ipc<Novel>("novel_create", { workspaceId, title, genre });
 }
 
 export async function deleteNovel(id: string): Promise<boolean> {
-  return ipc<boolean>("delete_novel", { id });
+  return ipc<boolean>("novel_delete", { id });
 }
 
 // ── Book Source (Novel Download) ──────────────────────
@@ -38,6 +38,14 @@ export async function downloadNovel(
   return ipc<string>("novel_download", { sourceName, bookUrl, bookName });
 }
 
+// 后端返回 LocalBookItem(name/size/timestamp),前端 UI 只需要文件名
+interface LocalBookItem {
+  name: string;
+  size: number;
+  timestamp: number;
+}
+
 export async function listLocalNovels(): Promise<string[]> {
-  return ipc<string[]>("novel_list_local");
+  const items = await ipc<LocalBookItem[]>("novel_list_local");
+  return items.map((item) => item.name);
 }

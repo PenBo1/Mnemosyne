@@ -12,6 +12,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import {
   PageContainer,
   PageHeader,
@@ -138,7 +139,10 @@ export function GitPage() {
       <PageContainer>
         <PageHeader>
           <PageHeading>
-            <PageTitle>{t.git.title}</PageTitle>
+            <PageTitle>
+            <GitBranchIcon className="size-4" />
+            {t.git.title}
+          </PageTitle>
             <PageDescription>{t.git.notAvailable}</PageDescription>
           </PageHeading>
           <PageActions>
@@ -157,12 +161,15 @@ export function GitPage() {
       <PageContainer>
         <PageHeader>
           <PageHeading>
-            <PageTitle>{t.git.title}</PageTitle>
+            <PageTitle>
+              <GitBranchIcon className="size-4" />
+              {t.git.title}
+            </PageTitle>
             <PageDescription>{t.git.notAvailable}</PageDescription>
           </PageHeading>
         </PageHeader>
         <EmptyState
-          icon={<FolderIcon />}
+          icon={<FolderIcon className="size-6" />}
           title={t.novels.noWorkspace}
           description={t.novels.noWorkspaceHint}
         />
@@ -237,7 +244,10 @@ export function GitPage() {
     <PageContainer>
       <PageHeader>
         <PageHeading>
-          <PageTitle>{t.git.title}</PageTitle>
+          <PageTitle>
+            <GitBranchIcon className="size-4" />
+            {t.git.title}
+          </PageTitle>
           <PageDescription>
             {gitStatus?.branch ?? "—"} · {workspacePath}
           </PageDescription>
@@ -254,7 +264,7 @@ export function GitPage() {
             onClick={handleInitRepo}
             disabled={loading || !gitStatus?.branch}
           >
-            <GitBranchIcon />
+            <GitBranchIcon className="size-4" />
             {t.git.status.initRepo}
           </Button>
           <Button
@@ -263,7 +273,7 @@ export function GitPage() {
             onClick={() => workspacePath && void refresh(workspacePath)}
             disabled={loading}
           >
-            <RefreshCwIcon className={loading ? "animate-spin" : ""} />
+            <RefreshCwIcon className={cn("size-4", loading && "animate-spin")} />
             {t.git.status.refresh}
           </Button>
           <Button
@@ -271,7 +281,7 @@ export function GitPage() {
             onClick={() => setCommitDialogOpen(true)}
             disabled={loading || (gitStatus?.is_clean ?? true)}
           >
-            <GitCommitIcon />
+            <GitCommitIcon className="size-4" />
             {t.git.commit.submit}
           </Button>
         </PageActions>
@@ -337,7 +347,7 @@ export function GitPage() {
                           key={commit.hash}
                           className={
                             selectedHash === commit.hash
-                              ? "bg-primary/5"
+                              ? "bg-[var(--bg-overlay-l3)]"
                               : ""
                           }
                           onClick={() => handleSelectCommit(commit.hash)}

@@ -106,29 +106,33 @@ fn is_safe_output(
 fn build_system_prompt(mode: NormalizeMode, target_words: u32, soft_min: u32, soft_max: u32) -> String {
     let mode_desc = match mode {
         NormalizeMode::Compress => format!(
-            "当前章节字数超过 {soft_max} 字上限，需要压缩到 {soft_min}-{soft_max} 字区间。压缩时保留所有事实、关键钩子、角色名，删减冗余描写和过渡段，不引入新支线。"
+            "The current chapter exceeds the {soft_max}-word ceiling and must be compressed into the {soft_min}-{soft_max} word band. While compressing, preserve every fact, every key hook, and every character name; cut redundant description and transitional passages; introduce no new subplots."
         ),
         NormalizeMode::Expand => format!(
-            "当前章节字数不足 {soft_min} 字下限，需要扩写到 {soft_min}-{soft_max} 字区间。扩写时补充感官细节、动作描写、对话层次，不引入新支线或新角色。"
+            "The current chapter falls short of the {soft_min}-word floor and must be expanded into the {soft_min}-{soft_max} word band. While expanding, add sensory detail, action description, and dialogue layers; introduce no new subplots or new characters."
         ),
         NormalizeMode::None => String::new(),
     };
 
     format!(
-        r###"你是网络小说的字数修正编辑。你的任务是单次修正章节字数，使其落在目标区间内。
+        r###"<identity>
+You are a word-count correction editor for web fiction. Your task is to apply a single correction pass that brings the chapter's word count inside the target band.
+</identity>
 
-## 本次任务
+## This Task
 {mode_desc}
 
-## 修正原则
-- 目标字数：{target_words} 字
-- 软边界：{soft_min}-{soft_max} 字
-- 保留原有事实、关键钩子、角色名
-- 不引入新支线、新角色、新事件
-- 保持原有文风和叙事节奏
+<correction_principles>
+- Target word count: {target_words} words
+- Soft boundary: {soft_min}-{soft_max} words
+- Preserve every existing fact, key hook, and character name.
+- Introduce no new subplots, no new characters, no new events.
+- Preserve the original voice and narrative rhythm.
+</correction_principles>
 
-## 输出格式
-直接输出修正后的完整正文，不要任何说明、不要代码块标记、不要前后缀。"###,
+## Output Format
+
+Emit the corrected full prose directly — no commentary, no code-fence markers, no prefixes or suffixes."###,
         mode_desc = mode_desc,
         target_words = target_words,
         soft_min = soft_min,
@@ -138,16 +142,16 @@ fn build_system_prompt(mode: NormalizeMode, target_words: u32, soft_min: u32, so
 
 fn build_user_message(chapter_content: &str, current_count: u32, _mode: NormalizeMode) -> String {
     format!(
-        r###"当前字数：{current_count} 字
+        r###"Current word count: {current_count} words
 
-## 待修正正文
+## Prose to Correct
 {chapter_content}"###,
         current_count = current_count,
         chapter_content = chapter_content,
     )
 }
 
-/// 去除 LLM 输出中的 wrapper 行（代码块、# 说明、下面是...）
+/// Strip wrapper lines (code fences, `#` commentary, "下面是..." / "here is..." prefixes) from LLM output.
 fn sanitize_wrapper(content: &str) -> String {
     let text = strip_code_fence(content);
 
@@ -156,12 +160,12 @@ fn sanitize_wrapper(content: &str) -> String {
         return text;
     }
 
-    // 找第一个非 wrapper 行
+    // Find the first non-wrapper line.
     let start = lines
         .iter()
         .position(|l| !is_wrapper_line(l))
         .unwrap_or(lines.len());
-    // 找最后一个非 wrapper 行
+    // Find the last non-wrapper line.
     let end = lines
         .iter()
         .rposition(|l| !is_wrapper_line(l))
@@ -175,7 +179,7 @@ fn sanitize_wrapper(content: &str) -> String {
     lines[start..end].join("\n").trim().to_string()
 }
 
-/// 判断是否为 wrapper 行（空行、# 开头、下面是... 开头、``` 开头）
+/// Determine whether a line is a wrapper (empty, starts with `#`, starts with "下面是" / "here is", or starts with ```).
 fn is_wrapper_line(line: &str) -> bool {
     let t = line.trim();
     t.is_empty() || t.starts_with('#') || t.starts_with("下面是") || t.starts_with("```")

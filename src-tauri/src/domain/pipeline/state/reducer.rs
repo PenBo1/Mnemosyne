@@ -3,11 +3,14 @@
 // 核心职责：接收 settler agent 输出的 RuntimeStateDelta，应用到当前 RuntimeStateSnapshot，
 // 产出新的 snapshot。包含 hookOps 合并、currentStatePatch 应用、chapterSummary 增删。
 //
-// 简化说明：完整版本的 applyHookOps 依赖 hook-arbiter（evaluateHookAdmission）做重复 family 检测。
-// Rust 版暂用直接 upsert + merge 策略（admission 检查需要完整 hook-governance 子系统，
-// 后续如需可补；当前 upsert 的语义是：同 hookId 合并，不同 hookId 直接插入）。
+// hook-arbiter 集成：对 delta.new_hook_candidates 调用 evaluate_hook_admission 做准入检查，
+// 通过的候选以 generated hookId 创建新 HookRecord 并 upsert；
+// duplicate_family 候选合并到 matched hookId（视为 mention 而非新建）。
 
 use super::super::types::Language;
+use super::super::utils::hook_governance::{
+    evaluate_hook_admission, AdmissionReason, HookAdmissionCandidate,
+};
 use super::types::*;
 use super::validator::{issues_to_error, validate_runtime_state};
 
@@ -122,6 +125,79 @@ fn apply_hook_ops(hooks_state: &HooksState, delta: &RuntimeStateDelta) -> HooksS
         }
     }
 
+    // new_hook_candidates — 通过 hook-arbiter 准入检查
+    // 对每个候选调用 evaluate_hook_admission：
+    //   Admit → 生成新 hookId + 创建 HookRecord + upsert
+    //   DuplicateFamily → 合并到 matched hookId（视为 mention，仅更新 notes）
+    //   MissingType / MissingPayoffSignal → 丢弃（settler 应保证字段完整，此处不补）
+    let active_hooks: Vec<HookRecord> = hooks_by_id.values().cloned().collect();
+    for candidate in &delta.new_hook_candidates {
+        let admission_input = HookAdmissionCandidate {
+            r#type: &candidate.r#type,
+            expected_payoff: &candidate.expected_payoff,
+            payoff_timing: candidate.payoff_timing.map(|t| match t {
+                HookPayoffTiming::Immediate => "immediate",
+                HookPayoffTiming::NearTerm => "near-term",
+                HookPayoffTiming::MidArc => "mid-arc",
+                HookPayoffTiming::SlowBurn => "slow-burn",
+                HookPayoffTiming::Endgame => "endgame",
+            }),
+            notes: &candidate.notes,
+        };
+        let decision = evaluate_hook_admission(&admission_input, &active_hooks);
+
+        match decision.reason {
+            AdmissionReason::Admit => {
+                let new_hook_id = generate_hook_id(candidate);
+                let new_hook = HookRecord {
+                    hook_id: new_hook_id.clone(),
+                    start_chapter: delta.chapter,
+                    r#type: candidate.r#type.clone(),
+                    status: HookStatus::Open,
+                    last_advanced_chapter: delta.chapter,
+                    expected_payoff: candidate.expected_payoff.clone(),
+                    payoff_timing: candidate.payoff_timing,
+                    notes: candidate.notes.clone(),
+                    depends_on: None,
+                    pays_off_in_arc: None,
+                    core_hook: None,
+                    half_life_chapters: None,
+                    advanced_count: Some(1),
+                    promoted: None,
+                };
+                hooks_by_id.insert(new_hook_id, new_hook);
+            }
+            AdmissionReason::DuplicateFamily => {
+                if let Some(matched_id) = &decision.matched_hook_id {
+                    if let Some(existing) = hooks_by_id.get(matched_id) {
+                        let mut updated = existing.clone();
+                        // 合并 candidate 的 novel 信息到 notes（视为 mention）
+                        if !candidate.notes.is_empty() {
+                            updated.notes = if updated.notes.is_empty() {
+                                candidate.notes.clone()
+                            } else {
+                                format!("{}\n{}", updated.notes, candidate.notes)
+                            };
+                        }
+                        updated.last_advanced_chapter =
+                            updated.last_advanced_chapter.max(delta.chapter);
+                        let advanced = updated.advanced_count.unwrap_or(0) + 1;
+                        updated.advanced_count = Some(advanced);
+                        hooks_by_id.insert(matched_id.clone(), updated);
+                    }
+                }
+            }
+            AdmissionReason::MissingType | AdmissionReason::MissingPayoffSignal => {
+                // 字段不全 → 丢弃候选
+                tracing::warn!(
+                    reason = ?decision.reason,
+                    r#type = %candidate.r#type,
+                    "dropping new_hook_candidate due to insufficient fields"
+                );
+            }
+        }
+    }
+
     let mut hooks: Vec<HookRecord> = hooks_by_id.into_values().collect();
     hooks.sort_by(|a, b| {
         a.start_chapter
@@ -131,6 +207,57 @@ fn apply_hook_ops(hooks_state: &HooksState, delta: &RuntimeStateDelta) -> HooksS
     });
 
     HooksState { hooks }
+}
+
+/// 为通过准入的 new_hook_candidate 生成 hookId。
+///
+/// 规则：取 type 的 ASCII slug（前 5 个英文 term）+ 前 3 个中文短语，
+/// 用 `-` 连接，最长 64 字符。若 type 为空则用 "hook-{chapter}"。
+fn generate_hook_id(candidate: &NewHookCandidate) -> String {
+    use crate::domain::pipeline::utils::hook_governance::normalize_text as normalize;
+    let normalized = normalize(&candidate.r#type);
+    let terms: Vec<&str> = normalized
+        .split_whitespace()
+        .take(5)
+        .collect();
+    let bigrams = extract_chinese_bigrams_for_hook_id(&candidate.r#type);
+
+    let mut parts: Vec<String> = terms.iter().map(|s| s.to_string()).collect();
+    for bg in bigrams.iter().take(3) {
+        parts.push(bg.clone());
+    }
+
+    if parts.is_empty() {
+        return format!("hook-{}", candidate.r#type.len());
+    }
+
+    let mut id = parts.join("-");
+    id = id.to_lowercase();
+    if id.len() > 64 {
+        id.truncate(64);
+    }
+    id
+}
+
+/// 提取中文 bigrams（用于 hookId 生成）
+fn extract_chinese_bigrams_for_hook_id(s: &str) -> Vec<String> {
+    fn is_chinese(c: char) -> bool {
+        ('\u{4E00}'..='\u{9FFF}').contains(&c)
+            || ('\u{3400}'..='\u{4DBF}').contains(&c)
+            || ('\u{F900}'..='\u{FAFF}').contains(&c)
+    }
+    let chars: Vec<char> = s.chars().filter(|c| is_chinese(*c)).collect();
+    if chars.len() < 2 {
+        return Vec::new();
+    }
+    let mut bigrams = Vec::with_capacity(chars.len() - 1);
+    for i in 0..chars.len() - 1 {
+        let bg = format!("{}{}", chars[i], chars[i + 1]);
+        if !bigrams.contains(&bg) {
+            bigrams.push(bg);
+        }
+    }
+    bigrams
 }
 
 /// 合并同 hookId 的记录

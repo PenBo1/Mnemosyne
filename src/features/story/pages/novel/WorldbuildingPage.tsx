@@ -156,7 +156,7 @@ export function WorldbuildingPage() {
           {loading ? (
             <LoadingState label={t.common.loading} />
           ) : filtered.length === 0 ? (
-            <EmptyState icon={<GlobeIcon />} title={t.worldbuilding.empty} />
+            <EmptyState icon={<GlobeIcon className="size-6" />} title={t.worldbuilding.empty} />
           ) : view === "grid" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filtered.map((item) => (
@@ -165,7 +165,7 @@ export function WorldbuildingPage() {
                   onClick={() => openEdit(item)}
                   className={cn(
                     "cursor-pointer transition-colors group",
-                    selected?.id === item.id ? "ring-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
+                    selected?.id === item.id ? "ring-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]" : "hover:bg-[var(--bg-overlay-l2)]"
                   )}
                 >
                   <CardHeader className="pb-2">

@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use crate::core::agent::engine::AgentEngine;
+use crate::infrastructure::telemetry::SpanKind;
 use crate::shared::error::AppError;
 
 use super::super::agents::{architect, planner, writer, continuity, reviser, foundation_reviewer, length_normalizer, consolidator};
@@ -77,6 +78,11 @@ impl PipelineRunner {
         external_context: Option<&str>,
         author_intent: Option<&str>,
     ) -> Result<(), AppError> {
+        // Trace span: 记录 pipeline.init_book 阶段的耗时与上下文（RAII Drop 自动写入 DB）
+        let tracer = engine.tracer();
+        let mut span = tracer.start_span("pipeline.init_book", SpanKind::Internal);
+        span.set_workspace(&book.id);
+
         let book_dir = self.book_dir(&book.id);
         let staging_dir = self.book_dir(&format!(".tmp-book-create-{}", book.id));
         let language = book.language.unwrap_or_default();
@@ -221,8 +227,8 @@ impl PipelineRunner {
         engine: &AgentEngine,
         book_id: &str,
     ) -> Result<PlanChapterResult, AppError> {
-        let _guard = StateManager::acquire_book_lock(book_id)?;
         let book_dir = self.book_dir(book_id);
+        let _guard = StateManager::acquire_book_lock(book_id, &book_dir)?;
         let book = StateManager::load_book_config(&book_dir)?;
         let language = book.language.unwrap_or_default();
         StateManager::ensure_control_documents(&book_dir, language, None)?;
@@ -275,8 +281,8 @@ impl PipelineRunner {
         _engine: &AgentEngine,
         book_id: &str,
     ) -> Result<ComposeChapterResult, AppError> {
-        let _guard = StateManager::acquire_book_lock(book_id)?;
         let book_dir = self.book_dir(book_id);
+        let _guard = StateManager::acquire_book_lock(book_id, &book_dir)?;
         let book = StateManager::load_book_config(&book_dir)?;
         let language = book.language.unwrap_or_default();
         let chapter_number = self.get_next_chapter_number(&book_dir)?;
@@ -311,8 +317,8 @@ impl PipelineRunner {
         book_id: &str,
         word_count_override: Option<u32>,
     ) -> Result<DraftResult, AppError> {
-        let _guard = StateManager::acquire_book_lock(book_id)?;
         let book_dir = self.book_dir(book_id);
+        let _guard = StateManager::acquire_book_lock(book_id, &book_dir)?;
         let book = StateManager::load_book_config(&book_dir)?;
         let language = book.language.unwrap_or_default();
         StateManager::ensure_control_documents(&book_dir, language, None)?;
@@ -410,8 +416,8 @@ impl PipelineRunner {
         book_id: &str,
         chapter_number: Option<u32>,
     ) -> Result<continuity::AuditResult, AppError> {
-        let _guard = StateManager::acquire_book_lock(book_id)?;
         let book_dir = self.book_dir(book_id);
+        let _guard = StateManager::acquire_book_lock(book_id, &book_dir)?;
         let book = StateManager::load_book_config(&book_dir)?;
         let language = book.language.unwrap_or_default();
 
@@ -450,6 +456,8 @@ impl PipelineRunner {
             } else {
                 String::new()
             },
+            parent_canon: read_safe("parent_canon.md"),
+            fanfic_canon: read_safe("fanfic_canon.md"),
         };
 
         let result = continuity::audit_chapter(engine, &book, target, "", &content, &auditor_ctx).await?;
@@ -476,8 +484,8 @@ impl PipelineRunner {
         chapter_number: Option<u32>,
         mode: reviser::ReviseMode,
     ) -> Result<ReviseResult, AppError> {
-        let _guard = StateManager::acquire_book_lock(book_id)?;
         let book_dir = self.book_dir(book_id);
+        let _guard = StateManager::acquire_book_lock(book_id, &book_dir)?;
         let book = StateManager::load_book_config(&book_dir)?;
         let language = book.language.unwrap_or_default();
 
@@ -513,6 +521,8 @@ impl PipelineRunner {
             style_guide: ctrl.style_guide.clone(),
             chapter_memo: String::new(),
             previous_chapter: String::new(),
+            parent_canon: read_safe("parent_canon.md"),
+            fanfic_canon: read_safe("fanfic_canon.md"),
         };
 
         let pre_audit = continuity::audit_chapter(engine, &book, target, "", &content, &auditor_ctx).await?;
@@ -627,8 +637,8 @@ impl PipelineRunner {
         book_id: &str,
         word_count_override: Option<u32>,
     ) -> Result<ChapterPipelineResult, AppError> {
-        let _guard = StateManager::acquire_book_lock(book_id)?;
         let book_dir = self.book_dir(book_id);
+        let _guard = StateManager::acquire_book_lock(book_id, &book_dir)?;
         let book = StateManager::load_book_config(&book_dir)?;
         let language = book.language.unwrap_or_default();
         StateManager::ensure_control_documents(&book_dir, language, None)?;

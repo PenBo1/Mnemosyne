@@ -31,6 +31,8 @@ interface AgentState {
   /** SafetyGate 触发的待确认工具调用（null 表示无待处理） */
   pendingConfirmation: PendingConfirmation | null;
   submittingConfirmation: boolean;
+  /** 用户主动清空会话标志（点击"新建任务"后为 true，阻止自动选会话） */
+  pendingClear: boolean;
   loadSessions: (novelId?: string, workspaceId?: string) => Promise<void>;
   createSession: (novelId?: string, title?: string, workspaceId?: string) => Promise<Session>;
   switchSession: (sessionId: string) => Promise<void>;
@@ -71,6 +73,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   loading: false,
   pendingConfirmation: null,
   submittingConfirmation: false,
+  pendingClear: false,
 
   loadSessions: async (novelId?: string, workspaceId?: string) => {
     set({ loading: true, error: null });
@@ -113,6 +116,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       activeToolCalls: [],
       streaming: false,
       error: null,
+      pendingClear: false,
     }));
 
     try {
@@ -138,7 +142,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   switchSession: async (sessionId: string) => {
-    set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "", activeToolCalls: [], pendingConfirmation: null, submittingConfirmation: false });
+    set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "", activeToolCalls: [], pendingConfirmation: null, submittingConfirmation: false, pendingClear: false });
     try {
       const messages = await sessionService.listMessages(sessionId);
       set({ messages, loading: false });
@@ -196,6 +200,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       error: null,
       pendingConfirmation: null,
       submittingConfirmation: false,
+      pendingClear: true,
     });
   },
 

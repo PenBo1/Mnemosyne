@@ -1,49 +1,33 @@
 // Hook 生命周期建模。
 //
 // 迁移要点（import 路径调整）：
-// - `../models/runtime-state.js`（类型 HookPayoffTiming）→ `@/shared/types/runtime-state`
-// - `../state/memory-db.js`（仅类型 StoredHook）→ `@/shared/types/hook`
+// - `../models/runtime-state.js`（类型 HookPayoffTiming）→ `@/types/runtime-state`
+// - `../state/memory-db.js`（仅类型 StoredHook）→ `@/types/hook`
 // - `./hook-policy.js` → `./hook-policy`（同目录去 .js 后缀）
 //
-// 简化决策（Mnemosyne 跳过 payoffTiming enum 推导链路，story-markdown.ts 直接展示原始字符串）：
-//
-// 保留并迁移（timing 无关的纯函数，业务逻辑零改动）：
-//   - normalizeStoredHookStatus / filterActiveHooks / isFuturePlannedHook /
-//     isHookWithinChapterWindow / resolveHookPhase（原文件私有 helper，timing 无关）
-//   - DEFAULT_HOOK_LOOKAHEAD_CHAPTERS 常量
-//   注：原任务描述提及的 `describeHookPhase` 在源文件中不存在，实际为 `resolveHookPhase`。
-//
-// 跳过（仅服务于 enum 推导或本地化展示）：
-//   - normalizeHookPayoffTiming / inferHookPayoffTiming / localizeHookPayoffTiming
-//     （story-markdown.ts 已内联简化版 normalizeHookPayoffTiming，保留原始字符串）
-//   - LABELS / TIMING_ALIASES / SIGNAL_PATTERNS 常量
-//
-// 简化：
-//   - resolveHookPayoffTiming：直接返回 payoffTiming 原始字符串，不做 enum 推导。
-//     返回类型由 HookPayoffTiming 改为 string | undefined。
-//   - describeHookLifecycle：保留函数签名（新增可选 halfLifeChapters 参数）。
-//     依赖 HOOK_TIMING_PROFILES 的部分改用 halfLifeChapters 粗略判断：
-//       earliestResolveAge = max(1, floor(halfLife / 2))
-//       staleDormancyThreshold = halfLife
-//       overdueAgeThreshold = halfLife * 2
-//     halfLifeChapters 缺失时退回 HOOK_HEALTH_DEFAULTS.staleAfterChapters 保守阈值。
-//     cadenceReady（原基于 timing enum 的 slow-burn/endgame 分支）不再适用，移除。
-//     phaseReady 改为 phase >= middle（保守：opening 阶段不判定 stale/overdue/ready）。
-//     resolvePressure 中 profile.resolveBias * resolveBiasMultiplier 改为固定 resolveBiasMultiplier
-//     （等价 resolveBias=1，保守下界）。
-//
-// TODO: P2 阶段 7 三层记忆接入时补 timing 推导，恢复 HOOK_TIMING_PROFILES 查表逻辑。
-//
-// 注意：简化后不再使用 HookPayoffTiming 类型与 HOOK_TIMING_PROFILES 常量，
-//       故 hook-lifecycle.ts 不 import runtime-state / HOOK_TIMING_PROFILES（避免 noUnusedLocals）。
+// 本文件实现完整 timing 推导链路（5 级优先级，P2.7 恢复）：
+//   - LABELS / TIMING_ALIASES / SIGNAL_PATTERNS / TYPE_TIMING_DEFAULTS 常量齐全
+//   - normalizeHookPayoffTiming / inferHookPayoffTiming / localizeHookPayoffTiming 三件套
+//   - matchTimingKeyword / inferTimingFromType / inferTimingFromChapterSpan 三个推导辅助
+//   - resolveHookPayoffTiming 返回 HookPayoffTiming | undefined，按 5 级优先级推导：
+//       1. 显式 payoffTiming（已由 zod 校验为 enum）
+//       2. expectedPayoff 关键词匹配
+//       3. notes 关键词匹配
+//       4. hook.type 默认 timing 映射（foreshadowing→mid-arc / mystery→slow-burn …）
+//       5. 章节跨度推断（currentChapter - startChapter）
+//     无法推断时返回 undefined，由 describeHookLifecycle 兜底为 "mid-arc"
+//   - describeHookLifecycle 使用 HOOK_TIMING_PROFILES[timing] 查表，恢复 cadenceReady 与
+//     profile.resolveBias * resolveBiasMultiplier 计算
+//   - 移除 halfLifeChapters 粗略估算参数（由 timing profile 取代）
 
+import type { HookPayoffTiming } from "@/types/runtime-state";
 import type { StoredHook } from "@/types/hook";
 import {
   HOOK_ACTIVITY_THRESHOLDS,
-  HOOK_HEALTH_DEFAULTS,
   HOOK_PHASE_THRESHOLDS,
   HOOK_PHASE_WEIGHT,
   HOOK_PRESSURE_WEIGHTS,
+  HOOK_TIMING_PROFILES,
   type HookPhase,
 } from "./hook-policy";
 
@@ -101,32 +85,208 @@ export function isHookWithinChapterWindow(
   return hook.startChapter > chapterNumber && hook.startChapter <= chapterNumber + lookahead;
 }
 
+const LABELS: Record<"zh" | "en", Record<HookPayoffTiming, string>> = {
+  en: {
+    immediate: "immediate",
+    "near-term": "near-term",
+    "mid-arc": "mid-arc",
+    "slow-burn": "slow-burn",
+    endgame: "endgame",
+  },
+  zh: {
+    immediate: "立即",
+    "near-term": "近期",
+    "mid-arc": "中程",
+    "slow-burn": "慢烧",
+    endgame: "终局",
+  },
+};
+
+const TIMING_ALIASES: ReadonlyArray<[HookPayoffTiming, RegExp]> = [
+  ["immediate", /^(?:立即|马上|当章|本章|下一章|immediate|instant|next(?:\s+chapter|\s+beat)?|right\s+away)$/i],
+  ["near-term", /^(?:近期|近几章|短线|soon|short(?:\s+run)?|near(?:\s*-\s*|\s+)term|current\s+sequence)$/i],
+  ["mid-arc", /^(?:中程|中期|卷中|mid(?:\s*-\s*|\s+)arc|mid(?:\s*-\s*|\s+)book|middle)$/i],
+  ["slow-burn", /^(?:慢烧|长线|后续|later|late(?:r)?|long(?:\s*-\s*|\s+)arc|slow(?:\s*-\s*|\s+)burn)$/i],
+  ["endgame", /^(?:终局|终章|大结局|最终|climax|finale|endgame|late\s+book)$/i],
+];
+
+const SIGNAL_PATTERNS: ReadonlyArray<[HookPayoffTiming, RegExp]> = [
+  ["endgame", /(终局|终章|大结局|最终揭晓|最终摊牌|climax|finale|endgame|final reveal|last act)/i],
+  ["immediate", /(当章|本章|下一章|马上|立刻|即刻|immediate|next chapter|right away|at once)/i],
+  ["near-term", /(近期|近几章|很快|短线|soon|near-term|short run|current sequence)/i],
+  ["mid-arc", /(中期|卷中|本卷中段|mid-book|mid arc|middle of the arc)/i],
+  ["slow-burn", /(长线|慢烧|后续发酵|慢慢揭开|later|slow burn|long arc|long tail)/i],
+];
+
+// 优先级 4：hook.type → 默认 timing 映射表。
+// 按 hook 类别推断常见 timing 节奏（伏笔中期回收、悬念长期发酵等）。
+// 匹配方式：case-insensitive contains（hook.type 通常是 "foreshadowing" / "mystery" 等短标签）。
+const TYPE_TIMING_DEFAULTS: ReadonlyArray<[HookPayoffTiming, RegExp]> = [
+  // callback / 回调 / 呼应 — 通常当章或下一章触发
+  ["immediate", /(?:callback|回调|呼应)/i],
+  // promise / 承诺 / 约定 — 通常近期兑现
+  ["near-term", /(?:promise|承诺|约定)/i],
+  // foreshadowing / 伏笔 / 铺垫 — 通常中期回收
+  ["mid-arc", /(?:foreshadow|伏笔|铺垫)/i],
+  // setup / 设置 / 布置 — 通常中期展开
+  ["mid-arc", /(?:setup|设置|布置)/i],
+  // mystery / 悬念 / 悬疑 — 通常长期发酵
+  ["slow-burn", /(?:mystery|悬念|悬疑)/i],
+];
+
+export function normalizeHookPayoffTiming(value: string | undefined | null): HookPayoffTiming | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+
+  for (const [timing, pattern] of TIMING_ALIASES) {
+    if (pattern.test(normalized)) {
+      return timing;
+    }
+  }
+
+  return undefined;
+}
+
 /**
- * 简化版：直接返回 payoffTiming 原始字符串，不做 enum 推导。
+ * 对单个文本字段做 SIGNAL_PATTERNS 关键词匹配（优先级 2/3 共用）。
+ * 返回首个命中的 timing，无匹配返回 undefined。
+ */
+function matchTimingKeyword(text: string | undefined | null): HookPayoffTiming | undefined {
+  const trimmed = text?.trim();
+  if (!trimmed) return undefined;
+
+  for (const [timing, pattern] of SIGNAL_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return timing;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 优先级 4：从 hook.type 推断默认 timing。
+ * foreshadowing → mid-arc、mystery → slow-burn、promise → near-term、setup → mid-arc、callback → immediate。
+ * 无匹配返回 undefined。
+ */
+function inferTimingFromType(type: string | undefined): HookPayoffTiming | undefined {
+  const trimmed = type?.trim();
+  if (!trimmed) return undefined;
+
+  for (const [timing, pattern] of TYPE_TIMING_DEFAULTS) {
+    if (pattern.test(trimmed)) {
+      return timing;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 优先级 5：从章节跨度推断 timing。
+ * 跨度 = currentChapter - startChapter（已存在章节数）。
+ *   < 3 章 → immediate（短线 hook，应尽快回收）
+ *   3–9 章 → near-term
+ *   10–29 章 → mid-arc
+ *   ≥ 30 章 → slow-burn（长期埋线）
+ * startChapter 或 currentChapter 缺失/无效时返回 undefined。
+ */
+function inferTimingFromChapterSpan(
+  startChapter: number | undefined,
+  currentChapter: number | undefined,
+): HookPayoffTiming | undefined {
+  if (startChapter === undefined || currentChapter === undefined) return undefined;
+  if (startChapter < 0 || currentChapter < 0) return undefined;
+
+  const span = currentChapter - startChapter;
+  if (span < 0) return undefined;
+
+  if (span < 3) return "immediate";
+  if (span < 10) return "near-term";
+  if (span < 30) return "mid-arc";
+  return "slow-burn";
+}
+
+export function inferHookPayoffTiming(params: {
+  readonly expectedPayoff?: string;
+  readonly notes?: string;
+}): HookPayoffTiming {
+  // 优先级 2：expectedPayoff 关键词
+  // 优先级 3：notes 关键词
+  // 兜底：mid-arc（保守中性值，describeHookLifecycle 需要 non-undefined timing 查 profile 表）
+  return matchTimingKeyword(params.expectedPayoff)
+    ?? matchTimingKeyword(params.notes)
+    ?? "mid-arc";
+}
+
+/**
+ * 完整 timing 推导（5 级优先级，P2.7 恢复）。
  *
- * TODO: P2 阶段 7 三层记忆接入时补 timing 推导（恢复 TIMING_ALIASES / SIGNAL_PATTERNS 匹配）。
+ * 优先级从高到低：
+ *   1. 显式 payoffTiming（已由 zod 校验为 HookPayoffTiming enum 或原始字符串，经
+ *      normalizeHookPayoffTiming 规范化）
+ *   2. expectedPayoff 关键词匹配（SIGNAL_PATTERNS，中英双语）
+ *   3. notes 关键词匹配（同上）
+ *   4. hook.type 默认 timing 映射（TYPE_TIMING_DEFAULTS：
+ *      foreshadowing→mid-arc / mystery→slow-burn / promise→near-term /
+ *      setup→mid-arc / callback→immediate）
+ *   5. 章节跨度推断（currentChapter - startChapter：
+ *      <3→immediate / <10→near-term / <30→mid-arc / ≥30→slow-burn）
+ *
+ * 全部未命中时返回 undefined。调用方（describeHookLifecycle）兜底为 "mid-arc"
+ * 以保证 HOOK_TIMING_PROFILES[timing] 查表安全。
  */
 export function resolveHookPayoffTiming(params: {
   readonly payoffTiming?: string | null;
   readonly expectedPayoff?: string;
   readonly notes?: string;
-}): string | undefined {
-  const trimmed = params.payoffTiming?.trim();
-  return trimmed ? trimmed : undefined;
+  readonly type?: string;
+  readonly startChapter?: number;
+  readonly currentChapter?: number;
+}): HookPayoffTiming | undefined {
+  // 优先级 1：显式 payoffTiming
+  const explicit = normalizeHookPayoffTiming(params.payoffTiming);
+  if (explicit) return explicit;
+
+  // 优先级 2：expectedPayoff 关键词
+  const fromExpected = matchTimingKeyword(params.expectedPayoff);
+  if (fromExpected) return fromExpected;
+
+  // 优先级 3：notes 关键词
+  const fromNotes = matchTimingKeyword(params.notes);
+  if (fromNotes) return fromNotes;
+
+  // 优先级 4：hook.type 默认 timing
+  const fromType = inferTimingFromType(params.type);
+  if (fromType) return fromType;
+
+  // 优先级 5：章节跨度
+  const fromSpan = inferTimingFromChapterSpan(params.startChapter, params.currentChapter);
+  if (fromSpan) return fromSpan;
+
+  // 无法推断
+  return undefined;
+}
+
+export function localizeHookPayoffTiming(
+  timing: HookPayoffTiming,
+  language: "zh" | "en",
+): string {
+  return LABELS[language][timing];
 }
 
 export function describeHookLifecycle(params: {
   readonly payoffTiming?: string | null;
   readonly expectedPayoff?: string;
   readonly notes?: string;
+  readonly type?: string;
   readonly startChapter: number;
   readonly lastAdvancedChapter: number;
   readonly status: string;
   readonly chapterNumber: number;
   readonly targetChapters?: number;
-  readonly halfLifeChapters?: number;
 }): {
-  readonly timing: string | undefined;
+  readonly timing: HookPayoffTiming;
   readonly phase: HookPhase;
   readonly age: number;
   readonly dormancy: number;
@@ -136,36 +296,30 @@ export function describeHookLifecycle(params: {
   readonly advancePressure: number;
   readonly resolvePressure: number;
 } {
-  const timing = resolveHookPayoffTiming(params);
+  const timing = resolveHookPayoffTiming(params) ?? "mid-arc";
+  const profile = HOOK_TIMING_PROFILES[timing];
   const phase = resolveHookPhase(params.chapterNumber, params.targetChapters);
   const age = Math.max(0, params.chapterNumber - Math.max(1, params.startChapter));
   const lastTouchChapter = Math.max(params.startChapter, params.lastAdvancedChapter);
   const dormancy = Math.max(0, params.chapterNumber - Math.max(1, lastTouchChapter));
   const explicitProgressing = /^(progressing|advanced|重大推进|持续推进)$/i.test(params.status.trim());
-  // 简化：原 phaseReady = HOOK_PHASE_WEIGHT[phase] >= HOOK_PHASE_WEIGHT[profile.minimumPhase]，
-  //       依赖 timing profile。改为保守判定 phase >= middle（opening 阶段不触发 stale/overdue/ready）。
-  const phaseReady = HOOK_PHASE_WEIGHT[phase] >= HOOK_PHASE_WEIGHT.middle;
+  const phaseReady = HOOK_PHASE_WEIGHT[phase] >= HOOK_PHASE_WEIGHT[profile.minimumPhase];
   const recentlyTouched = dormancy <= HOOK_ACTIVITY_THRESHOLDS.recentlyTouchedDormancy;
-
-  // 简化：未推导 timing profile，使用 halfLifeChapters 做粗略判断；
-  //       缺失时退回 HOOK_HEALTH_DEFAULTS.staleAfterChapters 保守阈值。
-  // TODO: P2 阶段 7 三层记忆接入时补 timing 推导，恢复 HOOK_TIMING_PROFILES 查表逻辑。
-  const halfLife = typeof params.halfLifeChapters === "number" && params.halfLifeChapters > 0
-    ? params.halfLifeChapters
-    : undefined;
-  const staleDormancyThreshold = halfLife ?? HOOK_HEALTH_DEFAULTS.staleAfterChapters;
-  const overdueAgeThreshold = halfLife ? halfLife * 2 : HOOK_HEALTH_DEFAULTS.staleAfterChapters * 2;
-  const earliestResolveAge = halfLife ? Math.max(1, Math.floor(halfLife / 2)) : 1;
-
-  const overdue = phaseReady && age >= overdueAgeThreshold;
+  const overdue = phaseReady && age >= profile.overdueAge;
+  // cadenceReady:slow-burn 需 late 阶段或 overdue;endgame 需 late 阶段;其余 timing 默认 true。
+  const cadenceReady = timing === "slow-burn"
+    ? phase === "late" || overdue
+    : timing === "endgame"
+      ? phase === "late"
+      : true;
   const momentum = explicitProgressing || recentlyTouched;
   const stale = phaseReady && (
-    dormancy >= staleDormancyThreshold
+    dormancy >= profile.staleDormancy
     || (overdue && !momentum)
   );
-  // 简化：移除原 cadenceReady 分支（依赖 timing enum 的 slow-burn/endgame 判定）。
   const readyToResolve = phaseReady
-    && age >= earliestResolveAge
+    && cadenceReady
+    && age >= profile.earliestResolveAge
     && (momentum || (overdue && explicitProgressing));
 
   return {
@@ -180,10 +334,8 @@ export function describeHookLifecycle(params: {
       + dormancy
       + (stale ? HOOK_PRESSURE_WEIGHTS.staleAdvanceBonus : 0)
       + (overdue ? HOOK_PRESSURE_WEIGHTS.overdueAdvanceBonus : 0),
-    // 简化：原 resolvePressure = profile.resolveBias * resolveBiasMultiplier + ...
-    //       改为固定 resolveBiasMultiplier（等价 resolveBias=1，保守下界）。
     resolvePressure: readyToResolve
-      ? HOOK_PRESSURE_WEIGHTS.resolveBiasMultiplier
+      ? profile.resolveBias * HOOK_PRESSURE_WEIGHTS.resolveBiasMultiplier
         + (explicitProgressing ? HOOK_PRESSURE_WEIGHTS.progressingResolveBonus : 0)
         + Math.min(
           HOOK_PRESSURE_WEIGHTS.maxDormancyResolveBonus,

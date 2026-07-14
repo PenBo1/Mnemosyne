@@ -56,7 +56,7 @@ impl AgentOrchestrator {
                     .map_err(|e| AppError::stream_error(e.to_string()))?;
 
                 let builder = client.agent(&model);
-                subagent.execute(builder, task, context).await
+                subagent.execute(builder, task, context, None).await
             }
             "anthropic" => {
                 let client = rig::providers::anthropic::Client::builder()
@@ -66,7 +66,7 @@ impl AgentOrchestrator {
                     .map_err(|e| AppError::stream_error(e.to_string()))?;
 
                 let builder = client.agent(&model);
-                subagent.execute(builder, task, context).await
+                subagent.execute(builder, task, context, None).await
             }
             "ollama" => {
                 let client = rig::providers::ollama::Client::builder()
@@ -76,7 +76,7 @@ impl AgentOrchestrator {
                     .map_err(|e| AppError::stream_error(e.to_string()))?;
 
                 let builder = client.agent(&model);
-                subagent.execute(builder, task, context).await
+                subagent.execute(builder, task, context, None).await
             }
             "deepseek" | "agnes" | "openrouter" => {
                 let client = rig::providers::openai::Client::builder()
@@ -87,7 +87,7 @@ impl AgentOrchestrator {
                     .completions_api();
 
                 let builder = client.agent(&model);
-                subagent.execute(builder, task, context).await
+                subagent.execute(builder, task, context, None).await
             }
             _ => Err(AppError::provider_not_found(&provider)),
         }

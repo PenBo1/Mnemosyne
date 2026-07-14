@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -76,7 +76,7 @@ export function GitDiffView({ diff, loading }: GitDiffViewProps) {
                           "px-3 py-0.5 whitespace-pre-wrap break-all",
                           line.startsWith("+") && !line.startsWith("+++") && "bg-[var(--status-success-surface-l1)]",
                           line.startsWith("-") && !line.startsWith("---") && "bg-[var(--status-error-surface-l1)]",
-                          (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ")) && "bg-muted/50 text-muted-foreground"
+                          (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ")) && "bg-[var(--bg-overlay-l1)] text-muted-foreground"
                         )}
                       >
                         {line}

@@ -51,7 +51,7 @@ function ModelCard({
   return (
     <Card className="py-0">
       <CardContent className="divide-y px-0">
-        <div className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-muted/50">
+        <div className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-accent">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{model.name}</span>

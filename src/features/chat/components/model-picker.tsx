@@ -58,7 +58,7 @@ export function ModelPicker() {
   if (models.length === 0) {
     return (
       <Button variant="ghost" size="sm" onClick={openModelSettings} className="text-muted-foreground">
-        <CpuIcon />
+        <CpuIcon className="size-4" />
         {t.agentChat.openSettings}
       </Button>
     );

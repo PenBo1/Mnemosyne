@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -132,7 +132,7 @@ export function GitCommitDialog({
             onClick={() => onCommit(message)}
             disabled={!canSubmit}
           >
-            <GitCommitIcon />
+            <GitCommitIcon className="size-4" />
             {t.git.commit.submit}
           </Button>
         </DialogFooter>

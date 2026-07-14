@@ -4,6 +4,7 @@ use crate::shared::error::{IpcResponse, AppError};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::db::types::CreateWorkspaceRequest;
 use crate::infrastructure::fs::fs_utils::validate_id_component;
+use crate::infrastructure::project_memory::state::ProjectMemoryState;
 use crate::infrastructure::workspace::registry::WorkspaceRegistry;
 
 #[tauri::command]
@@ -80,12 +81,26 @@ pub async fn get_workspace(
 #[tauri::command]
 pub async fn delete_workspace(
     state: State<'_, DbState>,
+    pm_state: State<'_, ProjectMemoryState>,
     id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
     validate_id_component(&id, "workspace_id")?;
     tracing::info!(workspace_id = %id, "delete_workspace");
     let deleted = state.db.delete_workspace(&id)?;
-    tracing::info!(workspace_id = %id, deleted, "Workspace deleted (cascade sessions)");
+
+    // 级联清理 workspace 级 project_memory 文件(失败不阻塞 workspace 删除,
+    // 仅记录警告 —— DB 已删除,文件残留可在后续 GC 中清理)
+    if deleted {
+        if let Err(e) = pm_state.store.delete(&id) {
+            tracing::warn!(
+                workspace_id = %id,
+                error = %e,
+                "Failed to cleanup project_memory dir during workspace deletion"
+            );
+        }
+    }
+
+    tracing::info!(workspace_id = %id, deleted, "Workspace deleted (cascade sessions + project_memory)");
     Ok(IpcResponse::ok(deleted))
 }
 

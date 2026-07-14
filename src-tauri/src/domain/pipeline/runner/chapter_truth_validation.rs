@@ -11,9 +11,12 @@
 // 5. 重试仍失败 → 标记 state-degraded，注入降级问题（chapter_status = "state-degraded"）
 //
 // 实现差异：
-// - WriterAgent 仅暴露 3-phase write_chapter，未提供独立 settler 入口。此处 retry_settlement
-//   直接调用 engine.prompt_once 触发简化版 settler prompt，解析 === UPDATED_STATE ===
-//   与 === UPDATED_HOOKS === 区块得到重试后的 truth 文件内容。
+// - WriterAgent 已提供独立 `settle_chapter_state`（delta 模式），但 retry_settlement 需要
+//   完整 truth 文件（updated_state/updated_hooks markdown）用于 state_validator 对比。
+//   Rust 端尚缺 markdown projection 模块（从 snapshot 渲染 markdown），因此 retry_settlement
+//   暂保留独立的 full-truth-file prompt（=== UPDATED_STATE === / === UPDATED_HOOKS ===）。
+//   待 projection 模块落地后，迁移 retry_settlement 调用 writer::settle_chapter_state +
+//   reducer + projection，统一 settler 入口。
 // - 返回值简化为 TruthValidationResult（validation + chapter_status + degraded_issues），
 //   调用方负责根据 chapter_status 决定持久化策略。
 // - 简化实现不注入 governed artifacts，仅以旧 truth 文件 + 校验反馈作为 settler 输入。
@@ -164,12 +167,16 @@ pub async fn validate_chapter_truth_persistence(
 
 /// 重试结算层。
 ///
-/// 简化实现：由于 Rust WriterAgent 尚未提供独立的 settleChapterState 方法，
-/// 此处直接调用 engine.prompt_once 重新触发 settler 阶段，并解析输出。
+/// 当前实现：直接调用 engine.prompt_once 触发 full-truth-file settler prompt，
+/// 解析 === UPDATED_STATE === / === UPDATED_HOOKS === 得到重试后的完整 truth 文件。
+///
+/// 注意：writer.rs 已提供 `settle_chapter_state`（delta 模式），但本函数需要完整
+/// truth 文件用于 state_validator 对比，且 Rust 端尚缺 markdown projection 模块，
+/// 因此暂保留独立 prompt。待 projection 落地后迁移为调用 settle_chapter_state。
 ///
 /// 流程：
 /// 1. 用原始 validation 的 warnings 构建校验反馈
-/// 2. 调用 engine.prompt_once 触发简化版 settler prompt（含旧 truth + 反馈）
+/// 2. 调用 engine.prompt_once 触发 full-truth-file settler prompt（含旧 truth + 反馈）
 /// 3. 解析 === UPDATED_STATE === 与 === UPDATED_HOOKS === 区块
 /// 4. 用新的 truth 文件重新校验
 /// 5. 通过 → Recovered；仍失败 → Degraded（携带降级问题）

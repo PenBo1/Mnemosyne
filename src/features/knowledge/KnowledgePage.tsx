@@ -46,6 +46,7 @@ import {
   Trash2Icon,
   TagIcon,
   CalendarIcon,
+  BookMarkedIcon,
 } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { parseTags } from "@/lib/utils";
@@ -144,7 +145,10 @@ export function KnowledgePage() {
     <PageContainer>
       <PageHeader>
         <PageHeading>
-          <PageTitle>{t.knowledge.title}</PageTitle>
+          <PageTitle>
+            <BookMarkedIcon className="size-4" />
+            {t.knowledge.title}
+          </PageTitle>
           <PageDescription>{t.knowledge.description}</PageDescription>
         </PageHeading>
         <PageActions>
@@ -216,7 +220,7 @@ export function KnowledgePage() {
           {entries.map((entry: KnowledgeEntry) => (
             <Card key={entry.id} className="py-0">
               <CardContent className="divide-y px-0">
-                <div className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-muted/50">
+                <div className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-accent">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm font-medium truncate">

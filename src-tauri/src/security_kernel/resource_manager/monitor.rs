@@ -81,7 +81,9 @@ impl ResourceMonitor {
         let mut sys = get_system();
         sys.refresh_memory();
         sys.refresh_processes_specifics(
-            sysinfo::ProcessRefreshKind::new().with_memory(),
+            sysinfo::ProcessesToUpdate::All,
+            false,
+            sysinfo::ProcessRefreshKind::nothing().with_memory(),
         );
 
         let pid_obj = sysinfo::Pid::from_u32(pid);
@@ -101,7 +103,9 @@ impl ResourceMonitor {
 
         let mut sys = get_system();
         sys.refresh_processes_specifics(
-            sysinfo::ProcessRefreshKind::new().with_cpu(),
+            sysinfo::ProcessesToUpdate::All,
+            false,
+            sysinfo::ProcessRefreshKind::nothing().with_cpu(),
         );
 
         let pid_obj = sysinfo::Pid::from_u32(pid);

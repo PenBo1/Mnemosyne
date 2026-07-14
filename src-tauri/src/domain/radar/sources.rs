@@ -9,6 +9,8 @@ use regex::Regex;
 
 use crate::infrastructure::db::types::{PlatformRankings, RankingEntry};
 
+use super::types::RadarSourceInfo;
+
 /// 可插拔的雷达数据源接口。
 #[async_trait]
 pub trait RadarSource: Send + Sync {
@@ -176,5 +178,63 @@ pub fn default_sources() -> Vec<Box<dyn RadarSource>> {
     vec![
         Box::new(FanqieRadarSource::new()),
         Box::new(QidianRadarSource::new()),
+    ]
+}
+
+// ── 文本数据源(用户外部分析注入) ─────────────────────────────
+
+/// 用原始自然语言文本作为数据源。
+/// 用于把外部抓取/分析结果(如 OpenClaw)注入雷达 pipeline。
+pub struct TextRadarSource {
+    name: String,
+    text: String,
+}
+
+impl TextRadarSource {
+    pub fn new(text: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            text: text.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl RadarSource for TextRadarSource {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn fetch(&self) -> PlatformRankings {
+        PlatformRankings {
+            platform: self.name.clone(),
+            entries: vec![RankingEntry {
+                title: self.text.clone(),
+                author: String::new(),
+                category: String::new(),
+                extra: "[外部分析]".into(),
+            }],
+        }
+    }
+}
+
+/// 列出内置数据源元信息(供 radar_list_sources 命令使用)。
+pub fn builtin_source_infos() -> Vec<RadarSourceInfo> {
+    vec![
+        RadarSourceInfo {
+            name: "fanqie".into(),
+            label: "番茄小说".into(),
+            kind: "builtin".into(),
+        },
+        RadarSourceInfo {
+            name: "qidian".into(),
+            label: "起点中文网".into(),
+            kind: "builtin".into(),
+        },
+        RadarSourceInfo {
+            name: "text".into(),
+            label: "外部分析文本".into(),
+            kind: "text".into(),
+        },
     ]
 }

@@ -1,4 +1,4 @@
-﻿import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { GitBranchIcon, RefreshCwIcon, DownloadIcon, GitCommitIcon } from "lucide-react";
@@ -90,7 +90,7 @@ export function GitStatusBar({
             {t.git.status.refresh}
           </Button>
           <Button size="sm" onClick={onCommit} disabled={loading || isClean}>
-            <GitCommitIcon />
+            <GitCommitIcon className="size-4" />
             {t.git.commit.submit}
           </Button>
         </div>

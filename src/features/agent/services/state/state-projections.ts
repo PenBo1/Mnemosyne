@@ -5,12 +5,10 @@
 // - `../utils/hook-stale-detection.js`（computeHookDiagnostics + renderHookDiagnosticMarker）
 //   → `../utils/hook-stale-detection`（已迁移到同目录上级 utils/）
 //
-// 简化适配（hook-lifecycle.ts 是简化版，跳过了 timing enum 推导与本地化）：
-//   原版 renderHooksProjection 调用
-//     `localizeHookPayoffTiming(resolveHookPayoffTiming(hook), language)`
-//   推导 timing enum 后本地化展示。Mnemosyne 已决定跳过 timing 推导，
-//   直接展示原始 payoffTiming 字符串（与 story-markdown.ts 的 renderHookSnapshot 一致）。
-//   因此移除 hook-lifecycle import，把该调用替换为 `hook.payoffTiming ?? ""`。
+// 投影展示策略：直接展示原始 payoffTiming 字符串（与 story-markdown.ts 的
+// renderHookSnapshot 一致），不做 timing enum 推导与本地化。
+// hook-lifecycle.ts 已恢复完整 timing 推导（P2.7），但投影层保持原始展示
+// 以保证与 story-markdown 的快照格式统一。
 //
 // 业务逻辑零改动（其余列渲染、排序、诊断标记、escapeTableCell 全部保留）。
 
@@ -69,8 +67,7 @@ export function renderHooksProjection(
           statusCell,
           hook.lastAdvancedChapter,
           hook.expectedPayoff,
-          // 简化适配：原版 localizeHookPayoffTiming(resolveHookPayoffTiming(hook), language)，
-          // 改为直接展示原始 payoffTiming 字符串（与 story-markdown.ts 的 renderHookSnapshot 一致）。
+          // 直接展示原始 payoffTiming 字符串（与 story-markdown.ts 的 renderHookSnapshot 一致）。
           hook.payoffTiming ?? "",
           renderDependsOnCell(hook.dependsOn ?? [], language),
           hook.paysOffInArc ?? "",

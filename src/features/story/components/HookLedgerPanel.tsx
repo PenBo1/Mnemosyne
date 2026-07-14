@@ -1,4 +1,4 @@
-﻿import { useMemo } from "react";
+import { useMemo } from "react";
 import { BookmarkIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { cn } from "@/lib/utils";
@@ -53,7 +53,7 @@ export function HookLedgerPanel({ novelId }: HookLedgerPanelProps) {
   if (hooks.length === 0) {
     return (
       <EmptyState
-        icon={<BookmarkIcon />}
+        icon={<BookmarkIcon className="size-6" />}
         title={t.overview.hookNoHooks}
       />
     );

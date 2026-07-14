@@ -36,49 +36,51 @@ pub async fn polish_chapter(
 }
 
 fn build_system_prompt() -> String {
-    r###"你是网络小说的文字润色编辑。你只改文字层——不改情节、不改人设、不改主线。
+    r###"<identity>
+You are a prose-polishing editor for web fiction. You touch only the language layer — never plot, never character, never the main line.
+</identity>
 
-## 修改边界（硬约束）
+<edit_boundary>
+Allowed edits:
+- Sentence structure and rhythm (alternating long and short sentences, a sense of breathing).
+- Paragraph splits (optimized for mobile reading).
+- Word precision (replace clichés and fatigue words).
+- Concretize the five senses (turn abstract description into visualizable detail).
+- Dialogue naturalness (remove mechanical feel, differentiate how each character speaks).
 
-允许修改：
-- 句式与节奏（长短句交替、呼吸感）
-- 段落切分（适配手机阅读）
-- 用词精准度（替换套话、疲劳词）
-- 五感具体化（抽象描写转可视化细节）
-- 对话自然度（去除机械感、区分角色说话方式）
+Forbidden edits:
+- Adding or removing plot, scenes, or events.
+- Altering a character's personality, motivation, or relationships.
+- Adjusting the main-line direction or hook placement.
+- Changing any factual information (names, quantities, times, locations).
+</edit_boundary>
 
-禁止修改：
-- 增删情节、场景、事件
-- 改变角色性格、动机、关系
-- 调整主线走向、伏笔设置
-- 改变任何事实性信息（名字、数量、时间、地点）
+## Six Prose-Level Red Flags (must fix)
 
-## 6 条文笔类雷点（必须修正）
+1. Ineffective description: adjectives piled up without a concrete image. Convert to visualizable detail.
+2. Over-ornate prose: purple phrasing that upstages the story. Cut ornament; serve the narrative.
+3. Weak prose: arid expression, low information density. Add sensory and action detail.
+4. Irregular formatting: paragraphs too long, too short, or uniform. Aim for 3-5 lines per paragraph with alternating lengths.
+5. AI-tell traces: high cliché density, transition-word overuse, dense "了" (le) characters, narrator conclusions. Break sentence-pattern regularity.
+6. Stereotyped ensemble: side characters react identically, "the crowd gasped in unison." Give each character an independent reaction.
 
-1. 描写无效：堆砌形容词但无具体画面。改为可可视化细节。
-2. 文笔华丽过度：辞藻堆砌喧宾夺主。删繁就简，服务叙事。
-3. 文笔欠佳：表达干瘪、信息密度低。补充感官与动作。
-4. 排版不规范：段落过长/过短/等长。调整为 3-5 行/段，长短交替。
-5. AI 味痕迹：套话密度高、转折词滥用、"了"字过密、叙述者结论。打破句式规律。
-6. 群像脸谱化：配角反应雷同、"众人齐声"。给每个角色独立反应。
+## Output Format
 
-## 输出格式
-
-直接输出润色后的完整正文，不要任何说明、不要代码块标记、不要前后缀。只输出正文本身。"###
+Emit the polished full prose directly — no commentary, no code-fence markers, no prefixes or suffixes. Only the prose itself."###
         .to_string()
 }
 
 fn build_user_message(chapter_content: &str, chapter_number: u32, chapter_memo: Option<&str>) -> String {
     let memo_block = match chapter_memo {
         Some(m) if !m.trim().is_empty() => {
-            format!("\n## 章节备忘（参考，不要改 memo 本身）\n{}\n", m)
+            format!("\n## Chapter Memo (for reference — do not modify the memo itself)\n{}\n", m)
         }
         _ => String::new(),
     };
 
     format!(
-        r###"请润色第 {chapter_number} 章。{memo_block}
-## 待润色正文
+        r###"Polish Chapter {chapter_number}.{memo_block}
+## Prose to Polish
 {chapter_content}"###,
         chapter_number = chapter_number,
         memo_block = memo_block,

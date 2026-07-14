@@ -75,6 +75,16 @@ pub enum SecurityEvent {
         override_type: String,
         operation: String,
     },
+    /// Hook 派发事件 —— hook registry/engine 完成一次派发后触发。
+    /// `aborted = true` 表示有 hook 返回 FailedAbort（操作链被拦截）。
+    HookDispatched {
+        event: String,
+        tool_name: Option<String>,
+        workspace: Option<WorkspaceId>,
+        dispatched_count: u32,
+        aborted: bool,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 impl SecurityEvent {
@@ -93,6 +103,7 @@ impl SecurityEvent {
             SecurityEvent::QuotaSet { .. } => "quota_set",
             SecurityEvent::OverrideApplied { .. } => "override_applied",
             SecurityEvent::OverrideExpired { .. } => "override_expired",
+            SecurityEvent::HookDispatched { .. } => "hook_dispatched",
         }
     }
 
@@ -111,6 +122,7 @@ impl SecurityEvent {
             SecurityEvent::QuotaSet { workspace, .. } => Some(workspace),
             SecurityEvent::OverrideApplied { workspace, .. } => Some(workspace),
             SecurityEvent::OverrideExpired { workspace, .. } => Some(workspace),
+            SecurityEvent::HookDispatched { workspace, .. } => workspace.as_ref(),
         }
     }
 
@@ -123,6 +135,7 @@ impl SecurityEvent {
             SecurityEvent::RateLimited { operation, .. } => Some(operation),
             SecurityEvent::OverrideApplied { operation, .. } => Some(operation),
             SecurityEvent::OverrideExpired { operation, .. } => Some(operation),
+            SecurityEvent::HookDispatched { tool_name, .. } => tool_name.as_deref(),
             _ => None,
         }
     }
@@ -142,6 +155,7 @@ impl SecurityEvent {
             SecurityEvent::QuotaSet { .. } => Utc::now(),
             SecurityEvent::OverrideApplied { .. } => Utc::now(),
             SecurityEvent::OverrideExpired { .. } => Utc::now(),
+            SecurityEvent::HookDispatched { timestamp, .. } => *timestamp,
         }
     }
 
@@ -153,6 +167,7 @@ impl SecurityEvent {
                 | SecurityEvent::ResourceExceeded { .. }
                 | SecurityEvent::ApprovalRequested { .. }
                 | SecurityEvent::ApprovalRejected { .. }
+                | SecurityEvent::HookDispatched { aborted: true, .. }
         )
     }
 
@@ -163,6 +178,7 @@ impl SecurityEvent {
                 | SecurityEvent::RateLimited { .. }
                 | SecurityEvent::ResourceExceeded { .. }
                 | SecurityEvent::ApprovalRejected { .. }
+                | SecurityEvent::HookDispatched { aborted: true, .. }
         )
     }
 }

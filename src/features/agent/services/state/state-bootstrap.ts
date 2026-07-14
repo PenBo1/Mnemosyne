@@ -8,8 +8,8 @@
 //      MemoryDB，Mnemosyne 用 Rust rusqlite 替代），故本文件局部定义 Fact 接口（见下）。
 //    - `../utils/story-markdown.js`（normalizeHookId / parseMarkdownTableRows / parsePendingHooksMarkdown）
 //      → `../utils/story-markdown`（已迁移）
-//    - `../utils/hook-lifecycle.js`（normalizeHookPayoffTiming）→ 简化版已跳过该函数，
-//      且 state-bootstrap 原版 import 但未实际调用（未使用 import），直接移除。
+//    - `../utils/hook-lifecycle.js`（normalizeHookPayoffTiming）→ 已迁移（P2.7 已恢复
+//      完整 timing 推导），但 state-bootstrap 原版 import 但未实际调用（未使用 import），直接移除。
 //    - `../utils/path-utils`（joinPath）替代 `node:path/join`
 //    - `@/services/ipc`（ipc / ipcVoid）+ `@/shared/types/app`（FileEntry）替代 `node:fs/promises`
 //

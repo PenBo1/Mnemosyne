@@ -79,7 +79,7 @@ export function AboutSettings() {
       <Card className="py-0">
         <CardContent className="p-0">
           <div className="flex items-center gap-4 px-4 py-4 border-b">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-brand-popup)] text-[var(--text-brand)]">
               <InfoIcon className="size-6" />
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">

@@ -42,7 +42,7 @@ pub async fn import_from_text(
     let mode_label = mode_label(fanfic_mode);
     let system_prompt = build_system_prompt(mode_label, source.compiled);
     let user_message = format!(
-        "以下是原作《{}》的素材：\n\n{}",
+        "Below is the source material for the original work \"{}\":\n\n{}",
         source_name, source.content
     );
 
@@ -75,7 +75,7 @@ async fn prepare_source_text(
         let trimmed = compiled.trim();
         if !trimmed.is_empty() {
             notes.push(format!(
-                "## 片段 {}/{}\n\n{}",
+                "## Chunk {}/{}\n\n{}",
                 index + 1,
                 total,
                 trimmed
@@ -84,7 +84,7 @@ async fn prepare_source_text(
     }
 
     let content = format!(
-        "# 《{}》语义资料包\n\n以下内容由创作系统逐段读取完整原作素材后压缩生成，用于后续正典抽取。它不是原文截断。\n\n{}",
+        "# Semantic Resource Pack for \"{}\"\n\nThe content below was produced by the authoring system after reading the complete source material chunk by chunk and compressing it, for use in subsequent canon extraction. It is not a truncated copy of the original text.\n\n{}",
         source_name,
         notes.join("\n\n")
     );
@@ -104,9 +104,9 @@ async fn compile_chunk(
     total: usize,
     source_name: &str,
 ) -> Result<String, AppError> {
-    let system_prompt = "你是同人正典资料编译器。任务是把一个原作片段压成后续抽取可用的 Markdown 资料包。\n不要续写、不要创作、不要补不存在的信息。只保留片段里实际出现的世界规则、人物、关系、关键事件、能力体系、口头禅、说话风格和原文证据。\n如果片段没有某类信息，直接省略该类。保留片段编号，方便后续追溯。";
+    let system_prompt = "You are a fanfic canon resource compiler. Your task is to compress a single chunk of the original work into a Markdown resource pack that subsequent extraction can use.\nDo not continue the story, do not create new content, and do not fill in information that is not present. Keep only the world rules, characters, relationships, key events, power systems, catchphrases, speech styles, and text-backed evidence that actually appear in this chunk.\nIf a given category of information is absent from the chunk, omit that category entirely. Preserve the chunk number so it can be traced later.";
     let user_message = format!(
-        "原作：《{}》\n片段：{}/{}\n\n{}",
+        "Original work: \"{}\"\nChunk: {}/{}\n\n{}",
         source_name,
         index + 1,
         total,
@@ -138,65 +138,70 @@ fn split_into_chunks(text: &str, chunk_chars: usize) -> Vec<String> {
 /// 构建主抽取 system prompt。
 fn build_system_prompt(mode_label: &str, compiled: bool) -> String {
     let compiled_note = if compiled {
-        "\n注意：原作素材较长。下面输入是逐段读取完整素材后生成的语义资料包，不是截断文本；请以资料包中的片段编号和证据为准。"
+        "\nNote: the source material is long. The input below is a semantic resource pack produced after reading the complete material chunk by chunk — it is not a truncated copy of the original text. Rely on the chunk numbers and evidence inside the resource pack."
     } else {
         ""
     };
 
     format!(
-        r###"你是一个专业的同人创作素材分析师。你的任务是从用户提供的原作素材中提取结构化正典信息，供同人写作系统使用。
+        r###"<identity>
+You are a professional fanfic-creation source analyst. Your task is to extract structured canon information from the source material the user provides, for use by the fanfic authoring system.
+</identity>
 
-同人模式：{mode_label}
+Fanfic mode: {mode_label}
 
-你需要从原作素材中提取以下内容，每个部分用 === SECTION: <name> === 分隔：
+<responsibilities>
+Extract the following five sections from the source material. Each section is delimited by an `=== SECTION: <name> ===` marker. Output every section in order, even if some are sparse.
+</responsibilities>
 
 === SECTION: world_rules ===
-世界规则（地理、物理法则、魔法/力量体系、阵营组织、社会结构）。
-如果原作素材不包含明确的世界规则，从已有信息合理推断。
+World rules (geography, physical laws, magic/power systems, factions and organizations, social structure).
+If the source material does not contain explicit world rules, infer them reasonably from the available information.
 
 === SECTION: character_profiles ===
-角色档案表格，每个重要角色一行：
+A character profile table, one row per important character:
 
-| 角色 | 身份 | 性格底色 | 语癖/口头禅 | 说话风格 | 行为模式 | 关键关系 | 信息边界 |
-|------|------|----------|-------------|----------|----------|----------|----------|
+| Character | Identity | Personality baseline | Catchphrase / verbal tic | Speech style | Behavioral pattern | Key relationships | Information boundary |
+|-----------|----------|----------------------|--------------------------|--------------|--------------------|--------------------|----------------------|
 
-要求：
-- 语癖/口头禅必须从原文中精确提取，如有的话
-- 说话风格描述该角色的语气、用词偏好、句式特征
-- 行为模式描述该角色在特定情境下的典型反应
-- 信息边界标注该角色知道什么、不知道什么
-- 至少提取 3 个角色，不超过 15 个
+Requirements:
+- Catchphrases / verbal tics must be extracted verbatim from the original text, if present.
+- Speech style describes the character's tone, word-choice preferences, and sentence patterns.
+- Behavioral pattern describes the character's typical reactions in specific situations.
+- Information boundary annotates what the character knows and what they do not know.
+- Extract at least 3 characters and no more than 15.
 
 === SECTION: key_events ===
-关键事件时间线：
+A timeline of key events:
 
-| 序号 | 事件 | 涉及角色 | 对同人写作的约束 |
-|------|------|----------|------------------|
+| # | Event | Characters involved | Constraint on fanfic writing |
+|---|-------|---------------------|------------------------------|
 
-按时间/出现顺序排列，标注每个事件对同人创作的约束程度。
+Arrange in order of time / appearance, and annotate how constraining each event is for fanfic writing.
 
 === SECTION: power_system ===
-力量/能力体系（如果适用）。包括等级划分、核心规则、已知限制。
-如果原作没有明确的力量体系，输出"（原作无明确力量体系）"。
+The power / ability system (if applicable). Include tier divisions, core rules, and known limitations.
+If the original work has no explicit power system, output "(the original work has no explicit power system)".
 
 === SECTION: writing_style ===
-原作写作风格特征（供同人写作模仿）：
+The original work's writing-style traits (for the fanfic writer to imitate):
 
-1. 叙事人称与视角（第一人称/第三人称有限/全知，是否频繁切换）
-2. 句式节奏（长短句交替模式、段落平均长度感受、对话占比）
-3. 场景描写手法（五感偏好、意象选择、环境描写密度）
-4. 对话标记习惯（说/道/笑道 等用法，对话前后是否有动作/表情补充）
-5. 情绪表达方式（直白内心独白 vs 动作外化 vs 环境映射）
-6. 比喻/修辞倾向（常用比喻类型、修辞频率）
-7. 节奏转换（紧张→舒缓的过渡方式、章节结尾习惯）
+1. Narrative person and POV (first person / limited third / omniscient; whether it switches frequently).
+2. Sentence rhythm (long-short alternation, average paragraph-length feel, dialogue ratio).
+3. Scene-description technique (preferred senses, imagery choices, density of environmental description).
+4. Dialogue-tag habits (usage of words like "said / replied / laughed"; whether action or expression accompanies the dialogue).
+5. Emotional-expression mode (direct interior monologue vs. externalized action vs. environmental projection).
+6. Simile / rhetoric tendency (common simile types, rhetoric frequency).
+7. Pacing transitions (how tension relaxes into calm; chapter-ending habits).
 
-每项用1-2个原文例句佐证。只提取原文实际存在的特征，不要泛泛描述。
+Back each item with 1-2 verbatim example sentences from the original text. Extract only traits that actually exist in the text — do not describe in vague generalities.
 
-提取原则：
-- 忠实于原作素材，不捏造原作中没有的信息
-- 信息不足时标注"（素材未提及）"而非编造
-- 角色语癖是最重要的字段——同人读者最在意角色"像不像"
-- 写作风格提取必须基于实际文本特征，附原文例句{compiled_note}"###,
+<rules>
+- Stay faithful to the source material; never fabricate information that is not in the original.
+- When information is insufficient, mark "(not mentioned in the source material)" rather than inventing.
+- Character catchphrases are the most important field — fanfic readers care most about whether a character "sounds right."
+- Writing-style extraction must be grounded in actual textual traits and backed by example sentences.
+</rules>{compiled_note}"###,
         mode_label = mode_label,
         compiled_note = compiled_note,
     )
@@ -302,13 +307,13 @@ fn build_full_document(
     .join("\n")
 }
 
-/// fanfic_mode 对应的中文标签。
+/// fanfic_mode 对应的英文标签。
 fn mode_label(mode: FanficMode) -> &'static str {
     match mode {
-        FanficMode::Canon => "原作向（严格遵守原作设定）",
-        FanficMode::Au => "AU/平行世界（世界规则可改，角色保留）",
-        FanficMode::Ooc => "OOC（角色性格可偏离原作）",
-        FanficMode::Cp => "CP（以配对关系为核心）",
+        FanficMode::Canon => "Canon-faithful (strictly obey the original work's settings)",
+        FanficMode::Au => "AU / parallel world (world rules may change; characters retained)",
+        FanficMode::Ooc => "OOC (character personality may deviate from the original)",
+        FanficMode::Cp => "CP (centered on a paired relationship)",
     }
 }
 
@@ -425,10 +430,10 @@ mod tests {
 
     #[test]
     fn mode_label_returns_correct_label() {
-        assert_eq!(mode_label(FanficMode::Canon), "原作向（严格遵守原作设定）");
-        assert_eq!(mode_label(FanficMode::Au), "AU/平行世界（世界规则可改，角色保留）");
-        assert_eq!(mode_label(FanficMode::Ooc), "OOC（角色性格可偏离原作）");
-        assert_eq!(mode_label(FanficMode::Cp), "CP（以配对关系为核心）");
+        assert_eq!(mode_label(FanficMode::Canon), "Canon-faithful (strictly obey the original work's settings)");
+        assert_eq!(mode_label(FanficMode::Au), "AU / parallel world (world rules may change; characters retained)");
+        assert_eq!(mode_label(FanficMode::Ooc), "OOC (character personality may deviate from the original)");
+        assert_eq!(mode_label(FanficMode::Cp), "CP (centered on a paired relationship)");
     }
 
     #[test]
@@ -441,17 +446,17 @@ mod tests {
 
     #[test]
     fn build_system_prompt_includes_mode_label() {
-        let prompt = build_system_prompt("原作向（严格遵守原作设定）", false);
-        assert!(prompt.contains("同人模式：原作向（严格遵守原作设定）"));
+        let prompt = build_system_prompt("Canon-faithful (strictly obey the original work's settings)", false);
+        assert!(prompt.contains("Fanfic mode: Canon-faithful (strictly obey the original work's settings)"));
         assert!(prompt.contains("=== SECTION: world_rules ==="));
         assert!(prompt.contains("=== SECTION: writing_style ==="));
-        assert!(!prompt.contains("注意：原作素材较长"));
+        assert!(!prompt.contains("the source material is long"));
     }
 
     #[test]
     fn build_system_prompt_includes_compiled_note() {
-        let prompt = build_system_prompt("AU/平行世界", true);
-        assert!(prompt.contains("注意：原作素材较长"));
-        assert!(prompt.contains("语义资料包"));
+        let prompt = build_system_prompt("AU / parallel world", true);
+        assert!(prompt.contains("the source material is long"));
+        assert!(prompt.contains("semantic resource pack"));
     }
 }

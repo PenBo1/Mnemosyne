@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -106,7 +106,7 @@ export function PromptsSettings() {
             </SelectContent>
           </Select>
           <Button onClick={() => { openCreate(); setDialogOpen(true); }}>
-            <PlusIcon data-icon="inline-start" />
+            <PlusIcon data-icon="inline-start" className="size-4" />
             <span>{t.prompts.create}</span>
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -175,7 +175,7 @@ export function PromptsSettings() {
         <Card className="py-0 gap-0">
           <CardContent className="divide-y px-0">
             {prompts.map((prompt) => (
-              <div key={prompt.id} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-muted/50">
+              <div key={prompt.id} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-accent">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{prompt.name}</span>
@@ -189,7 +189,7 @@ export function PromptsSettings() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEdit(prompt)}>
-                        <PencilIcon />
+                        <PencilIcon className="size-4" />
                         <span>{t.common.edit}</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDelete(prompt.id)} className="text-destructive">

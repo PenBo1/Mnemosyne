@@ -1,4 +1,4 @@
-﻿import { useI18n } from "@/locales/i18n";
+import { useI18n } from "@/locales/i18n";
 import type { LoopState, LoopPattern } from "@/features/loop/types";
 import { cn } from "@/lib/utils";
 import { Play, Pause, PlayCircle, Trash2, Clock, Zap } from "lucide-react";
@@ -59,8 +59,8 @@ export function LoopDashboard({
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {states.map((ls) => {
         const usagePercent =
-          ls.token_cap_daily > 0
-            ? Math.round((ls.token_usage_today / ls.token_cap_daily) * 100)
+          ls.tokenCapDaily > 0
+            ? Math.round((ls.tokenUsageToday / ls.tokenCapDaily) * 100)
             : 0;
 
         return (
@@ -83,7 +83,7 @@ export function LoopDashboard({
                     )}
                   />
                   <span className="text-sm font-medium">
-                    {getPatternName(ls.pattern_id)}
+                    {getPatternName(ls.patternId)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -143,15 +143,15 @@ export function LoopDashboard({
               <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <Clock className="size-3" />
-                  <span>{getPatternCadence(ls.pattern_id)}</span>
+                  <span>{getPatternCadence(ls.patternId)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Zap className="size-3" />
-                  <span>{getReadinessLabel(ls.readiness_level)}</span>
+                  <span>{getReadinessLabel(ls.readinessLevel)}</span>
                 </div>
-                {ls.last_run_at && (
+                {ls.lastRunAt && (
                   <div className="text-[10px]">
-                    {new Date(ls.last_run_at).toLocaleString()}
+                    {new Date(ls.lastRunAt).toLocaleString()}
                   </div>
                 )}
               </div>
@@ -160,7 +160,7 @@ export function LoopDashboard({
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{t.loop.budget.used}</span>
                   <span>
-                    {ls.token_usage_today.toLocaleString()} / {ls.token_cap_daily.toLocaleString()}
+                    {ls.tokenUsageToday.toLocaleString()} / {ls.tokenCapDaily.toLocaleString()}
                   </span>
                 </div>
                 <Progress

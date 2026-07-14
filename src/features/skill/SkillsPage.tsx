@@ -152,7 +152,7 @@ export function SkillsPage() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <PuzzleIcon />
+              <PuzzleIcon className="size-6" />
             </EmptyMedia>
             <EmptyTitle>{t.skills.empty}</EmptyTitle>
             <EmptyDescription>{t.skills.description}</EmptyDescription>

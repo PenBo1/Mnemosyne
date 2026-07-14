@@ -1,4 +1,4 @@
-﻿
+
 use serde::{Deserialize, Serialize};
 
 /// 用户配置文件
@@ -88,6 +88,48 @@ impl Default for UserProfile {
             tone: None,
             word_count_preference: None,
         }
+    }
+}
+
+impl UserProfile {
+    /// 格式化为 system prompt 片段,供 build_system_prompt 拼装。
+    ///
+    /// 输出形如:
+    /// ```text
+    /// ## User Profile
+    /// User: ...
+    /// Language: ...
+    /// Style: formality=..., pacing=..., ...
+    /// ...
+    /// ```
+    pub fn format_for_prompt(&self) -> String {
+        let mut sections = Vec::new();
+        sections.push(format!("User: {}", self.name));
+        sections.push(format!("Language: {}", self.language));
+        sections.push(format!(
+            "Style: formality={}, pacing={}, descriptions={}, dialogue={}",
+            self.style.formality,
+            self.style.pacing,
+            self.style.description_density,
+            self.style.dialogue_style
+        ));
+        sections.push(format!("Target readers: {}", self.reader_type));
+        if !self.genres.is_empty() {
+            sections.push(format!("Preferred genres: {}", self.genres.join(", ")));
+        }
+        if let Some(ref tone) = self.tone {
+            sections.push(format!("Tone: {}", tone));
+        }
+        if let Some(ref wc) = self.word_count_preference {
+            sections.push(format!(
+                "Word count: {}-{} (target {})",
+                wc.min_words, wc.max_words, wc.target_words
+            ));
+        }
+        for inst in &self.custom_instructions {
+            sections.push(format!("Instruction: {}", inst));
+        }
+        format!("## User Profile\n{}\n", sections.join("\n"))
     }
 }
 

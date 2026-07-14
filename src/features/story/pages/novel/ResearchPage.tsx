@@ -125,7 +125,7 @@ export function ResearchPage() {
       <PageHeader>
         <PageHeading>
           <PageTitle>
-            <BookmarkIcon />
+            <BookmarkIcon className="size-4" />
             {t.research.title}
           </PageTitle>
           <PageDescription>{t.research.description}</PageDescription>
@@ -174,7 +174,7 @@ export function ResearchPage() {
               onClick={() => openEdit(item)}
               className={cn(
                 "cursor-pointer transition-colors group",
-                selected?.id === item.id ? "ring-primary bg-primary/5" : "hover:bg-[var(--bg-overlay-l2)]"
+                selected?.id === item.id ? "ring-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]" : "hover:bg-[var(--bg-overlay-l2)]"
               )}
             >
               <CardHeader className="pb-2">

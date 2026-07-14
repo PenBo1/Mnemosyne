@@ -149,7 +149,7 @@ export function WorkspacePicker() {
                   readOnly
                 />
                 <Button variant="outline" onClick={() => void handlePickDirectory()} type="button">
-                  <FolderOpenIcon />
+                  <FolderOpenIcon className="size-4" />
                 </Button>
               </div>
             </Field>

@@ -37,7 +37,7 @@ export function ApprovalCard({
               </code>
             </span>
           </div>
-          <pre className="max-h-40 overflow-auto rounded bg-muted/50 p-2 text-xs whitespace-pre-wrap break-words">
+          <pre className="max-h-40 overflow-auto rounded bg-[var(--bg-overlay-l1)] p-2 text-xs whitespace-pre-wrap break-words">
             {argsStr}
           </pre>
           <div className="mt-3 flex gap-2">
