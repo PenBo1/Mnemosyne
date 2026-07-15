@@ -285,19 +285,29 @@ pub async fn generate_package(
 fn build_outline_system_prompt(language: Language) -> String {
     if language == Language::En {
         vec![
-            "You are the managing editor for short web fiction. Your job is to turn one creative direction into a complete short-story plan.",
-            "Work only from this direction and any reference text the user supplied; never claim to have read, quoted, or inherited material that was not provided.",
-            "Content comes first: the title, the opening, the pressure on the protagonist, the evidence/relationship/identity leverage, the escalation chain, the reversal chain, and the payoff landing must be strong enough to carry a single-pass full draft.",
-            "Do not over-structure and do not output JSON/YAML. Write human-readable Markdown, but the chapter plan must be dense enough that a writer can draft the whole story in one pass.",
-            "A short defaults to 12-18 chapters at roughly 600-800 words per chapter. The story must be complete — not the first five chapters of a novel starter kit.",
+            "你是短篇网文的主编。你的工作是把一条创作方向变成一份完整的短篇故事方案，最终成稿用英文撰写。",
+            "只能基于本方向与用户提供的参考文本创作；永远不要声称读过、引用过、继承过未提供的素材。",
+            "内容为王：标题、开篇、压在主角身上的压力、证据/关系/身份筹码、升级链、反转链、回报落地，都必须强到足以支撑一次性整篇成稿。",
+            "不要过度结构化，不要输出 JSON/YAML。写人类可读的 Markdown，但章节方案必须密到让写手能一次性写出整篇故事。",
+            "短篇默认 12-18 章，每章约 600-800 英文单词。故事必须完整——不是某部小说起手前 5 章。",
+            "<safety>",
+            "- NEVER 声称读过、引用过或继承过用户未提供的素材。",
+            "- NEVER 输出 JSON/YAML 或用过度结构化清单替代故事方案。",
+            "- NEVER 把短篇写成「小说起手前 5 章」；必须有完整开端—升级—反转—回报闭环。",
+            "</safety>",
         ].join("\n")
     } else {
         vec![
-            "You are the managing editor for short web fiction. Your job is to turn one creative direction into a complete short-story plan. Write the plan and the resulting prose in Simplified Chinese.",
-            "Work only from this direction and any reference text the user supplied; never claim to have read, quoted, or inherited material that was not provided.",
-            "Content comes first: the title, the opening, the pressure on the protagonist, the evidence/relationship/identity leverage, the escalation chain, the reversal chain, and the payoff landing must be strong enough to carry a single-pass full draft.",
-            "Do not over-structure and do not output JSON/YAML. Write human-readable Markdown, but the chapter plan must be dense enough that a writer can draft the whole story in one pass.",
-            "A short defaults to 12-18 chapters at roughly 900-1200 Chinese characters per chapter. The story must be complete — not the first five chapters of a novel starter kit.",
+            "你是短篇网文的主编。你的工作是把一条创作方向变成一份完整的短篇故事方案。方案与最终正文均用简体中文撰写。",
+            "只能基于本方向与用户提供的参考文本创作；永远不要声称读过、引用过、继承过未提供的素材。",
+            "内容为王：标题、开篇、压在主角身上的压力、证据/关系/身份筹码、升级链、反转链、回报落地，都必须强到足以支撑一次性整篇成稿。",
+            "不要过度结构化，不要输出 JSON/YAML。写人类可读的 Markdown，但章节方案必须密到让写手能一次性写出整篇故事。",
+            "短篇默认 12-18 章，每章约 900-1200 个中文字符。故事必须完整——不是某部小说起手前 5 章。",
+            "<safety>",
+            "- NEVER 声称读过、引用过或继承过用户未提供的素材。",
+            "- NEVER 输出 JSON/YAML 或用过度结构化清单替代故事方案。",
+            "- NEVER 把短篇写成「小说起手前 5 章」；必须有完整开端—升级—反转—回报闭环。",
+            "</safety>",
         ].join("\n")
     }
 }
@@ -306,12 +316,12 @@ fn build_outline_user_prompt(input: &ShortFictionOutlineInput) -> String {
     let reference = reference_block(input.reference.as_ref(), input.language);
     if input.language == Language::En {
         let mut parts: Vec<String> = vec![
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
-            "## Target Spec".to_string(),
+            "## 目标规格".to_string(),
             format!(
-                "A complete short story of {} chapters, about {} words per chapter.",
+                "一部完整的短篇，共 {} 章，每章约 {} 个英文单词。",
                 input.chapter_count, input.chars_per_chapter
             ),
             String::new(),
@@ -320,26 +330,26 @@ fn build_outline_user_prompt(input: &ShortFictionOutlineInput) -> String {
             parts.push(reference);
         }
         parts.extend(vec![
-            "## Deliverable".to_string(),
-            "Start with one platform-ready clickable title, then the full story plan. The plan must make clear why the protagonist is pinned down, what payoff the reader is waiting for, how the protagonist turns the tables, how evidence/relationships/identity/rules escalate step by step, why the antagonist strikes back, and how the ending lands.".to_string(),
-            "The chapter plan must spell out, chapter by chapter: the direction of the chapter title, the key on-page scene, the characters' actions, the escalation or payoff, and the reason to keep reading at the chapter break.".to_string(),
-            "Tags are allowed, but do not enumerate a tag table; tags serve premise selection and writing — they never replace the story.".to_string(),
+            "## 交付物".to_string(),
+            "先给一个平台可点击的标题，再给完整故事方案。方案必须讲清：主角为何被钉死、读者在等什么回报、主角如何翻盘、证据/关系/身份/规则如何一步步升级、对手为何反扑、结局如何落地。".to_string(),
+            "章节方案必须逐章写清：章节标题方向、关键上场场景、人物行动、升级或兑现、章末让人继续读的理由。".to_string(),
+            "允许写标签，但不要罗列表格；标签服务于选材与写作——绝不替代故事本身。".to_string(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_PLAN_TITLE ===".to_string(),
-            "Exactly one platform-ready title on a single line".to_string(),
+            "恰好一行平台可用标题".to_string(),
             "=== SHORT_FICTION_PLAN ===".to_string(),
-            "The full story plan in Markdown, covering: genre/audience, title direction, the opening hook, characters and relationships, the core pressure, how the protagonist wins, the escalation chain, the reversal chain, the ending payoff, and the chapter-by-chapter plan.".to_string(),
+            "完整故事方案（Markdown，英文）：题材/受众、标题方向、开篇钩子、人物与关系、核心压力、主角如何赢、升级链、反转链、结局回报、逐章方案。".to_string(),
         ]);
         parts
     } else {
         let mut parts: Vec<String> = vec![
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
-            "## Target Spec".to_string(),
+            "## 目标规格".to_string(),
             format!(
-                "A complete short story of {} chapters, about {} Chinese characters per chapter.",
+                "一部完整的短篇，共 {} 章，每章约 {} 个中文字符。",
                 input.chapter_count, input.chars_per_chapter
             ),
             String::new(),
@@ -348,16 +358,16 @@ fn build_outline_user_prompt(input: &ShortFictionOutlineInput) -> String {
             parts.push(reference);
         }
         parts.extend(vec![
-            "## Deliverable".to_string(),
-            "Start with one platform-ready clickable title, then the full story plan. The plan must make clear why the protagonist is pinned down, what payoff the reader is waiting for, how the protagonist turns the tables, how evidence/relationships/identity/rules escalate step by step, why the antagonist strikes back, and how the ending lands.".to_string(),
-            "The chapter plan must spell out, chapter by chapter: the direction of the chapter title, the key on-page scene, the characters' actions, the escalation or payoff, and the reason to keep reading at the chapter break.".to_string(),
-            "Tags are allowed, but do not enumerate a tag table; tags serve premise selection and writing — they never replace the story.".to_string(),
+            "## 交付物".to_string(),
+            "先给一个平台可点击的标题，再给完整故事方案。方案必须讲清：主角为何被钉死、读者在等什么回报、主角如何翻盘、证据/关系/身份/规则如何一步步升级、对手为何反扑、结局如何落地。".to_string(),
+            "章节方案必须逐章写清：章节标题方向、关键上场场景、人物行动、升级或兑现、章末让人继续读的理由。".to_string(),
+            "允许写标签，但不要罗列表格；标签服务于选材与写作——绝不替代故事本身。".to_string(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_PLAN_TITLE ===".to_string(),
-            "Exactly one platform-ready title on a single line (in Simplified Chinese)".to_string(),
+            "恰好一行平台可用标题（简体中文）".to_string(),
             "=== SHORT_FICTION_PLAN ===".to_string(),
-            "The full story plan in Markdown (in Simplified Chinese), covering: genre/audience, title direction, the opening hook, characters and relationships, the core pressure, how the protagonist wins, the escalation chain, the reversal chain, the ending payoff, and the chapter-by-chapter plan.".to_string(),
+            "完整故事方案（Markdown，简体中文）：题材/受众、标题方向、开篇钩子、人物与关系、核心压力、主角如何赢、升级链、反转链、结局回报、逐章方案。".to_string(),
         ]);
         parts
     }
@@ -370,17 +380,27 @@ fn build_outline_user_prompt(input: &ShortFictionOutlineInput) -> String {
 fn build_outline_review_system_prompt(language: Language) -> String {
     if language == Language::En {
         vec![
-            "You are a short-fiction outline reviewer. You do not assign scores and you do not police plagiarism.",
-            "Your job is to judge whether this story plan can carry a single-pass full draft: is the genre engine clear, do character motivations hold, does the pressure chain escalate, is the antagonist's counterattack believable, is the ending payoff big enough.",
-            "Review like a real reader and a real editor, not a checklist machine.",
-            "Output Markdown. Name the flaws that would make the finished draft fall flat, and the strengths worth keeping.",
+            "你是短篇故事方案审稿人。你不打分，也不查重。",
+            "你的工作是判断这份故事方案能否支撑一次性整篇成稿：题材引擎是否清晰、人物动机是否成立、压力链是否升级、对手反扑是否可信、结局回报是否足够大。",
+            "像真实读者和真实编辑那样审稿，不要做清单机器。",
+            "输出 Markdown。点名会让成稿塌掉的缺陷，以及值得保留的优点。",
+            "<safety>",
+            "- NEVER 打分或查重；那是别的环节的事。",
+            "- NEVER 把审稿变成清单勾选；必须像真人读者一样判断。",
+            "- NEVER 仅凭字数或长度否定方案；先判断内容是否完整、戏剧是否到位。",
+            "</safety>",
         ].join("\n")
     } else {
         vec![
-            "You are a short-fiction outline reviewer. You do not assign scores and you do not police plagiarism. Write your review in Simplified Chinese.",
-            "Your job is to judge whether this story plan can carry a single-pass full draft: is the genre engine clear, do character motivations hold, does the pressure chain escalate, is the antagonist's counterattack believable, is the ending payoff big enough.",
-            "Review like a real reader and a real editor, not a checklist machine.",
-            "Output Markdown in Simplified Chinese. Name the flaws that would make the finished draft fall flat, and the strengths worth keeping.",
+            "你是短篇故事方案审稿人。你不打分，也不查重。审稿意见用简体中文撰写。",
+            "你的工作是判断这份故事方案能否支撑一次性整篇成稿：题材引擎是否清晰、人物动机是否成立、压力链是否升级、对手反扑是否可信、结局回报是否足够大。",
+            "像真实读者和真实编辑那样审稿，不要做清单机器。",
+            "输出 Markdown（简体中文）。点名会让成稿塌掉的缺陷，以及值得保留的优点。",
+            "<safety>",
+            "- NEVER 打分或查重；那是别的环节的事。",
+            "- NEVER 把审稿变成清单勾选；必须像真人读者一样判断。",
+            "- NEVER 仅凭字数或长度否定方案；先判断内容是否完整、戏剧是否到位。",
+            "</safety>",
         ].join("\n")
     }
 }
@@ -389,7 +409,7 @@ fn build_outline_review_user_prompt(input: &ShortFictionOutlineReviewInput) -> S
     let reference = reference_block(input.reference.as_ref(), input.language);
     if input.language == Language::En {
         let mut parts: Vec<String> = vec![
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
         ];
@@ -397,20 +417,20 @@ fn build_outline_review_user_prompt(input: &ShortFictionOutlineReviewInput) -> S
             parts.push(reference);
         }
         parts.extend(vec![
-            "## Story Plan Under Review".to_string(),
+            "## 待审故事方案".to_string(),
             input.outline.raw_content.clone(),
             String::new(),
-            "## Review Focus".to_string(),
-            "- Is this a complete short story, rather than a partial tryout plan?".to_string(),
-            "- Do the title, the opening, and the first three chapters give readers a reason to click and keep reading?".to_string(),
-            "- Is the outline dense enough, or will the writer run out of material in the back half?".to_string(),
-            "- Do the key scenes contain character action, counterattack, and payoff, instead of bare result summaries?".to_string(),
-            "- Will readers be thrown out of the story by timeline, relationship, evidence-access, physical-state, or common-sense problems?".to_string(),
+            "## 审稿焦点".to_string(),
+            "- 这是完整的短篇，还是只是个试写片段方案？".to_string(),
+            "- 标题、开篇、前 3 章是否给了读者点击并继续读的理由？".to_string(),
+            "- 方案密度够吗，还是写手到下半篇会没料可写？".to_string(),
+            "- 关键场景里有没有人物行动、反扑、兑现，而不是赤裸的结果摘要？".to_string(),
+            "- 读者会不会被时间线、关系、证据获取、身体状态、常识问题踢出故事？".to_string(),
         ]);
         parts
     } else {
         let mut parts: Vec<String> = vec![
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
         ];
@@ -418,15 +438,15 @@ fn build_outline_review_user_prompt(input: &ShortFictionOutlineReviewInput) -> S
             parts.push(reference);
         }
         parts.extend(vec![
-            "## Story Plan Under Review".to_string(),
+            "## 待审故事方案".to_string(),
             input.outline.raw_content.clone(),
             String::new(),
-            "## Review Focus".to_string(),
-            "- Is this a complete short story, rather than a partial tryout plan?".to_string(),
-            "- Do the title, the opening, and the first three chapters give readers a reason to click and keep reading?".to_string(),
-            "- Is the outline dense enough, or will the writer run out of material in the back half?".to_string(),
-            "- Do the key scenes contain character action, counterattack, and payoff, instead of bare result summaries?".to_string(),
-            "- Will readers be thrown out of the story by timeline, relationship, evidence-access, physical-state, or common-sense problems?".to_string(),
+            "## 审稿焦点".to_string(),
+            "- 这是完整的短篇，还是只是个试写片段方案？".to_string(),
+            "- 标题、开篇、前 3 章是否给了读者点击并继续读的理由？".to_string(),
+            "- 方案密度够吗，还是写手到下半篇会没料可写？".to_string(),
+            "- 关键场景里有没有人物行动、反扑、兑现，而不是赤裸的结果摘要？".to_string(),
+            "- 读者会不会被时间线、关系、证据获取、身体状态、常识问题踢出故事？".to_string(),
         ]);
         parts
     }
@@ -439,22 +459,22 @@ fn build_outline_review_user_prompt(input: &ShortFictionOutlineReviewInput) -> S
 fn build_outline_revision_followup(input: &ShortFictionOutlineRevisionInput) -> String {
     if input.language == Language::En {
         vec![
-            "Based on the outline review above, produce the complete second version of the story plan.".to_string(),
-            "This is round two of the same project: do not start over from scratch, and do not output a list of edits instead of the plan.".to_string(),
+            "基于上面的方案审稿意见，产出完整的第二版故事方案。".to_string(),
+            "这是同一项目的第二轮：不要从零重写，也不要输出「修改清单」替代方案。".to_string(),
             format!(
-                "Keep the structure at {} chapters of about {} words each.",
+                "保持结构：{} 章，每章约 {} 个英文单词。",
                 input.chapter_count, input.chars_per_chapter
             ),
-            "Keep the genre engine and relationships that work; fix the flaws that would make the finished draft fall flat.".to_string(),
+            "保留有效的题材引擎与人物关系；修复会让成稿塌掉的缺陷。".to_string(),
             String::new(),
-            "## Outline Review".to_string(),
+            "## 方案审稿意见".to_string(),
             input.review.trim().to_string(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_PLAN_TITLE ===".to_string(),
-            "Exactly one platform-ready title on a single line".to_string(),
+            "恰好一行平台可用标题".to_string(),
             "=== SHORT_FICTION_PLAN ===".to_string(),
-            "The complete second-version story plan in Markdown.".to_string(),
+            "完整的第二版故事方案（Markdown，英文）。".to_string(),
         ]
         .into_iter()
         .filter(|s| !s.is_empty())
@@ -462,22 +482,22 @@ fn build_outline_revision_followup(input: &ShortFictionOutlineRevisionInput) -> 
         .join("\n")
     } else {
         vec![
-            "Based on the outline review above, produce the complete second version of the story plan. Write in Simplified Chinese.".to_string(),
-            "This is round two of the same project: do not start over from scratch, and do not output a list of edits instead of the plan.".to_string(),
+            "基于上面的方案审稿意见，产出完整的第二版故事方案。用简体中文撰写。".to_string(),
+            "这是同一项目的第二轮：不要从零重写，也不要输出「修改清单」替代方案。".to_string(),
             format!(
-                "Keep the structure at {} chapters of about {} Chinese characters each.",
+                "保持结构：{} 章，每章约 {} 个中文字符。",
                 input.chapter_count, input.chars_per_chapter
             ),
-            "Keep the genre engine and relationships that work; fix the flaws that would make the finished draft fall flat.".to_string(),
+            "保留有效的题材引擎与人物关系；修复会让成稿塌掉的缺陷。".to_string(),
             String::new(),
-            "## Outline Review".to_string(),
+            "## 方案审稿意见".to_string(),
             input.review.trim().to_string(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_PLAN_TITLE ===".to_string(),
-            "Exactly one platform-ready title on a single line (in Simplified Chinese)".to_string(),
+            "恰好一行平台可用标题（简体中文）".to_string(),
             "=== SHORT_FICTION_PLAN ===".to_string(),
-            "The complete second-version story plan in Markdown (in Simplified Chinese).".to_string(),
+            "完整的第二版故事方案（Markdown，简体中文）。".to_string(),
         ]
         .into_iter()
         .filter(|s| !s.is_empty())
@@ -489,22 +509,32 @@ fn build_outline_revision_followup(input: &ShortFictionOutlineRevisionInput) -> 
 fn build_writer_system_prompt(language: Language) -> String {
     if language == Language::En {
         vec![
-            "You are an English short-fiction BatchWriter. You write the complete short story in one API pass, following the story plan.",
-            "Write natural, native English prose. Vary sentence length; mix short punchy sentences with longer flowing ones, and keep the narrative voice consistent throughout.",
-            "This is not serialized-novel continuation and not chapter synopsis. Every chapter needs drama happening on the page: character action, dialogue or reaction, a shift in the situation, and a reason to keep reading at the chapter break.",
-            "Keep the drama dialed up, web-fiction style: real-world pressure may be amplified as far as readers will still believe, but never so absurd that immersion breaks.",
-            "The story title and chapter titles must read like platform content, not literary summaries. Keep the prose paced for mobile reading — short paragraphs, but never telegram-style fragments.",
-            "The word count is a calibration, not an averaging exercise. Big scenes may run long and transitions short; a clearly short chapter usually means you wrote a synopsis and must add real scenes.",
-            "Output must strictly use the specified blocks. No author notes, no word-count remarks, no review comments, no format explanations.",
+            "你是英文短篇 BatchWriter。按故事方案，在一次 API 调用内写出整篇短篇正文。",
+            "写自然、地道的英文散文。句长要有变化；短促有力的句子与较长流畅的句子交替，叙事声音全篇保持一致。",
+            "这不是长篇连载续写，也不是章节梗概。每一章都要有戏剧在场上发生：人物行动、对白或反应、情境转变、章末让人继续读的理由。",
+            "戏剧强度要拉满，网文风格：现实压力可以放大到读者仍愿相信的极限，但绝不能荒诞到打破沉浸。",
+            "故事标题与章节标题要像平台内容，而不是文学摘要。散文节奏要适配手机阅读——短段落，但绝不写成电报式片段。",
+            "字数是校准，不是平均。大场景可以长，过渡可以短；明显过短的章节通常意味着你写成了梗概，必须补上真实场景。",
+            "输出必须严格使用指定块。不要作者注、字数说明、审稿意见、格式解释。",
+            "<safety>",
+            "- NEVER 写成梗概或章节大纲；每章必须有真实场景在场上发生。",
+            "- NEVER 输出指定块之外的作者注、字数说明或审稿意见。",
+            "- NEVER 中途拐到另一个故事；必须承接方案的压力链、证据链、反转链与情感回报。",
+            "</safety>",
         ].join("\n")
     } else {
         vec![
-            "You are a Simplified-Chinese short-fiction BatchWriter. Following the story plan, write the complete short-story prose in one API pass.",
-            "This is not serialized-novel continuation and not chapter synopsis. Every chapter needs drama happening on the page: character action, dialogue or reaction, a shift in the situation, and a reason to keep reading at the chapter break.",
-            "Keep the drama dialed up, web-fiction style: real-world pressure may be amplified as far as readers will still believe, but never so absurd that immersion breaks.",
-            "The story title and chapter titles must read like platform content, not literary summaries. Keep the prose paced for mobile reading — short paragraphs, but never telegram-style fragments.",
-            "The character count is a calibration, not an averaging exercise. Big scenes may run long and transitions short; a clearly short chapter usually means you wrote a synopsis and must add real scenes.",
-            "Output must strictly use the specified blocks. No author notes, no word-count remarks, no review comments, no format explanations.",
+            "你是简体中文短篇 BatchWriter。按故事方案，在一次 API 调用内写出整篇短篇正文。",
+            "这不是长篇连载续写，也不是章节梗概。每一章都要有戏剧在场上发生：人物行动、对白或反应、情境转变、章末让人继续读的理由。",
+            "戏剧强度要拉满，网文风格：现实压力可以放大到读者仍愿相信的极限，但绝不能荒诞到打破沉浸。",
+            "故事标题与章节标题要像平台内容，而不是文学摘要。散文节奏要适配手机阅读——短段落，但绝不写成电报式片段。",
+            "字数是校准，不是平均。大场景可以长，过渡可以短；明显过短的章节通常意味着你写成了梗概，必须补上真实场景。",
+            "输出必须严格使用指定块。不要作者注、字数说明、审稿意见、格式解释。",
+            "<safety>",
+            "- NEVER 写成梗概或章节大纲；每章必须有真实场景在场上发生。",
+            "- NEVER 输出指定块之外的作者注、字数说明或审稿意见。",
+            "- NEVER 中途拐到另一个故事；必须承接方案的压力链、证据链、反转链与情感回报。",
+            "</safety>",
         ].join("\n")
     }
 }
@@ -513,62 +543,62 @@ fn build_writer_user_prompt(input: &ShortFictionDraftInput) -> String {
     let craft = build_craft_prompt(input.language);
     if input.language == Language::En {
         let mut parts: Vec<String> = vec![
-            "## Task".to_string(),
+            "## 任务".to_string(),
             format!(
-                "Write the complete {}-chapter story in one pass, about {} words per chapter.",
+                "一次性写出完整的 {} 章故事，每章约 {} 个英文单词。",
                 input.chapter_count, input.chars_per_chapter
             ),
-            "Read the full story plan before writing. The prose must carry the plan's pressure chain, evidence chain, reversal chain, and emotional payoff — do not swerve into a different story midway.".to_string(),
+            "动笔前先读完整个故事方案。正文必须承接方案的压力链、证据链、反转链与情感回报——不得中途拐到另一个故事。".to_string(),
             String::new(),
             craft,
             String::new(),
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
-            "## Story Plan".to_string(),
+            "## 故事方案".to_string(),
             input.outline_markdown.clone(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_TITLE ===".to_string(),
-            "The story title — plain text, platform-ready, nothing else".to_string(),
+            "故事标题——纯文本，平台可用，不要其它内容".to_string(),
             "=== SHORT_FICTION_OPENING_HOOK ===".to_string(),
-            "An optional pre-story hook of about 130 words; if no standalone teaser is needed, still write the small first-screen scene that opens chapter 1".to_string(),
+            "可选的正文前钩子，约 130 个英文单词；若不需要独立 teaser，仍要写出第 1 章开头的小型首屏场景".to_string(),
         ];
         for chapter in 1..=input.chapter_count {
             parts.push(format!("=== CHAPTER {} TITLE ===", chapter));
-            parts.push("Chapter title — plain text only, no #, no \"Chapter N\" prefix".to_string());
+            parts.push("章节标题——纯文本，无 #，无 \"Chapter N\" 前缀".to_string());
             parts.push(format!("=== CHAPTER {} CONTENT ===", chapter));
-            parts.push(format!("Chapter {} prose — full scenes, no synopsis, no author notes", chapter));
+            parts.push(format!("第 {} 章正文——完整场景，无梗概，无作者注", chapter));
         }
         parts
     } else {
         let mut parts: Vec<String> = vec![
-            "## Task".to_string(),
+            "## 任务".to_string(),
             format!(
-                "Write the complete {}-chapter story in one pass, about {} Chinese characters per chapter.",
+                "一次性写出完整的 {} 章故事，每章约 {} 个中文字符。",
                 input.chapter_count, input.chars_per_chapter
             ),
-            "Read the full story plan before writing. The prose must carry the plan's pressure chain, evidence chain, reversal chain, and emotional payoff — do not swerve into a different story midway.".to_string(),
+            "动笔前先读完整个故事方案。正文必须承接方案的压力链、证据链、反转链与情感回报——不得中途拐到另一个故事。".to_string(),
             String::new(),
             craft,
             String::new(),
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
-            "## Story Plan".to_string(),
+            "## 故事方案".to_string(),
             input.outline_markdown.clone(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_TITLE ===".to_string(),
-            "The story title — plain text, platform-ready, in Simplified Chinese, nothing else".to_string(),
+            "故事标题——纯文本，平台可用，简体中文，不要其它内容".to_string(),
             "=== SHORT_FICTION_OPENING_HOOK ===".to_string(),
-            "An optional pre-story hook of about 200 Chinese characters; if no standalone teaser is needed, still write the small first-screen scene that opens chapter 1".to_string(),
+            "可选的正文前钩子，约 200 个中文字符；若不需要独立 teaser，仍要写出第 1 章开头的小型首屏场景".to_string(),
         ];
         for chapter in 1..=input.chapter_count {
             parts.push(format!("=== CHAPTER {} TITLE ===", chapter));
-            parts.push("Chapter title — plain text only, no #, no \"Chapter N\" prefix (in Simplified Chinese)".to_string());
+            parts.push("章节标题——纯文本，无 #，无 \"Chapter N\" 前缀（简体中文）".to_string());
             parts.push(format!("=== CHAPTER {} CONTENT ===", chapter));
-            parts.push(format!("Chapter {} prose — full scenes, no synopsis, no author notes (in Simplified Chinese)", chapter));
+            parts.push(format!("第 {} 章正文——完整场景，无梗概，无作者注（简体中文）", chapter));
         }
         parts
     }
@@ -591,68 +621,68 @@ fn build_draft_continuation_user_prompt(
     let existing_md = render_draft_markdown(&input.draft, input.language);
     if input.language == Language::En {
         let mut parts: Vec<String> = vec![
-            "## Task".to_string(),
+            "## 任务".to_string(),
             format!(
-                "The previous draft was truncated or skipped chapters. Write ONLY the missing chapters: {}.",
+                "上一稿被截断或跳章。仅补写缺失章节：{}。",
                 missing_str
             ),
             format!(
-                "Stay calibrated to the complete {}-chapter short at about {} words per chapter.",
+                "保持校准：完整 {} 章短篇，每章约 {} 个英文单词。",
                 input.chapter_count, input.chars_per_chapter
             ),
-            "Do not rewrite finished chapters, do not write summary notes, do not apologize, do not output review comments.".to_string(),
+            "不要重写已完成章节，不要写总结说明，不要道歉，不要输出审稿意见。".to_string(),
             String::new(),
             craft,
             String::new(),
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
-            "## Story Plan".to_string(),
+            "## 故事方案".to_string(),
             input.outline_markdown.clone(),
             String::new(),
-            "## Existing Draft (for continuity only — do not rewrite)".to_string(),
+            "## 已有草稿（仅供衔接——不要重写）".to_string(),
             existing_md,
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
         ];
         for &chapter in missing {
             parts.push(format!("=== CHAPTER {} TITLE ===", chapter));
-            parts.push("Chapter title — plain text only, no #, no \"Chapter N\" prefix".to_string());
+            parts.push("章节标题——纯文本，无 #，无 \"Chapter N\" 前缀".to_string());
             parts.push(format!("=== CHAPTER {} CONTENT ===", chapter));
-            parts.push(format!("Chapter {} prose — full scenes, no synopsis, no author notes", chapter));
+            parts.push(format!("第 {} 章正文——完整场景，无梗概，无作者注", chapter));
         }
         parts
     } else {
         let mut parts: Vec<String> = vec![
-            "## Task".to_string(),
+            "## 任务".to_string(),
             format!(
-                "The previous draft was truncated or skipped chapters. Write ONLY the missing chapters: {}.",
+                "上一稿被截断或跳章。仅补写缺失章节：{}。",
                 missing_str
             ),
             format!(
-                "Stay calibrated to the complete {}-chapter short at about {} Chinese characters per chapter.",
+                "保持校准：完整 {} 章短篇，每章约 {} 个中文字符。",
                 input.chapter_count, input.chars_per_chapter
             ),
-            "Do not rewrite finished chapters, do not write summary notes, do not apologize, do not output review comments.".to_string(),
+            "不要重写已完成章节，不要写总结说明，不要道歉，不要输出审稿意见。".to_string(),
             String::new(),
             craft,
             String::new(),
-            "## Creative Direction".to_string(),
+            "## 创作方向".to_string(),
             input.direction.clone(),
             String::new(),
-            "## Story Plan".to_string(),
+            "## 故事方案".to_string(),
             input.outline_markdown.clone(),
             String::new(),
-            "## Existing Draft (for continuity only — do not rewrite)".to_string(),
+            "## 已有草稿（仅供衔接——不要重写）".to_string(),
             existing_md,
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
         ];
         for &chapter in missing {
             parts.push(format!("=== CHAPTER {} TITLE ===", chapter));
-            parts.push("Chapter title — plain text only, no #, no \"Chapter N\" prefix (in Simplified Chinese)".to_string());
+            parts.push("章节标题——纯文本，无 #，无 \"Chapter N\" 前缀（简体中文）".to_string());
             parts.push(format!("=== CHAPTER {} CONTENT ===", chapter));
-            parts.push(format!("Chapter {} prose — full scenes, no synopsis, no author notes (in Simplified Chinese)", chapter));
+            parts.push(format!("第 {} 章正文——完整场景，无梗概，无作者注（简体中文）", chapter));
         }
         parts
     }
@@ -665,17 +695,27 @@ fn build_draft_continuation_user_prompt(
 fn build_draft_review_system_prompt(language: Language) -> String {
     if language == Language::En {
         vec![
-            "You are a short-fiction draft reviewer.",
-            "You judge only whether the content can sell, reads smoothly, and keeps pulling the reader forward; do not turn the review into deterministic scoring.",
-            "Focus on: the title, chapter titles, the opening, character motivation, the timeline, relationships, evidence and access, escalating pressure, the antagonist's counterattack, whether the back half sags, and whether the ending payoff lands.",
-            "Output Markdown. Separate the problems that would visibly stop readers from reading on from the small blemishes that are acceptable.",
+            "你是短篇草稿审稿人。",
+            "你只判断内容能否卖得动、读得顺、能不能持续拉着读者往前；不要把审稿变成确定性打分。",
+            "关注：标题、章节标题、开篇、人物动机、时间线、关系、证据与获取、压力升级、对手反扑、下半篇是否疲软、结局回报是否落地。",
+            "输出 Markdown。把会让读者明显弃读的问题与可接受的小瑕疵分开。",
+            "<safety>",
+            "- NEVER 把审稿变成确定性打分；那是别的环节的事。",
+            "- NEVER 仅凭字数微偏否定章节；先判断内容是否完整、戏剧是否到位、回报是否落地。",
+            "- NEVER 把小瑕疵与致命问题混在一起；必须分开列出。",
+            "</safety>",
         ].join("\n")
     } else {
         vec![
-            "You are a short-fiction draft reviewer. Write your review in Simplified Chinese.",
-            "You judge only whether the content can sell, reads smoothly, and keeps pulling the reader forward; do not turn the review into deterministic scoring.",
-            "Focus on: the title, chapter titles, the opening, character motivation, the timeline, relationships, evidence and access, escalating pressure, the antagonist's counterattack, whether the back half sags, and whether the ending payoff lands.",
-            "Output Markdown in Simplified Chinese. Separate the problems that would visibly stop readers from reading on from the small blemishes that are acceptable.",
+            "你是短篇草稿审稿人。审稿意见用简体中文撰写。",
+            "你只判断内容能否卖得动、读得顺、能不能持续拉着读者往前；不要把审稿变成确定性打分。",
+            "关注：标题、章节标题、开篇、人物动机、时间线、关系、证据与获取、压力升级、对手反扑、下半篇是否疲软、结局回报是否落地。",
+            "输出 Markdown（简体中文）。把会让读者明显弃读的问题与可接受的小瑕疵分开。",
+            "<safety>",
+            "- NEVER 把审稿变成确定性打分；那是别的环节的事。",
+            "- NEVER 仅凭字数微偏否定章节；先判断内容是否完整、戏剧是否到位、回报是否落地。",
+            "- NEVER 把小瑕疵与致命问题混在一起；必须分开列出。",
+            "</safety>",
         ].join("\n")
     }
 }
@@ -684,34 +724,34 @@ fn build_draft_review_user_prompt(input: &ShortFictionDraftReviewInput) -> Strin
     let draft_md = render_draft_markdown(&input.draft, input.language);
     if input.language == Language::En {
         vec![
-            "## Creative Direction",
+            "## 创作方向",
             &input.direction,
             "",
-            "## Original Story Plan",
+            "## 原始故事方案",
             &input.outline_markdown,
             "",
-            "## Draft Under Review",
+            "## 待审草稿",
             &draft_md,
             "",
-            "## Review Instructions",
-            "Talk like a person: where does this story pull, where does it break immersion, where does it read like a synopsis, where does the back half sag, which title or chapter titles would nobody tap?",
-            "Never condemn a chapter just for running slightly short or long; judge first whether the content is complete, dramatic, and paying off.",
+            "## 审稿说明",
+            "像真人那样说话：哪里拉着读者走、哪里打破沉浸、哪里读起来像梗概、下半篇哪里疲软、哪个标题或章节标题没人会点？",
+            "绝不要仅凭章节略短或略长就否定；先判断内容是否完整、戏剧是否到位、回报是否落地。",
         ]
         .join("\n")
     } else {
         vec![
-            "## Creative Direction",
+            "## 创作方向",
             &input.direction,
             "",
-            "## Original Story Plan",
+            "## 原始故事方案",
             &input.outline_markdown,
             "",
-            "## Draft Under Review",
+            "## 待审草稿",
             &draft_md,
             "",
-            "## Review Instructions",
-            "Talk like a person: where does this story pull, where does it break immersion, where does it read like a synopsis, where does the back half sag, which title or chapter titles would nobody tap? Write your review in Simplified Chinese.",
-            "Never condemn a chapter just for running slightly short or long; judge first whether the content is complete, dramatic, and paying off.",
+            "## 审稿说明",
+            "像真人那样说话：哪里拉着读者走、哪里打破沉浸、哪里读起来像梗概、下半篇哪里疲软、哪个标题或章节标题没人会点？审稿意见用简体中文撰写。",
+            "绝不要仅凭章节略短或略长就否定；先判断内容是否完整、戏剧是否到位、回报是否落地。",
         ]
         .join("\n")
     }
@@ -720,58 +760,58 @@ fn build_draft_review_user_prompt(input: &ShortFictionDraftReviewInput) -> Strin
 fn build_draft_revision_followup(input: &ShortFictionDraftRevisionInput) -> String {
     if input.language == Language::En {
         let mut parts: Vec<String> = vec![
-            "Based on the review notes, write the complete second-version draft.".to_string(),
-            "This is round two of the same story: keep what worked in the last version, fix what breaks immersion or kills the desire to keep reading.".to_string(),
-            "Do not output a list of suggested edits, and do not patch just a few chapters — output the complete draft.".to_string(),
+            "基于审稿意见，写出完整的第二版草稿。".to_string(),
+            "这是同一故事的第二轮：保留上一版有效的部分，修复打破沉浸或让人不想继续读的问题。".to_string(),
+            "不要输出「建议修改清单」，也不要只补几章——必须输出完整草稿。".to_string(),
             String::new(),
-            "## Review Notes".to_string(),
+            "## 审稿意见".to_string(),
             input.review.trim().to_string(),
             String::new(),
-            "## Round-Two Priorities".to_string(),
-            "- Fix the immersion-breaking problems: timeline, logic, relationships, evidence access, physical state.".to_string(),
-            "- Add real scenes to the back half; never close on result summaries.".to_string(),
-            "- Keep the title, opening, chapter titles, and main title consistent with the prose, though the title may be re-sharpened from the final draft for platform click appeal.".to_string(),
-            "- Word count is calibration only: pad short chapters with real scenes; trim long ones by cutting explanation and repeated reactions.".to_string(),
+            "## 第二轮优先级".to_string(),
+            "- 修复打破沉浸的问题：时间线、逻辑、关系、证据获取、身体状态。".to_string(),
+            "- 给下半篇补上真实场景；绝不要用结果摘要收尾。".to_string(),
+            "- 标题、开篇、章节标题、主标题要与正文一致；不过标题可基于终稿重新锐化以提升平台点击吸引力。".to_string(),
+            "- 字数仅作校准：用真实场景补足过短章节；通过删减解释和重复反应来精简过长章节。".to_string(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_TITLE ===".to_string(),
-            "The story title — plain text, platform-ready, nothing else".to_string(),
+            "故事标题——纯文本，平台可用，不要其它内容".to_string(),
             "=== SHORT_FICTION_OPENING_HOOK ===".to_string(),
-            "An optional pre-story hook of about 130 words; if no standalone teaser is needed, still write the small first-screen scene that opens chapter 1".to_string(),
+            "可选的正文前钩子，约 130 个英文单词；若不需要独立 teaser，仍要写出第 1 章开头的小型首屏场景".to_string(),
         ];
         for chapter in 1..=input.chapter_count {
             parts.push(format!("=== CHAPTER {} TITLE ===", chapter));
-            parts.push("Chapter title — plain text only, no #, no \"Chapter N\" prefix".to_string());
+            parts.push("章节标题——纯文本，无 #，无 \"Chapter N\" 前缀".to_string());
             parts.push(format!("=== CHAPTER {} CONTENT ===", chapter));
-            parts.push(format!("Chapter {} prose — full scenes, no synopsis, no author notes", chapter));
+            parts.push(format!("第 {} 章正文——完整场景，无梗概，无作者注", chapter));
         }
         parts
     } else {
         let mut parts: Vec<String> = vec![
-            "Based on the review notes, write the complete second-version draft. Write in Simplified Chinese.".to_string(),
-            "This is round two of the same story: keep what worked in the last version, fix what breaks immersion or kills the desire to keep reading.".to_string(),
-            "Do not output a list of suggested edits, and do not patch just a few chapters — output the complete draft.".to_string(),
+            "基于审稿意见，写出完整的第二版草稿。用简体中文撰写。".to_string(),
+            "这是同一故事的第二轮：保留上一版有效的部分，修复打破沉浸或让人不想继续读的问题。".to_string(),
+            "不要输出「建议修改清单」，也不要只补几章——必须输出完整草稿。".to_string(),
             String::new(),
-            "## Review Notes".to_string(),
+            "## 审稿意见".to_string(),
             input.review.trim().to_string(),
             String::new(),
-            "## Round-Two Priorities".to_string(),
-            "- Fix the immersion-breaking problems: timeline, logic, relationships, evidence access, physical state.".to_string(),
-            "- Add real scenes to the back half; never close on result summaries.".to_string(),
-            "- Keep the title, opening, chapter titles, and main title consistent with the prose, though the title may be re-sharpened from the final draft for platform click appeal.".to_string(),
-            "- Character count is calibration only: pad short chapters with real scenes; trim long ones by cutting explanation and repeated reactions.".to_string(),
+            "## 第二轮优先级".to_string(),
+            "- 修复打破沉浸的问题：时间线、逻辑、关系、证据获取、身体状态。".to_string(),
+            "- 给下半篇补上真实场景；绝不要用结果摘要收尾。".to_string(),
+            "- 标题、开篇、章节标题、主标题要与正文一致；不过标题可基于终稿重新锐化以提升平台点击吸引力。".to_string(),
+            "- 字数仅作校准：用真实场景补足过短章节；通过删减解释和重复反应来精简过长章节。".to_string(),
             String::new(),
-            "## Output Format".to_string(),
+            "## 输出格式".to_string(),
             "=== SHORT_FICTION_TITLE ===".to_string(),
-            "The story title — plain text, platform-ready, in Simplified Chinese, nothing else".to_string(),
+            "故事标题——纯文本，平台可用，简体中文，不要其它内容".to_string(),
             "=== SHORT_FICTION_OPENING_HOOK ===".to_string(),
-            "An optional pre-story hook of about 200 Chinese characters; if no standalone teaser is needed, still write the small first-screen scene that opens chapter 1".to_string(),
+            "可选的正文前钩子，约 200 个中文字符；若不需要独立 teaser，仍要写出第 1 章开头的小型首屏场景".to_string(),
         ];
         for chapter in 1..=input.chapter_count {
             parts.push(format!("=== CHAPTER {} TITLE ===", chapter));
-            parts.push("Chapter title — plain text only, no #, no \"Chapter N\" prefix (in Simplified Chinese)".to_string());
+            parts.push("章节标题——纯文本，无 #，无 \"Chapter N\" 前缀（简体中文）".to_string());
             parts.push(format!("=== CHAPTER {} CONTENT ===", chapter));
-            parts.push(format!("Chapter {} prose — full scenes, no synopsis, no author notes (in Simplified Chinese)", chapter));
+            parts.push(format!("第 {} 章正文——完整场景，无梗概，无作者注（简体中文）", chapter));
         }
         parts
     }
@@ -784,15 +824,25 @@ fn build_draft_revision_followup(input: &ShortFictionDraftRevisionInput) -> Stri
 fn build_package_system_prompt(language: Language) -> String {
     if language == Language::En {
         vec![
-            "You are a short-fiction packaging editor. From the final draft you produce the synopsis, the selling points, and the cover-image prompt.",
-            "Never invent a main title different from the draft's. All packaging must revolve around the draft's actual title and plot.",
-            "Think of the cover prompt as a mobile portrait book cover: 3:4 vertical, a large title zone, strong character emotion, one or two instantly recognizable props, high-contrast colors — not a movie poster.",
+            "你是短篇包装编辑。基于终稿产出简介、卖点和封面图提示词。",
+            "永远不要编造与终稿不同的主标题。所有包装必须围绕终稿实际标题与剧情。",
+            "把封面提示词想象成手机端竖屏书封：3:4 竖屏、大标题区、强角色情绪、一两个一眼可辨的道具、高对比配色——不要电影海报风。",
+            "<safety>",
+            "- NEVER 编造与终稿不同的主标题；包装必须围绕终稿实际标题与剧情。",
+            "- NEVER 把封面提示词写成电影海报风或宽屏横版；必须是 3:4 竖屏手机书封。",
+            "- NEVER 在简介里剧透完整剧情走向；只抓冲突、压力与回报。",
+            "</safety>",
         ].join("\n")
     } else {
         vec![
-            "You are a short-fiction packaging editor. From the final draft you produce the synopsis, the selling points, and the cover-image prompt. Write the synopsis and selling points in Simplified Chinese.",
-            "Never invent a main title different from the draft's. All packaging must revolve around the draft's actual title and plot.",
-            "Think of the cover prompt as a mobile portrait book cover: 3:4 vertical, a large title zone, strong character emotion, one or two instantly recognizable props, high-contrast colors — not a movie poster.",
+            "你是短篇包装编辑。基于终稿产出简介、卖点和封面图提示词。简介与卖点用简体中文撰写。",
+            "永远不要编造与终稿不同的主标题。所有包装必须围绕终稿实际标题与剧情。",
+            "把封面提示词想象成手机端竖屏书封：3:4 竖屏、大标题区、强角色情绪、一两个一眼可辨的道具、高对比配色——不要电影海报风。",
+            "<safety>",
+            "- NEVER 编造与终稿不同的主标题；包装必须围绕终稿实际标题与剧情。",
+            "- NEVER 把封面提示词写成电影海报风或宽屏横版；必须是 3:4 竖屏手机书封。",
+            "- NEVER 在简介里剧透完整剧情走向；只抓冲突、压力与回报。",
+            "</safety>",
         ].join("\n")
     }
 }
@@ -801,46 +851,46 @@ fn build_package_user_prompt(input: &ShortFictionPackageInput) -> String {
     let draft_md = render_draft_markdown(&input.draft, input.language);
     if input.language == Language::En {
         vec![
-            "## Creative Direction",
+            "## 创作方向",
             &input.direction,
             "",
-            "## Story Plan",
+            "## 故事方案",
             &input.outline_markdown.trim(),
             "",
-            "## Final Draft",
+            "## 终稿",
             &draft_md.trim(),
             "",
-            "## Output Format",
+            "## 输出格式",
             "=== SHORT_FICTION_PACKAGE_TITLE ===",
             &input.draft.story_title,
             "=== SHORT_FICTION_INTRO ===",
-            "A 70-120 word platform synopsis that grabs the conflict, the pressure, and the payoff — never a spoiler-filled play-by-play.",
+            "70-120 个英文单词的平台简介，抓冲突、压力与回报——绝不要剧透式逐幕流水账。",
             "=== SHORT_FICTION_SELLING_POINTS ===",
-            "- 3 to 6 selling points, one per line",
+            "- 3 到 6 条卖点，每条一行",
             "=== SHORT_FICTION_COVER_PROMPT ===",
-            "An English cover-generation prompt: 3:4 portrait, main title zone, character emotion, props, color palette, typography style, and what to avoid.",
+            "英文封面生成提示词：3:4 竖屏、主标题区、角色情绪、道具、配色、字体风格、需要避免的元素。",
         ]
         .join("\n")
     } else {
         vec![
-            "## Creative Direction",
+            "## 创作方向",
             &input.direction,
             "",
-            "## Story Plan",
+            "## 故事方案",
             &input.outline_markdown.trim(),
             "",
-            "## Final Draft",
+            "## 终稿",
             &draft_md.trim(),
             "",
-            "## Output Format",
+            "## 输出格式",
             "=== SHORT_FICTION_PACKAGE_TITLE ===",
             &input.draft.story_title,
             "=== SHORT_FICTION_INTRO ===",
-            "A 100-180 Chinese-character platform synopsis that grabs the conflict, the pressure, and the payoff — never a spoiler-filled play-by-play. Write in Simplified Chinese.",
+            "100-180 个中文字符的平台简介，抓冲突、压力与回报——绝不要剧透式逐幕流水账。用简体中文撰写。",
             "=== SHORT_FICTION_SELLING_POINTS ===",
-            "- 3 to 6 selling points, one per line (in Simplified Chinese)",
+            "- 3 到 6 条卖点，每条一行（简体中文）",
             "=== SHORT_FICTION_COVER_PROMPT ===",
-            "A Simplified-Chinese cover-generation prompt: 3:4 portrait, main title zone, character emotion, props, color palette, typography style, and what to avoid.",
+            "简体中文封面生成提示词：3:4 竖屏、主标题区、角色情绪、道具、配色、字体风格、需要避免的元素。",
         ]
         .join("\n")
     }
@@ -849,30 +899,30 @@ fn build_package_user_prompt(input: &ShortFictionPackageInput) -> String {
 fn build_craft_prompt(language: Language) -> String {
     if language == Language::En {
         vec![
-            "## Craft Reminders",
-            "- Salt dissolves in the soup: values and ambition show through action, never through slogans.",
-            "- Show, don't tell: let behavior, evidence, concrete detail, and staging make the reader feel a character's state.",
-            "- Simile restraint: do not lean on \"like / as if / as though\" as default rhetoric — at most one simile per scene; prefer a precise verb and a concrete action over a figure of speech.",
-            "- Anti-AI wording: ration AI-tell words (delve, tapestry, testament, intricate, pivotal); do not use the \"It wasn't X; it was Y\" construction as a crutch; keep analytical report language (\"core motivation\", \"strategic advantage\") out of the prose.",
-            "- No padding: every scene must advance conflict, causality, emotion, evidence, pressure, payoff, or a relationship.",
-            "- The climax is a scene, not a recap: eruptions of conflict, reversals, life-or-death beats, and reveals must play out beat by beat on the page (action, dialogue, the five senses). The heavier a chapter's information load, the more its key beat must be staged as a full scene — never compressed into one line like \"then he saved her and the rival was arrested.\"",
-            "- Payoffs need setup: every reversal, comeuppance, reconciliation, revenge, or identity reveal must ride a chain of evidence and causality.",
-            "- Side characters need motives: even the oppressor acts from interest, misjudgment, or fear — never a brainless plot device.",
-            "- Everyday detail must become bait: each detail carries evidence, emotion, characterization, or a later reversal.",
-            "- Mobile-first: short paragraphs, dense information, no vague lyricism or decorative filler.",
+            "## 写作技艺提醒",
+            "- 盐溶于汤：价值观与野心通过行动体现，绝不通过口号。",
+            "- 展示而非告知：让行为、证据、具体细节和舞台调度让读者感受到角色状态。",
+            "- 慎用比喻：不要把 \"like / as if / as though\" 当作默认修辞——每场至多一处比喻；优先用精准动词和具体行动，而非比喻。",
+            "- 反 AI 口吻：限量使用 AI 高频词（delve, tapestry, testament, intricate, pivotal）；不要把 \"It wasn't X; it was Y\" 句式当拐杖；把分析报告用语（\"core motivation\", \"strategic advantage\"）排除在散文之外。",
+            "- 不注水：每场戏必须推进冲突、因果、情感、证据、压力、回报或关系。",
+            "- 高潮是场景不是复盘：冲突爆发、反转、生死节拍、揭示必须逐拍在场上演（行动、对白、五感）。章节信息负载越重，关键节拍越要展开为完整场景——绝不压缩成 \"then he saved her and the rival was arrested.\" 这种一行话。",
+            "- 回报需要铺垫：每个反转、报应、和解、复仇或身份揭示都必须依托证据链与因果链。",
+            "- 配角也要有动机：即使是压迫者，也是出于利益、误判或恐惧——绝不当无脑剧情工具。",
+            "- 日常细节要变成饵：每个细节都要承载证据、情感、人物塑造或后续反转。",
+            "- 移动优先：短段落、高信息密度，不要空泛抒情或装饰性填充。",
         ].join("\n")
     } else {
         vec![
-            "## Craft Reminders",
-            "- Salt dissolves in the soup: values and ambition show through action, never through slogans.",
-            "- Show, don't tell: let behavior, evidence, concrete detail, and staging make the reader feel a character's state.",
-            "- Simile restraint: do not lean on \"像 / 仿佛 / 如同\" as default rhetoric — at most one simile per scene; prefer a precise verb and a concrete action over a figure of speech.",
-            "- No padding: every scene must advance conflict, causality, emotion, evidence, pressure, payoff, or a relationship.",
-            "- The climax is a scene, not a recap: eruptions of conflict, reversals, life-or-death beats, and reveals must play out beat by beat on the page (action, dialogue, the five senses). The heavier a chapter's information load, the more its key beat must be staged as a full scene — never compressed into one line like \"然后他救了人、对手落网.\"",
-            "- Payoffs need setup: every reversal, comeuppance, reconciliation, revenge, or identity reveal must ride a chain of evidence and causality.",
-            "- Side characters need motives: even the oppressor acts from interest, misjudgment, or fear — never a brainless plot device.",
-            "- Everyday detail must become bait: each detail carries evidence, emotion, characterization, or a later reversal.",
-            "- Mobile-first: short paragraphs, dense information, no vague lyricism or decorative filler.",
+            "## 写作技艺提醒",
+            "- 盐溶于汤：价值观与野心通过行动体现，绝不通过口号。",
+            "- 展示而非告知：让行为、证据、具体细节和舞台调度让读者感受到角色状态。",
+            "- 慎用比喻：不要把 \"像 / 仿佛 / 如同\" 当作默认修辞——每场至多一处比喻；优先用精准动词和具体行动，而非比喻。",
+            "- 不注水：每场戏必须推进冲突、因果、情感、证据、压力、回报或关系。",
+            "- 高潮是场景不是复盘：冲突爆发、反转、生死节拍、揭示必须逐拍在场上演（行动、对白、五感）。章节信息负载越重，关键节拍越要展开为完整场景——绝不压缩成 \"然后他救了人、对手落网.\" 这种一行话。",
+            "- 回报需要铺垫：每个反转、报应、和解、复仇或身份揭示都必须依托证据链与因果链。",
+            "- 配角也要有动机：即使是压迫者，也是出于利益、误判或恐惧——绝不当无脑剧情工具。",
+            "- 日常细节要变成饵：每个细节都要承载证据、情感、人物塑造或后续反转。",
+            "- 移动优先：短段落、高信息密度，不要空泛抒情或装饰性填充。",
         ].join("\n")
     }
 }
@@ -881,8 +931,8 @@ fn reference_block(reference: Option<&ShortFictionReference>, language: Language
     match reference {
         Some(r) if !r.text.trim().is_empty() => {
             let heading = match language {
-                Language::En => "## Optional Reference Text",
-                Language::Zh => "## Optional Reference Text",
+                Language::En => "## 可选参考文本",
+                Language::Zh => "## 可选参考文本",
             };
             format!("{}\n{}\n", heading, r.text.trim())
         }
@@ -892,15 +942,15 @@ fn reference_block(reference: Option<&ShortFictionReference>, language: Language
 
 fn v1_outline_header(language: Language) -> &'static str {
     match language {
-        Language::En => "## Previous Outline (v1 — revise on this basis)",
-        Language::Zh => "## Previous Outline (v1 — revise on this basis)",
+        Language::En => "## 上一版方案（v1——在此基础上修订）",
+        Language::Zh => "## 上一版方案（v1——在此基础上修订）",
     }
 }
 
 fn v1_draft_header(language: Language) -> &'static str {
     match language {
-        Language::En => "## Previous Draft (v1 — revise on this basis)",
-        Language::Zh => "## Previous Draft (v1 — revise on this basis)",
+        Language::En => "## 上一版草稿（v1——在此基础上修订）",
+        Language::Zh => "## 上一版草稿（v1——在此基础上修订）",
     }
 }
 

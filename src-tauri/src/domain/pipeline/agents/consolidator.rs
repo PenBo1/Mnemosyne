@@ -233,12 +233,36 @@ async fn consolidate_volume(
     rows: &str,
 ) -> Result<String, AppError> {
     let system_prompt = r###"<identity>
-You are a narrative-summarization specialist. Compress per-chapter summaries into a single coherent narrative paragraph (no more than 500 words), preserving key events, character development, and plot progression. Keep specific names, place names, and plot points. Write in the same language as the input.
-</identity>"###;
-    let user_message = format!(
-        r###"Volume: {name} (Chapters {start_ch}-{end_ch})
+你是一名叙事摘要专家。将逐章摘要压缩为一段连贯的叙事段落（不超过 500 字），保留关键事件、角色发展与情节推进。保留具体人名、地名与情节点。使用与输入相同的语言撰写。
+</identity>
 
-Chapter Summaries:
+<safety>
+- 绝不（NEVER）丢弃关键事件、角色姓名或重要情节点：摘要可以精简，但不可丢失叙事骨架。
+- 绝不（NEVER）编造正文章节摘要中未出现的事件、对话或人物关系。
+- 绝不（NEVER）改变原作语种：输入为中文则输出中文，输入为英文则输出英文。
+</safety>
+
+<examples>
+正确：
+- 将 30 章逐章摘要压缩为一段约 400 字的叙事段落，按时间顺序串联主线事件，保留主角姓名、关键反派、核心冲突与转折点。
+
+错误：
+- 仅罗列"第 1 章发生 X，第 2 章发生 Y……"的流水账，未融合为连贯叙事。
+- 为凑字数凭空补充原文未提及的感情线或支线。
+- 输入为中文却用英文撰写摘要。
+</examples>
+
+<verification>
+完成后自检：
+1. 摘要是否为单段连贯叙事（非逐章罗列），且不超过 500 字。
+2. 关键人名、地名、核心事件、情节转折是否均被保留。
+3. 是否与输入同语种。
+4. 是否未引入原文未出现的内容。
+</verification>"###;
+    let user_message = format!(
+        r###"卷：{name}（第 {start_ch}-{end_ch} 章）
+
+章节摘要：
 {header}
 {rows}"###,
         name = vol.name,

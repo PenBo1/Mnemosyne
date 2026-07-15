@@ -106,16 +106,29 @@ pub async fn compile_compressible_context(
 
 fn build_select_system_prompt() -> String {
     r###"<identity>
-You are the semantic outline-section selector for the authoring system.
+你是创作系统的语义大纲选段器（semantic outline-section selector）。
 </identity>
 
 <responsibilities>
-Select only the outline sections this chapter genuinely needs. Judge by semantic relevance, not by mechanical keyword overlap.
+仅选择本章真正需要的大纲段落。判断依据是语义相关性，而非机械的关键词重叠。
 </responsibilities>
 
 <outputs>
-Return only strict JSON: {"selectedSources":["..."]}. You must use the exact source ids from the candidates. When uncertain, pick the safest relevant anchor — never fabricate ids.
-</outputs>"###.to_string()
+仅返回严格 JSON：{"selectedSources":["..."]}。必须使用候选列表中确切的 source id。当不确定时，选择最安全的相关锚点——绝不编造 id。
+</outputs>
+
+<safety>
+- NEVER 编造不在候选列表中的 source id；越界 id 会被下游过滤丢弃。
+- NEVER 仅凭字面关键词命中就选段；必须从章节目标（goal）的语义出发判断。
+- NEVER 输出 JSON 以外的解释性文字、Markdown 代码围栏或前后缀。
+</safety>
+
+<verification>
+在交付前自检：
+1. 返回的是否仅是 `{"selectedSources":[...]}` 这一个 JSON 对象？
+2. 数组中每个 id 是否都来自候选 source 集合？
+3. 选中数量是否 ≤ 候选总数？
+</verification>"###.to_string()
 }
 
 fn build_select_user_message(request: &OutlineSelectionRequest) -> String {
@@ -123,17 +136,17 @@ fn build_select_user_message(request: &OutlineSelectionRequest) -> String {
         .candidates
         .iter()
         .enumerate()
-        .map(|(i, c)| format!("#{} {}\nheading: {}\n{}", i + 1, c.source, c.heading, c.excerpt))
+        .map(|(i, c)| format!("#{} {}\n标题：{}\n{}", i + 1, c.source, c.heading, c.excerpt))
         .collect::<Vec<_>>()
         .join("\n\n");
 
     format!(
-        r###"File: {file_name}
-Chapter: {chapter_number}
-Goal: {goal}
-Outline node: {outline_node}
+        r###"文件：{file_name}
+章节：{chapter_number}
+本章目标：{goal}
+大纲节点：{outline_node}
 
-Candidate sections:
+候选段落：
 {candidates}"###,
         file_name = request.file_name,
         chapter_number = request.chapter_number,
@@ -145,13 +158,27 @@ Candidate sections:
 
 fn build_compile_system_prompt() -> String {
     r###"<identity>
-You are the semantic context compiler for the authoring system.
+你是创作系统的语义上下文编译器（semantic context compiler）。
 </identity>
 
 <rules>
-You may compile only the [compressible context]. The [protected context] is a bound reference: do not rewrite it, do not replace it with a summary, do not weaken it.
-Emit concise Markdown with source pointers preserved. Retain names, unfulfilled promises, evidence, time points, and constraints that will affect the next chapter; discard low-relevance noise.
-</rules>"###.to_string()
+你只能编译【可压缩上下文】。【受保护上下文】是绑定参照：不得改写、不得用摘要替代、不得削弱。
+输出简洁 Markdown 并保留来源指针。保留会影响下一章的人名、未兑现承诺、证据、时间点、约束；丢弃低相关噪声。
+</rules>
+
+<safety>
+- NEVER 改写、替代或削弱【受保护上下文】；它必须原样作为参照保留。
+- NEVER 丢弃会影响下一章的人名、承诺、证据、时间点或硬约束。
+- NEVER 编造未在原文出现的细节；压缩只做减法，不做加法。
+</safety>
+
+<verification>
+在交付前自检：
+1. 输出是否仅包含【可压缩上下文】的编译结果，未混入受保护上下文的改写？
+2. 来源指针（source 路径锚点）是否保留？
+3. 估算 token 数是否在 user message 给出的预算内？
+4. 是否丢弃了低相关噪声（不影响下一章的细节）？
+</verification>"###.to_string()
 }
 
 fn build_compile_user_message(request: &CompressibleContextRequest) -> String {
@@ -159,25 +186,25 @@ fn build_compile_user_message(request: &CompressibleContextRequest) -> String {
     let compressible_block = render_context_entries(&request.compressible_entries);
 
     format!(
-        r###"Chapter: {chapter_number}
-Goal: {goal}
-Post-compression target budget: no more than {max_input_tokens} estimated input tokens
+        r###"章节：{chapter_number}
+本章目标：{goal}
+压缩后目标预算：不超过 {max_input_tokens} 估算输入 token
 
-## Protected Context (reference only — do not compile this)
+## Protected Context（受保护上下文：仅作参照，不得编译此部分）
 {protected_block}
 
-## Compressible Context (compile only this part)
+## Compressible Context（可压缩上下文：仅编译此部分）
 {compressible_block}"###,
         chapter_number = request.chapter_number,
         goal = request.goal,
         max_input_tokens = request.max_input_tokens,
         protected_block = if protected_block.is_empty() {
-            "(none)".to_string()
+            "（无）".to_string()
         } else {
             protected_block
         },
         compressible_block = if compressible_block.is_empty() {
-            "(none)".to_string()
+            "（无）".to_string()
         } else {
             compressible_block
         },
@@ -189,11 +216,11 @@ fn render_context_entries(entries: &[ContextEntry]) -> String {
         .iter()
         .map(|e| {
             format!(
-                "### {}\nReason: {}\n{}",
+                "### {}\n理由：{}\n{}",
                 e.source,
                 e.reason,
                 if e.excerpt.is_empty() {
-                    "(no excerpt)"
+                    "（无摘录）"
                 } else {
                     &e.excerpt
                 }
@@ -399,10 +426,10 @@ mod tests {
         ];
         let rendered = render_context_entries(&entries);
         assert!(rendered.contains("### story/outline.md#a1"));
-        assert!(rendered.contains("Reason: 主线锚点"));
+        assert!(rendered.contains("理由：主线锚点"));
         assert!(rendered.contains("主角进城"));
         assert!(rendered.contains("### wiki/chars.md#h2"));
-        assert!(rendered.contains("(no excerpt)"));
+        assert!(rendered.contains("（无摘录）"));
     }
 
     #[test]

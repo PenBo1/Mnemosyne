@@ -175,18 +175,18 @@ fn resolve_auto_output_mode(issues: &[AuditIssue]) -> AutoOutputMode {
 
 fn build_system_prompt(book: &BookConfig, mode: ReviseMode, auto_output_mode: AutoOutputMode) -> String {
     let mode_desc = match mode {
-        ReviseMode::Polish => "Polish: only touch expression, rhythm, and paragraph breathing — never facts or plot outcomes. Allowed operations: word substitution, sentence reordering, punctuation-rhythm tweaks.",
-        ReviseMode::Rewrite => "Rewrite: you may restructure problem paragraphs and adjust imagery and narrative force, but prefer to retain the vast majority of the original sentences.",
-        ReviseMode::Rework => "Rework: you may restructure scene progression and conflict organization, but you must not alter the main setup or major-event outcomes.",
-        ReviseMode::AntiDetect => "Anti-detection rewrite: keep the plot intact while lowering AI-generation detectability. Break sentence-pattern regularity, substitute with colloquial phrasing, reduce the density of the character \"了\" (le), lower transition-word frequency, externalize emotion, drop narrator conclusions, particularize crowd reactions, differentiate paragraph lengths.",
-        ReviseMode::SpotFix => "Spot-fix: only modify the specific sentences or paragraphs the audit flagged — every other piece of content must remain untouched.",
+        ReviseMode::Polish => "Polish（润色）：只触碰表达、节奏与段落呼吸——绝不改动事实或剧情结果。允许的操作：词语替换、句子重排、标点节奏微调。",
+        ReviseMode::Rewrite => "Rewrite（重写）：可以重组问题段落、调整意象与叙事力度，但应尽量保留原文绝大多数的句子。",
+        ReviseMode::Rework => "Rework（重构）：可以重组场景推进与冲突组织，但绝不能改动主设定与大事件结果。",
+        ReviseMode::AntiDetect => "Anti-detection（反 AI 检测改写）：保持剧情不变，降低 AI 生成可检测性。打破句式规律、替换为口语化表达、降低\"了\"字密度、降低过渡词频率、外化情绪、删除旁白结论、具体化群众反应、差异化段落长度。",
+        ReviseMode::SpotFix => "Spot-fix（定点修复）：只修改审稿指出的具体句子或段落——其余内容必须原封不动。",
         ReviseMode::Auto => "",
     };
 
     let routing_directive = if mode == ReviseMode::Auto {
         match auto_output_mode {
-            AutoOutputMode::RewriteOnly => "\n\nRouting directive: the blocking issues the reviewer reported are structural/semantic errors (character-logic collapse, main-line drift, missing payoff, timeline error, unresolved hook, memo drift, etc.). You must output REVISED_CONTENT — outputting PATCHES is forbidden.",
-            AutoOutputMode::PatchOnly => "\n\nRouting directive: the blocking issues the reviewer reported are local errors (wording, paragraph shape, fatigue words, information boundary, knowledge pollution). You must output only PATCHES — do not rewrite the whole chapter.",
+            AutoOutputMode::RewriteOnly => "\n\n路由指令：审稿给出的阻塞类问题是结构/语义错误（角色逻辑崩坏、主线漂移、缺兑现、时间线错误、伏笔未解、memo 漂移等）。你必须输出 REVISED_CONTENT——禁止输出 PATCHES。",
+            AutoOutputMode::PatchOnly => "\n\n路由指令：审稿给出的阻塞类问题是局部错误（措辞、段落形态、疲劳词、信息边界、知识库污染）。你必须只输出 PATCHES——禁止重写整章。",
             AutoOutputMode::AllowFull => "",
         }
     } else {
@@ -195,60 +195,85 @@ fn build_system_prompt(book: &BookConfig, mode: ReviseMode, auto_output_mode: Au
 
     let output_format = if mode == ReviseMode::SpotFix || auto_output_mode == AutoOutputMode::PatchOnly {
         r#"=== FIXED_ISSUES ===
-(itemize what each fix addressed)
+（逐条说明每条修复解决了什么）
 
 === PATCHES ===
 --- PATCH 1 ---
 TARGET_TEXT:
-(the exact original sentence or paragraph copied verbatim from the source, uniquely matchable)
+（从原文逐字复制的原句或原段落，必须能在原文中唯一匹配）
 REPLACEMENT_TEXT:
-(the local replacement text)
+（局部替换文本）
 --- END PATCH ---
 
 === UPDATED_STATE ===
-(the full updated state card)
+（完整更新后的状态卡）
 
 === UPDATED_HOOKS ===
-(the full updated hook pool)"#
+（完整更新后的伏笔池）"#
     } else {
         r#"=== FIXED_ISSUES ===
-(itemize what each fix addressed)
+（逐条说明每条修复解决了什么）
 
 === REVISED_CONTENT ===
-(the full revised prose)
+（完整修订后的正文）
 
 === UPDATED_STATE ===
-(the full updated state card)
+（完整更新后的状态卡）
 
 === UPDATED_HOOKS ===
-(the full updated hook pool)"#
+（完整更新后的伏笔池）"#
     };
 
     format!(
         r#"<identity>
-You are a professional web-fiction revision editor. Your task is to correct a chapter based on the audit feedback.
+你是一名专业的网文修订编辑。你的任务是根据审计反馈修订章节。
 </identity>
 
 ## Book Information
-- Title: {title}
-- Target chapter count: {target_chapters} chapters{mode_block}{routing_directive}
+- 书名：{title}
+- 目标章数：{target_chapters} 章{mode_block}{routing_directive}
 
 <revision_principles>
-1. Fix the root cause — do not apply surface-level polish.
-2. Hook status must stay in sync with the hook pool.
-3. Do not alter the plot direction or the core conflict.
-4. Preserve the original's voice, rhythm, and breathing — do not compress transitions or delete deceleration passages.
-5. Externalize emotion through action (do not write "he felt angry" — write the action). Convey values through behavior.
-6. Different characters must speak differently. "The crowd gasped in unison" is forbidden.
-7. Stack bad on bad — each layer must be worse than the last.
-8. After revising, synchronously update the state card and the hook pool.
+1. 修复根因——禁止表面润色遮盖问题。
+2. 伏笔状态必须与伏笔池同步更新。
+3. 不得改变剧情走向或核心冲突。
+4. 保留原文的语感、节奏与呼吸——不要压缩过渡段、不要删除减速段落。
+5. 通过动作外化情绪（不要写"他很愤怒"——写他做了什么动作）。通过行为传达价值观。
+6. 不同角色说话风格必须不同。"众人齐声惊呼"是禁止的。
+7. 坏事层层叠加——每一层必须比上一层更糟。
+8. 修订后同步更新状态卡与伏笔池。
 </revision_principles>
 
 ## Small-Goal Cycle Revision Guidance
 
-- If this chapter should be in the "aftermath" phase but is still applying pressure, rewrite the densest conflict passage into one that shows change — who lost what, whose attitude shifted, what the new normal is.
-- If this chapter should be in the "eruption" phase but did not clearly deliver, find the scene closest to a payoff and amplify it — make the promised release exceed reader expectations.
-- If a slice-of-life passage does not serve the main line, rewrite it as "bait": insert a future-pointing detail, a hint, or a character reaction.
+- 如果本章应处于"余波"阶段但仍在持续施压，把最密集的冲突段落改写成展示变化的段落——谁失去了什么、谁的态度变了、新的常态是什么。
+- 如果本章应处于"爆发"阶段但未清晰交付，找到最接近兑现的场景并放大它——让承诺的释放超出读者预期。
+- 如果日常段落不服务主线，把它改写成"饵"：插入一个指向未来的细节、一个暗示、一个角色反应。
+
+<safety>
+- NEVER 假装修好未解决问题——任何 FIXED_ISSUES 条目必须在原文中可验证地对应一处修改。
+- NEVER 在修订中悄悄改变人物动机或主线方向——核心冲突与剧情走向必须与原文保持一致。
+- NEVER 输出元层评论（如"已按要求修改"、"希望符合要求"）——只输出区块标记与内容。
+</safety>
+
+<examples>
+✅ Good（根因修复 + 动作外化）：
+- TARGET_TEXT: 他很愤怒，转身离开。
+- REPLACEMENT_TEXT: 他没说话，只是把茶碗往桌上一搁，瓷底磕在木面上发出脆响。转身时衣袖扫落了茶盖，他没回头去捡。
+
+❌ Bad（表面润色 + 内心独白代替动作）：
+- TARGET_TEXT: 他很愤怒，转身离开。
+- REPLACEMENT_TEXT: 他感到十分愤怒和悲伤，内心充满复杂的情绪，于是转身离开了。
+</examples>
+
+<verification>
+完成修订后请自检：
+1. FIXED_ISSUES 中的每一条是否都能在 PATCHES / REVISED_CONTENT 中找到对应的实际修改？
+2. UPDATED_STATE 与 UPDATED_HOOKS 是否与修订后的正文同步（伏笔状态、角色状态、关系变化）？
+3. 是否在修订中悄悄改变了主线方向或核心冲突？若有，回退。
+4. 输出是否只包含 === 区块标记与内容，没有任何元层评论？
+若任一项不通过，重新输出。
+</verification>
 
 ## Output Format
 
@@ -282,7 +307,7 @@ fn build_user_message(
             .iter()
             .map(|i| {
                 format!(
-                    "- [{:?}] {}: {}\n  Suggestion: {}",
+                    "- [{:?}] {}: {}\n  建议：{}",
                     i.severity, i.category, i.description, i.suggestion
                 )
             })
@@ -297,7 +322,7 @@ fn build_user_message(
     };
 
     format!(
-        r#"Revise Chapter {chapter_number}.
+        r#"请修订第 {chapter_number} 章。
 
 ## Audit Issues
 {issue_list}
@@ -334,7 +359,7 @@ fn build_user_message(
         story_frame = ctx.story_frame,
         book_rules = ctx.book_rules,
         style_guide = if ctx.style_guide.is_empty() {
-            "(no style guide)"
+            "（无风格指南）"
         } else {
             &ctx.style_guide
         },
@@ -360,13 +385,13 @@ fn build_tiered_issue_list(issues: &[AuditIssue]) -> String {
 
     let mut parts = Vec::new();
     if !critical.is_empty() {
-        parts.push(format!("## Critical (must resolve)\n{}", critical.join("\n")));
+        parts.push(format!("## Critical (必须解决)\n{}", critical.join("\n")));
     }
     if !high.is_empty() {
-        parts.push(format!("## High (should improve)\n{}", high.join("\n")));
+        parts.push(format!("## High (应当改进)\n{}", high.join("\n")));
     }
     if !medium.is_empty() {
-        parts.push(format!("## Medium (reference suggestions)\n{}", medium.join("\n")));
+        parts.push(format!("## Medium (参考建议)\n{}", medium.join("\n")));
     }
 
     parts.join("\n\n")

@@ -106,33 +106,60 @@ fn is_safe_output(
 fn build_system_prompt(mode: NormalizeMode, target_words: u32, soft_min: u32, soft_max: u32) -> String {
     let mode_desc = match mode {
         NormalizeMode::Compress => format!(
-            "The current chapter exceeds the {soft_max}-word ceiling and must be compressed into the {soft_min}-{soft_max} word band. While compressing, preserve every fact, every key hook, and every character name; cut redundant description and transitional passages; introduce no new subplots."
+            "当前章节超出 {soft_max} 字上限，必须压缩至 {soft_min}-{soft_max} 字区间内。压缩时保留每一个事实、每一个关键钩子与每一个角色姓名；删除冗余描写与过渡段落；不得引入新的支线。"
         ),
         NormalizeMode::Expand => format!(
-            "The current chapter falls short of the {soft_min}-word floor and must be expanded into the {soft_min}-{soft_max} word band. While expanding, add sensory detail, action description, and dialogue layers; introduce no new subplots or new characters."
+            "当前章节不足 {soft_min} 字下限，必须扩写至 {soft_min}-{soft_max} 字区间内。扩写时增加感官细节、动作描写与对话层次；不得引入新的支线或新的角色。"
         ),
         NormalizeMode::None => String::new(),
     };
 
     format!(
         r###"<identity>
-You are a word-count correction editor for web fiction. Your task is to apply a single correction pass that brings the chapter's word count inside the target band.
+你是一名网络小说的字数修正编辑。你的任务是执行单次修正，使章节字数落在目标区间内。
 </identity>
 
-## This Task
+## 本次任务
 {mode_desc}
 
 <correction_principles>
-- Target word count: {target_words} words
-- Soft boundary: {soft_min}-{soft_max} words
-- Preserve every existing fact, key hook, and character name.
-- Introduce no new subplots, no new characters, no new events.
-- Preserve the original voice and narrative rhythm.
+- 目标字数：{target_words} 字
+- 软边界区间：{soft_min}-{soft_max} 字
+- 必须保留所有既有事实、关键钩子与角色姓名。
+- 不得引入新的支线、新的角色、新的事件。
+- 保持原作的语感与叙事节奏。
 </correction_principles>
 
-## Output Format
+<safety>
+- 绝不（NEVER）篡改既有事实：不得修改已发生事件的结果、人物关系或世界设定。
+- 绝不（NEVER）补造新情节：扩写时不得新增支线、新角色或新事件；压缩时不得删除关键钩子或人物姓名。
+- 绝不（NEVER）附加任何说明、注释、代码块标记或前后缀，只输出修正后的正文本身。
+</safety>
 
-Emit the corrected full prose directly — no commentary, no code-fence markers, no prefixes or suffixes."###,
+<examples>
+正确（压缩模式）：
+- 删除冗余的环境描写与过渡段，但保留人物对话、关键钩子与事实陈述。
+
+正确（扩写模式）：
+- 在既有场景中增加感官细节、动作描写、对话层次，不引入新角色或新支线。
+
+错误：
+- 为凑字数新增一段未在原大纲中出现的新支线剧情。
+- 删除某个人物的姓名以缩短篇幅，导致事实丢失。
+- 输出 ```代码块``` 或添加"以下是修正后的正文："等说明文字。
+</examples>
+
+<verification>
+完成后自检：
+1. 字数是否落在 {soft_min}-{soft_max} 软边界内（至少未跨越相反硬边界）。
+2. 是否所有既有事实、关键钩子、角色姓名均被保留。
+3. 是否新增了支线、角色或事件（应为否）。
+4. 输出是否为纯正文，无任何前后缀、注释或代码块标记。
+</verification>
+
+## 输出格式
+
+直接输出修正后的完整正文 —— 不加任何说明、不加代码块标记、不加前后缀。"###,
         mode_desc = mode_desc,
         target_words = target_words,
         soft_min = soft_min,
@@ -142,9 +169,9 @@ Emit the corrected full prose directly — no commentary, no code-fence markers,
 
 fn build_user_message(chapter_content: &str, current_count: u32, _mode: NormalizeMode) -> String {
     format!(
-        r###"Current word count: {current_count} words
+        r###"当前字数：{current_count} 字
 
-## Prose to Correct
+## 待修正正文
 {chapter_content}"###,
         current_count = current_count,
         chapter_content = chapter_content,
