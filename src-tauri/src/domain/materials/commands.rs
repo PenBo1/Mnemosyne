@@ -30,7 +30,10 @@ pub async fn material_retrieve(
     data_dir: State<'_, DataDir>,
     input: RetrieveMaterialsInput,
 ) -> Result<IpcResponse<Vec<RetrievedMaterial>>, AppError> {
-    let results = retrieve_materials(&data_dir, &input)?;
+    let data_dir = data_dir.inner().clone();
+    let results = tokio::task::spawn_blocking(move || retrieve_materials(&data_dir, &input))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(results))
 }
 
@@ -38,7 +41,10 @@ pub async fn material_retrieve(
 pub async fn material_list(
     data_dir: State<'_, DataDir>,
 ) -> Result<IpcResponse<Vec<MaterialAsset>>, AppError> {
-    let assets = list_material_assets(&data_dir)?;
+    let data_dir = data_dir.inner().clone();
+    let assets = tokio::task::spawn_blocking(move || list_material_assets(&data_dir))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(assets))
 }
 
@@ -48,6 +54,9 @@ pub async fn material_delete(
     material_id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
     validate_id(&material_id, "material_id").map_err(AppError::invalid_input)?;
-    let removed = delete_material(&data_dir, &material_id)?;
+    let data_dir = data_dir.inner().clone();
+    let removed = tokio::task::spawn_blocking(move || delete_material(&data_dir, &material_id))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::deleted(removed))
 }

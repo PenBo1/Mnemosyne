@@ -84,7 +84,7 @@ impl UserOverride {
 
         self.workspace_overrides
             .entry(workspace_pattern)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(operation_pattern, override_entry);
 
         self.updated_at = Utc::now();
@@ -138,12 +138,12 @@ impl UserOverride {
         let now = Utc::now();
 
         self.global_overrides.retain(|_, override_entry| {
-            override_entry.expires_at.map_or(true, |expires| expires > now)
+            override_entry.expires_at.is_none_or(|expires| expires > now)
         });
 
         for workspace_map in self.workspace_overrides.values_mut() {
             workspace_map.retain(|_, override_entry| {
-                override_entry.expires_at.map_or(true, |expires| expires > now)
+                override_entry.expires_at.is_none_or(|expires| expires > now)
             });
         }
 

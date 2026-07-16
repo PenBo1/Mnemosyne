@@ -5,17 +5,25 @@ use crate::domain::novel::crawler;
 use crate::domain::novel::source;
 use crate::domain::novel::types::{BookSource, LocalBookItem, SearchBookResult};
 use tauri::State;
+use tokio::sync::Mutex;
+use std::sync::OnceLock;
 
 const MAX_TITLE_LEN: usize = 500;
 const MAX_GENRE_LEN: usize = 100;
 const MAX_KEYWORD_LEN: usize = 200;
 
+/// 全局串行化 novel_sources.json 的读改写，防止 TOCTOU 竞态。
+fn novel_sources_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn validate_novel_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "novel_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "novel_id").map_err(AppError::invalid_input)
 }
 
 fn validate_workspace_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "workspace_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "workspace_id").map_err(AppError::invalid_input)
 }
 
 fn validate_title(title: &str) -> Result<(), AppError> {
@@ -122,17 +130,21 @@ pub async fn novel_source_list(
     state: State<'_, DbState>,
 ) -> Result<IpcResponse<Vec<BookSource>>, AppError> {
     let sources_path = state.data_dir.root().join("novel_sources.json");
-    
+
     if !sources_path.exists() {
         return Ok(IpcResponse::ok(Vec::new()));
     }
-    
-    let content = std::fs::read_to_string(&sources_path)
-        .map_err(|_| AppError::file_read_error(sources_path.display().to_string()))?;
-    
-    let sources: Vec<BookSource> = serde_json::from_str(&content)
-        .map_err(|e| AppError::internal(format!("Failed to parse novel sources: {}", e)))?;
-    
+
+    // 文件 I/O 卸载到阻塞线程池
+    let sources = tokio::task::spawn_blocking(move || -> Result<Vec<BookSource>, AppError> {
+        let content = std::fs::read_to_string(&sources_path)
+            .map_err(|e| AppError::internal(format!("Failed to read novel sources: {}", e)))?;
+        serde_json::from_str(&content)
+            .map_err(|e| AppError::internal(format!("Failed to parse novel sources: {}", e)))
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
+
     Ok(IpcResponse::ok(sources))
 }
 
@@ -142,37 +154,42 @@ pub async fn novel_source_toggle(
     name: String,
     enabled: bool,
 ) -> Result<IpcResponse<bool>, AppError> {
+    // 用全局 Mutex 串行化读改写，防止 TOCTOU 竞态
+    let _guard = novel_sources_lock().lock().await;
+
     let sources_path = state.data_dir.root().join("novel_sources.json");
-    
+
     if !sources_path.exists() {
         return Err(AppError::not_found("Novel sources file not found"));
     }
-    
-    let content = std::fs::read_to_string(&sources_path)
-        .map_err(|_| AppError::file_read_error(sources_path.display().to_string()))?;
-    
-    let mut sources: Vec<BookSource> = serde_json::from_str(&content)
-        .map_err(|e| AppError::internal(format!("Failed to parse novel sources: {}", e)))?;
-    
-    let mut updated = false;
-    
-    for source in &mut sources {
-        if source.name == name {
-            source.enabled = enabled;
-            updated = true;
-            break;
+
+    // 读改写整体卸载到阻塞线程池，保证原子性
+    let name_clone = name.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let content = std::fs::read_to_string(&sources_path)
+            .map_err(|e| AppError::internal(format!("Failed to read novel sources: {}", e)))?;
+        let mut sources: Vec<BookSource> = serde_json::from_str(&content)
+            .map_err(|e| AppError::internal(format!("Failed to parse novel sources: {}", e)))?;
+
+        let mut updated = false;
+        for source in &mut sources {
+            if source.name == name_clone {
+                source.enabled = enabled;
+                updated = true;
+                break;
+            }
         }
-    }
-    
-    if !updated {
-        return Err(AppError::not_found(format!("Source '{}' not found", name)));
-    }
-    
-    let json = serde_json::to_string_pretty(&sources)
-        .map_err(|e| AppError::internal(format!("Failed to serialize novel sources: {}", e)))?;
-    
-    std::fs::write(&sources_path, json)
-        .map_err(|_| AppError::file_write_error(sources_path.display().to_string()))?;
+        if !updated {
+            return Err(AppError::not_found(format!("Source '{}' not found", name_clone)));
+        }
+
+        let json = serde_json::to_string_pretty(&sources)
+            .map_err(|e| AppError::internal(format!("Failed to serialize novel sources: {}", e)))?;
+        std::fs::write(&sources_path, json)
+            .map_err(|e| AppError::internal(format!("Failed to write novel sources: {}", e)))
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     Ok(IpcResponse::ok(true))
 }

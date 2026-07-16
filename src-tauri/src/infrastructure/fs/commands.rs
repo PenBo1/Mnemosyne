@@ -31,7 +31,7 @@ fn validate_file_path(path: &str) -> Result<PathBuf, AppError> {
             "Path too long (max {} chars)", MAX_PATH_LEN
         )));
     }
-    validate_path(path).map_err(|e| AppError::invalid_input(e))?;
+    validate_path(path).map_err(AppError::invalid_input)?;
 
     let path_buf = PathBuf::from(path);
     if path_buf.components().any(|c| c.as_os_str() == "..") {
@@ -78,20 +78,13 @@ pub async fn fs_read_file(
     check_workspace_authorization(&path_buf, &workspace_registry)?;
 
     if !path_buf.exists() {
-        return Err(AppError::not_found(&format!("File not found: {}", path)));
+        return Err(AppError::not_found(format!("File not found: {}", path)));
     }
     if path_buf.is_dir() {
         return Err(AppError::invalid_input("Path is a directory, not a file"));
     }
 
-    let metadata = std::fs::metadata(&path_buf)
-        .map_err(|e| AppError::internal(format!("Failed to get file metadata: {}", e)))?;
-    if metadata.len() > MAX_FILE_SIZE as u64 {
-        return Err(AppError::invalid_input(format!(
-            "File too large (max {} bytes)", MAX_FILE_SIZE
-        )));
-    }
-
+    // metadata + read 一起卸载到阻塞线程池，避免 metadata 阻塞 worker
     let ctx = create_operation_context(workspace_id);
     let op = Operation::Filesystem {
         scope: FsScope::Workspace,
@@ -100,10 +93,17 @@ pub async fn fs_read_file(
     };
 
     let kernel = kernel_state.kernel();
-    let content = kernel.execute("fs_read_file", &op, &ctx, || {
+    let content = kernel.execute_blocking("fs_read_file", &op, &ctx, move || {
+        let metadata = std::fs::metadata(&path_buf)
+            .map_err(|e| AppError::internal(format!("Failed to get file metadata: {}", e)))?;
+        if metadata.len() > MAX_FILE_SIZE as u64 {
+            return Err(AppError::invalid_input(format!(
+                "File too large (max {} bytes)", MAX_FILE_SIZE
+            )));
+        }
         std::fs::read_to_string(&path_buf)
             .map_err(|e| AppError::internal(format!("Failed to read file: {}", e)))
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(content))
 }
@@ -139,10 +139,10 @@ pub async fn fs_write_file(
 
     let kernel = kernel_state.kernel();
     let bytes = content.len() as u64;
-    kernel.execute("fs_write_file", &op, &ctx, || {
+    kernel.execute_blocking("fs_write_file", &op, &ctx, move || {
         std::fs::write(&path_buf, content)
             .map_err(|e| AppError::internal(format!("Failed to write file: {}", e)))
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(bytes))
 }
@@ -158,7 +158,7 @@ pub async fn fs_list_directory(
     check_workspace_authorization(&path_buf, &workspace_registry)?;
 
     if !path_buf.exists() {
-        return Err(AppError::not_found(&format!("Directory not found: {}", path)));
+        return Err(AppError::not_found(format!("Directory not found: {}", path)));
     }
     if !path_buf.is_dir() {
         return Err(AppError::invalid_input("Path is not a directory"));
@@ -172,7 +172,7 @@ pub async fn fs_list_directory(
     };
 
     let kernel = kernel_state.kernel();
-    let entries = kernel.execute("fs_list_directory", &op, &ctx, || {
+    let entries = kernel.execute_blocking("fs_list_directory", &op, &ctx, move || {
         let ignore_dirs = [
             "node_modules", ".git", "target", "dist", ".next",
             "__pycache__", ".venv", "venv",
@@ -218,7 +218,7 @@ pub async fn fs_list_directory(
         });
 
         Ok(entries)
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(entries))
 }
@@ -247,10 +247,10 @@ pub async fn fs_create_directory(
 
     let kernel = kernel_state.kernel();
     let created = !path_buf.exists();
-    kernel.execute("fs_create_directory", &op, &ctx, || {
+    kernel.execute_blocking("fs_create_directory", &op, &ctx, move || {
         std::fs::create_dir_all(&path_buf)
             .map_err(|e| AppError::internal(format!("Failed to create directory: {}", e)))
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(created))
 }
@@ -266,7 +266,7 @@ pub async fn fs_delete_file(
     check_workspace_authorization(&path_buf, &workspace_registry)?;
 
     if !path_buf.exists() {
-        return Err(AppError::not_found(&format!("File not found: {}", path)));
+        return Err(AppError::not_found(format!("File not found: {}", path)));
     }
 
     let ctx = create_operation_context(workspace_id);
@@ -277,7 +277,7 @@ pub async fn fs_delete_file(
     };
 
     let kernel = kernel_state.kernel();
-    kernel.execute("fs_delete_file", &op, &ctx, || {
+    kernel.execute_blocking("fs_delete_file", &op, &ctx, move || {
         if path_buf.is_dir() {
             std::fs::remove_dir_all(&path_buf)
                 .map_err(|e| AppError::internal(format!("Failed to remove directory: {}", e)))?;
@@ -286,7 +286,7 @@ pub async fn fs_delete_file(
                 .map_err(|e| AppError::internal(format!("Failed to remove file: {}", e)))?;
         }
         Ok(true)
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(true))
 }
@@ -309,9 +309,9 @@ pub async fn fs_exists(
     };
 
     let kernel = kernel_state.kernel();
-    let exists = kernel.execute("fs_exists", &op, &ctx, || {
+    let exists = kernel.execute_blocking("fs_exists", &op, &ctx, move || {
         Ok(path_buf.exists())
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(exists))
 }
@@ -335,15 +335,7 @@ pub async fn fs_copy_file(
     }
 
     if !src_buf.exists() {
-        return Err(AppError::not_found(&format!("Source file not found: {}", source)));
-    }
-
-    let metadata = std::fs::metadata(&src_buf)
-        .map_err(|e| AppError::internal(format!("Failed to get source metadata: {}", e)))?;
-    if metadata.len() > MAX_FILE_SIZE as u64 {
-        return Err(AppError::invalid_input(format!(
-            "Source file too large (max {} bytes)", MAX_FILE_SIZE
-        )));
+        return Err(AppError::not_found(format!("Source file not found: {}", source)));
     }
 
     let ctx = create_operation_context(workspace_id);
@@ -354,11 +346,19 @@ pub async fn fs_copy_file(
     };
 
     let kernel = kernel_state.kernel();
-    kernel.execute("fs_copy_file", &op, &ctx, || {
+    // metadata + copy 一起卸载到阻塞线程池
+    kernel.execute_blocking("fs_copy_file", &op, &ctx, move || {
+        let metadata = std::fs::metadata(&src_buf)
+            .map_err(|e| AppError::internal(format!("Failed to get source metadata: {}", e)))?;
+        if metadata.len() > MAX_FILE_SIZE as u64 {
+            return Err(AppError::invalid_input(format!(
+                "Source file too large (max {} bytes)", MAX_FILE_SIZE
+            )));
+        }
         std::fs::copy(&src_buf, &dst_buf)
             .map_err(|e| AppError::internal(format!("Failed to copy file: {}", e)))?;
         Ok(true)
-    })?;
+    }).await?;
 
     Ok(IpcResponse::ok(true))
 }

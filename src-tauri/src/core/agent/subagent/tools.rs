@@ -1,12 +1,16 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::Deserialize;
 
+use super::executor::SubAgentTask;
 use super::types::{SubAgentRole, SubAgentResult};
+use crate::core::agent::engine::AgentEngine;
 
 pub struct SubAgentTool {
+    pub engine: Arc<AgentEngine>,
     pub workspace_root: PathBuf,
 }
 
@@ -59,12 +63,12 @@ impl Tool for SubAgentTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let task_clone = args.task.clone();
-        Ok(SubAgentResult {
-            role: args.role,
-            task: args.task,
-            output: format!("Sub-agent execution simulated for: {}", task_clone),
-            tokens_used: 0,
-        })
+        let executor = self.engine.subagent_executor(self.workspace_root.clone());
+        let task = SubAgentTask::new(args.role, args.task, args.context);
+        let outcome = executor.execute(task).await
+            .map_err(|e| SubAgentToolError::ExecutionFailed(e.to_string()))?;
+        // ExecutionResult.result 现为 Arc<SubAgentResult>，在 Tool 边界 deref + clone
+        // （rig 的 Tool::Output 必须是 owned SubAgentResult，无法直接返回 Arc）。
+        Ok((*outcome.result).clone())
     }
 }

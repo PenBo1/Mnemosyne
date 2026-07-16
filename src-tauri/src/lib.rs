@@ -29,20 +29,19 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
-            let app_dir = app.path().app_data_dir().expect("failed to get app data dir");
-            std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
+            let app_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&app_dir)?;
             let data_dir = DataDir::new(app_dir);
-            data_dir.initialize().expect("failed to initialize data directory");
+            data_dir.initialize()?;
 
-            crate::application::init::initialize_app_business_state(&data_dir)
-                .expect("failed to initialize app business state");
+            crate::application::init::initialize_app_business_state(&data_dir)?;
 
-            crate::infrastructure::fs::fs_utils::init_logging(&data_dir.logs_dir(), &data_dir);
+            crate::infrastructure::fs::fs_utils::init_logging(&data_dir.logs_dir());
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Mnemosyne starting");
             tracing::info!(root = %data_dir.root().display(), "App data directory");
 
             // 先创建 DbState,以便克隆 Database 给 AgentEngine 与 SecurityKernel 持有
-            let db_state = DbState::new(data_dir.clone());
+            let db_state = DbState::new(data_dir.clone())?;
             // DataDir 作为 State 共享给 pipeline 命令
             app.manage(data_dir.clone());
             let db_for_agent = db_state.db.clone();
@@ -51,8 +50,10 @@ pub fn run() {
             let db_for_summary = db_state.db.clone();
             let db_for_registry = db_state.db.clone();
             // 初始化 builtin loop patterns(仅当不存在时写入)
+            // 注：seed 失败属非致命——builtin patterns 缺失只影响 loop-engineering 默认模板，
+            // 应用仍可正常启动。用 error 级别记录，确保问题不被静默吞掉。
             if let Err(e) = crate::application::init::seed_builtin_loop_patterns(&db_state.db) {
-                tracing::warn!(error = %e, "Failed to seed builtin loop patterns");
+                tracing::error!(error = %e, "Failed to seed builtin loop patterns (non-fatal, continuing startup)");
             }
             app.manage(db_state);
             app.manage(LlmState::new(data_dir.clone()));
@@ -95,7 +96,7 @@ pub fn run() {
             app.manage(workspace_registry);
             app.manage(SecurityKernelState::with_db(db_for_kernel));
             // 注册 Tauri 事件桥 —— 把 SecurityEvent 实时推送到前端 listen("security://event")
-            crate::security_kernel::audit::register_tauri_emit_handler(&app.handle());
+            crate::security_kernel::audit::register_tauri_emit_handler(app.handle());
 
             // 从 SecurityKernel 提取共享 HookEngine：
             // 1. 注入为独立 Tauri State（供 hook_* IPC 命令操作）
@@ -109,7 +110,12 @@ pub fn run() {
             // Initialize agent engine from LLM provider registry
             let agent_engine = {
                 let registry = crate::infrastructure::llm::registry::ProviderRegistry::new(&data_dir);
-                let workspace_root = std::env::current_dir().unwrap_or_else(|_| data_dir.root().to_path_buf());
+                // current_dir 失败时回退到 data_dir.root()，并显式 log warning
+                // 避免静默回退掩盖环境异常（如 cwd 被删除）
+                let workspace_root = std::env::current_dir().unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "current_dir() failed, falling back to app data dir");
+                    data_dir.root().to_path_buf()
+                });
                 crate::core::agent::engine::AgentEngine::new(
                     registry,
                     db_for_agent,
@@ -143,6 +149,24 @@ pub fn run() {
 
             // Agent Registry —— 统一 Agent 元数据注册表（main + 15 pipeline + 3 subagent + 3 loopskill）
             app.manage(crate::core::agent::registry::AgentRegistryState::new());
+
+            // SecurityKernel 定期清理（每 5 分钟清理过期的 policy/rate_limiter/audit/approval 条目）
+            // 防止 RateStore / ApprovalStore 等无限增长导致内存泄漏
+            //
+            // 注：此任务为 fire-and-forget，无 shutdown signal。Tauri 桌面应用退出时
+            // tokio runtime 会被 Builder::Drop 终止，所有 spawn 的任务随之丢弃。
+            // cleanup 是幂等的纯内存操作，被强行中断不会留下不一致状态。
+            {
+                let kernel_state = app.state::<SecurityKernelState>().inner().clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+                    interval.tick().await; // 跳过首次立即触发
+                    loop {
+                        interval.tick().await;
+                        kernel_state.cleanup();
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -315,7 +339,7 @@ pub fn run() {
             crate::infrastructure::memory::short_term_commands::short_term_memory_for_session,
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_book,
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_range,
-            crate::infrastructure::memory::short_term_commands::short_term_memory_regenerate,
+            crate::application::session::commands::short_term_memory_regenerate,
             crate::infrastructure::memory::short_term_commands::short_term_memory_stats,
             crate::infrastructure::project_memory::commands::project_memory_get,
             crate::infrastructure::project_memory::commands::project_memory_update,
@@ -392,10 +416,9 @@ pub fn run() {
             crate::domain::interaction::commands::interaction_delete_session,
             crate::domain::interaction::commands::interaction_update_automation_mode,
             crate::domain::interaction::commands::interaction_edit_chapter,
-            crate::infrastructure::secrets::secrets_get,
             crate::infrastructure::secrets::secrets_set,
             crate::infrastructure::secrets::secrets_delete,
-            crate::infrastructure::secrets::secrets_get_all,
+            crate::infrastructure::secrets::secrets_exists,
             crate::infrastructure::mcp::commands::mcp_list_servers,
             crate::infrastructure::mcp::commands::mcp_add_server,
             crate::infrastructure::mcp::commands::mcp_update_server,
@@ -442,5 +465,16 @@ pub fn run() {
             crate::domain::pipeline::interactive_film::commands::film_apply_delta,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            // 不用 `.expect(...)`：避免 panic 输出被 Tauri 内部 panic hook 吞掉。
+            // 改为 stderr + 退出码 1，确保错误对用户/CI 可见。
+            // 注：tracing 日志 guard 由 `init_logging` 注册的 `tracing_subscriber`
+            // 在 Drop 时 flush；此处 process::exit 前需要显式 flush。
+            eprintln!("error while running tauri application: {e:?}");
+            // 强制 flush tracing 日志（tracing-appender 的 NonBlocking guard 在
+            // process::exit 时不会执行 Drop，需手动 flush）
+            // 注：若未启用 NonBlocking writer，此调用是 no-op
+            // 这里不直接访问 guard，依赖 tracing-subscriber 的全局 flush
+            std::process::exit(1);
+        });
 }

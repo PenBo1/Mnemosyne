@@ -17,6 +17,7 @@ use super::super::governance::length::{count_chapter_length, is_outside_hard_ran
 use super::super::state::manager::StateManager;
 use super::super::state::store;
 use super::super::types::{BookConfig, ChapterMeta, ChapterStatus, Language, ChapterReviewMode, resolve_chapter_review_mode};
+use super::super::utils::text_parse::extract_section;
 use super::chapter_review_cycle::{self, CycleUsage};
 use super::chapter_truth_validation::{self, PreviousTruth};
 use super::chapter_state_recovery;
@@ -723,8 +724,12 @@ impl PipelineRunner {
         let old_state = read_safe("current_state.md");
         let old_hooks = read_safe("pending_hooks.md");
         let old_ledger = read_safe("particle_ledger.md");
-        let updated_state = &writer_output.post_settlement;
-        let updated_hooks = &writer_output.post_settlement; // simplified
+        // 从 post_settlement 中解析出独立的 UPDATED_STATE 与 UPDATED_HOOKS 区块。
+        // 若区块缺失则回退到空串（state_validator 会将其标记为矛盾并触发 retry/degraded）。
+        let parsed_state = extract_section(&writer_output.post_settlement, "UPDATED_STATE");
+        let parsed_hooks = extract_section(&writer_output.post_settlement, "UPDATED_HOOKS");
+        let updated_state: &str = parsed_state.as_deref().unwrap_or("");
+        let updated_hooks: &str = parsed_hooks.as_deref().unwrap_or("");
 
         let truth_validation = chapter_truth_validation::validate_chapter_truth_persistence(
             engine,
@@ -745,64 +750,119 @@ impl PipelineRunner {
 
         let chapter_status = truth_validation.chapter_status.clone();
 
-        // ── 6. Persist ──
+        // ── 6. Persist（事务式：失败时回滚 chapters.json + 清理 chapter.md）──
         self.log_stage(language, "落盘最终章节");
         let chapters_dir = book_dir.join("chapters");
         std::fs::create_dir_all(&chapters_dir)?;
         let padded = format!("{:04}", chapter_number);
         let chapter_filename = format!("{}-{}.md", padded, sanitize_filename(&writer_output.title));
         let chapter_path = chapters_dir.join(&chapter_filename);
-        let heading = match language {
-            Language::Zh => format!("# 第{}章 {}\n\n{}", chapter_number, writer_output.title, final_content),
-            Language::En => format!("# Chapter {}: {}\n\n{}", chapter_number, writer_output.title, final_content),
-        };
-        std::fs::write(&chapter_path, &heading)?;
 
-        // 落盘 truth files（除非 state-degraded）
-        if chapter_status.is_none() {
-            self.persist_truth_files(&story_dir, &writer_output)?;
+        // 备份 chapters.json 以便失败时回滚（不存在则记 None）
+        let index_path = book_dir.join("chapters.json");
+        let index_backup: Option<String> = match std::fs::read_to_string(&index_path) {
+            Ok(content) => Some(content),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(AppError::internal(format!("读取 chapters.json 备份失败: {}", e))),
+        };
+
+        let persist_result: Result<(), AppError> = async {
+            let heading = match language {
+                Language::Zh => format!("# 第{}章 {}\n\n{}", chapter_number, writer_output.title, final_content),
+                Language::En => format!("# Chapter {}: {}\n\n{}", chapter_number, writer_output.title, final_content),
+            };
+            std::fs::write(&chapter_path, &heading)?;
+
+            // 落盘 truth files（除非 state-degraded）
+            if chapter_status.is_none() {
+                // 优先使用 retry_settlement 成功后返回的 truth 文件；
+                // 否则从 writer_output.post_settlement 解析 UPDATED_STATE/UPDATED_HOOKS。
+                match (&truth_validation.recovered_state, &truth_validation.recovered_hooks) {
+                    (Some(state), Some(hooks)) => {
+                        std::fs::write(story_dir.join("current_state.md"), state)?;
+                        std::fs::write(story_dir.join("pending_hooks.md"), hooks)?;
+                    }
+                    _ => {
+                        self.persist_truth_files(&story_dir, &writer_output)?;
+                    }
+                }
+            }
+
+            // 更新章节索引
+            let now = current_iso();
+            let status = match chapter_status.as_deref() {
+                Some("state-degraded") => ChapterStatus::StateDegraded,
+                None if audit_result.passed => ChapterStatus::ReadyForReview,
+                _ => ChapterStatus::AuditFailed,
+            };
+            let entry = ChapterMeta {
+                number: chapter_number,
+                title: writer_output.title.clone(),
+                status,
+                word_count: final_word_count,
+                created_at: now.clone(),
+                updated_at: now,
+                audit_issues: audit_result.issues.iter().map(|i| format!("[{:?}] {}", i.severity, i.description)).collect(),
+                length_warnings: vec![],
+                review_note: if chapter_status.is_some() {
+                    Some(chapter_state_recovery::build_state_degraded_review_note(
+                        if audit_result.passed { "ready-for-review" } else { "audit-failed" },
+                        &truth_validation.degraded_issues,
+                    ))
+                } else {
+                    None
+                },
+                detection_score: None,
+                detection_provider: None,
+                detected_at: None,
+                token_usage: None,
+            };
+            let mut index = self.load_chapter_index(&book_dir)?;
+            index.push(entry);
+            self.save_chapter_index(&book_dir, &index)?;
+
+            // 快照
+            self.snapshot_state(&book_dir, chapter_number)?;
+            Ok(())
         }
+        .await;
 
-        // 更新章节索引
-        let now = current_iso();
-        let status = match chapter_status.as_deref() {
-            Some("state-degraded") => ChapterStatus::StateDegraded,
-            None if audit_result.passed => ChapterStatus::ReadyForReview,
-            _ => ChapterStatus::AuditFailed,
-        };
-        let entry = ChapterMeta {
-            number: chapter_number,
-            title: writer_output.title.clone(),
-            status,
-            word_count: final_word_count,
-            created_at: now.clone(),
-            updated_at: now,
-            audit_issues: audit_result.issues.iter().map(|i| format!("[{:?}] {}", i.severity, i.description)).collect(),
-            length_warnings: vec![],
-            review_note: if chapter_status.is_some() {
-                Some(chapter_state_recovery::build_state_degraded_review_note(
-                    if audit_result.passed { "ready-for-review" } else { "audit-failed" },
-                    &truth_validation.degraded_issues,
-                ))
-            } else {
-                None
-            },
-            detection_score: None,
-            detection_provider: None,
-            detected_at: None,
-            token_usage: None,
-        };
-        let mut index = self.load_chapter_index(&book_dir)?;
-        index.push(entry);
-        self.save_chapter_index(&book_dir, &index)?;
-
-        // 快照
-        self.snapshot_state(&book_dir, chapter_number)?;
+        if let Err(e) = persist_result {
+            // 事务回滚：删除已写的 chapter.md，恢复 chapters.json 备份
+            let _ = std::fs::remove_file(&chapter_path);
+            match &index_backup {
+                Some(content) => {
+                    if let Err(restore_err) = std::fs::write(&index_path, content) {
+                        tracing::error!(
+                            error = %restore_err,
+                            "事务回滚：恢复 chapters.json 失败"
+                        );
+                    }
+                }
+                None => {
+                    // 原本不存在则删除当前文件（避免残留空/损坏索引）
+                    let _ = std::fs::remove_file(&index_path);
+                }
+            }
+            tracing::error!(
+                error = %e,
+                chapter = chapter_number,
+                "事务回滚：章节持久化失败，已清理 chapter.md 并恢复 chapters.json"
+            );
+            return Err(e);
+        }
 
         // ── 7. Consolidation（定期压缩旧卷摘要）──
         if chapter_number % 30 == 0 {
             self.log_stage(language, "压缩旧卷摘要");
-            let _ = consolidator::consolidate(engine, &book_dir).await;
+            if let Err(e) = consolidator::consolidate(engine, &book_dir).await {
+                // 压缩失败不阻塞主流程（章节已落盘），仅记录警告
+                tracing::warn!(
+                    error = %e,
+                    chapter = chapter_number,
+                    "Consolidation 失败（章节已落盘，不影响主流程）"
+                );
+            }
         }
 
         let pipeline_status = match chapter_status.as_deref() {
@@ -863,8 +923,12 @@ impl PipelineRunner {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with(&padded) && name.ends_with(".md") {
                 let content = std::fs::read_to_string(entry.path())?;
-                // 去除首行标题
-                let without_heading: String = content.lines().skip(1).collect::<Vec<_>>().join("\n");
+                // 去除首行标题（仅当首行以 "# " 开头时），否则保留全部正文
+                let without_heading: String = if content.lines().next().map_or(false, |l| l.starts_with("# ")) {
+                    content.lines().skip(1).collect::<Vec<_>>().join("\n")
+                } else {
+                    content
+                };
                 return Ok(Some(without_heading.trim().to_string()));
             }
         }
@@ -916,8 +980,8 @@ impl PipelineRunner {
         // 简化版：直接写入 post_settlement 到 current_state.md
         if !output.post_settlement.is_empty() {
             // 解析 post_settlement 中的区块
-            let state = extract_section_from(&output.post_settlement, "UPDATED_STATE");
-            let hooks = extract_section_from(&output.post_settlement, "UPDATED_HOOKS");
+            let state = extract_section(&output.post_settlement, "UPDATED_STATE");
+            let hooks = extract_section(&output.post_settlement, "UPDATED_HOOKS");
             if let Some(s) = state { std::fs::write(story_dir.join("current_state.md"), s)?; }
             if let Some(h) = hooks { std::fs::write(story_dir.join("pending_hooks.md"), h)?; }
         }
@@ -1012,16 +1076,6 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
-/// 从 === TAG === 格式中提取区块内容
-fn extract_section_from(content: &str, tag: &str) -> Option<String> {
-    let marker = format!("=== {} ===", tag);
-    let start = content.find(&marker)?;
-    let content_start = start + marker.len();
-    let remaining = &content[content_start..];
-    let end = remaining.find("\n=== ").map(|pos| content_start + pos).unwrap_or(content.len());
-    Some(content[content_start..end].trim().to_string())
-}
-
 // ── 测试 ─────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1049,26 +1103,26 @@ mod tests {
     }
 
     #[test]
-    fn extract_section_from_finds_tag() {
+    fn extract_section_finds_tag() {
         let content = "前文\n=== UPDATED_STATE ===\n这是状态内容\n=== UPDATED_HOOKS ===\n这是伏笔内容";
-        let state = extract_section_from(content, "UPDATED_STATE").expect("应找到 UPDATED_STATE");
+        let state = extract_section(content, "UPDATED_STATE").expect("应找到 UPDATED_STATE");
         assert_eq!(state, "这是状态内容");
 
-        let hooks = extract_section_from(content, "UPDATED_HOOKS").expect("应找到 UPDATED_HOOKS");
+        let hooks = extract_section(content, "UPDATED_HOOKS").expect("应找到 UPDATED_HOOKS");
         assert_eq!(hooks, "这是伏笔内容");
     }
 
     #[test]
     fn extract_section_returns_none_when_missing() {
         let content = "无标签内容";
-        assert!(extract_section_from(content, "UPDATED_STATE").is_none());
+        assert!(extract_section(content, "UPDATED_STATE").is_none());
     }
 
     #[test]
     fn extract_section_returns_content_until_end() {
         // 最后一个区块：提取到文本结尾
         let content = "=== UPDATED_STATE ===\n最后一行内容\n没有后续标签";
-        let state = extract_section_from(content, "UPDATED_STATE").expect("应找到");
+        let state = extract_section(content, "UPDATED_STATE").expect("应找到");
         assert_eq!(state, "最后一行内容\n没有后续标签");
     }
 

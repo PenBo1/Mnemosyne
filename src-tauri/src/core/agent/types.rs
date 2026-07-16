@@ -29,6 +29,12 @@ pub enum ChatEvent {
         name: String,
         args: serde_json::Value,
     },
+    /// 重试事件：LLM 流式调用因临时性错误（503/429 等）重试时派发，
+    /// 让前端能在 UI 上分隔前次不完整输出与重试输出。
+    Retry {
+        attempt: u32,
+        max_attempts: u32,
+    },
     Finish {
         input_tokens: u32,
         output_tokens: u32,

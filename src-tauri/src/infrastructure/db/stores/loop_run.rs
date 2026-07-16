@@ -223,7 +223,7 @@ impl Database {
             )
         ).map_err(db_err)?;
         let rows = stmt.query_map([limit], map_loop_run_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 列出指定 loop_state 的运行记录(按 started_at DESC)。
@@ -238,7 +238,7 @@ impl Database {
             )
         ).map_err(db_err)?;
         let rows = stmt.query_map(params![state_id, limit], map_loop_run_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// GC:删除 started_at 早于 cutoff_iso 的运行记录。

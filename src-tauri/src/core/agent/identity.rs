@@ -63,9 +63,12 @@ impl IdentityKind {
 /// 加载身份文件:磁盘优先,空则回退默认。
 ///
 /// 返回 None 当且仅当磁盘和默认都为空(理论不会发生,默认非空)。
-pub fn load_identity(data_dir: &DataDir, role: &str, kind: IdentityKind) -> Option<String> {
+///
+/// 异步:使用 `tokio::fs::read_to_string` 避免阻塞 async runtime。
+/// 身份文件体积小(默认内容 < 20K 字符),但仍走异步 I/O 以遵循 async 路径约定。
+pub async fn load_identity(data_dir: &DataDir, role: &str, kind: IdentityKind) -> Option<String> {
     let path = identity_path(data_dir, role, kind);
-    match std::fs::read_to_string(&path) {
+    match tokio::fs::read_to_string(&path).await {
         Ok(content) if !content.trim().is_empty() => {
             tracing::debug!(
                 role = role,
@@ -105,53 +108,45 @@ pub fn identity_path(data_dir: &DataDir, role: &str, kind: IdentityKind) -> Path
 ///
 /// 算法：
 /// - 中文（CJK 统一表意文字 + 扩展 A）：1 字 ≈ 1.5 token
-/// - 英文：按空格分词，1 词 ≈ 1.3 token
-/// - 代码/符号字符：字符数 ÷ 3.5
+/// - 英文：按词计数，1 词 ≈ 1.3 token（连续 ascii_alphabetic 序列视为一个词）
+/// - 代码/符号字符（含空白、标点、数字、符号）：字符数 ÷ 3.5
+///
+/// 单次遍历实现，每个字符精确归入一类（CJK / 英文字母 / 代码符号），
+/// 避免 `total - cjk - english_chars` 间接相减导致的漏算（原实现中
+/// `english_chars` 含词内标点，被减去后既未计入英文也未计入代码）。
 ///
 /// 与前端 `src/features/agent/services/utils/context-assembly.ts::estimateTextTokens`
-/// 保持算法一致，确保 Rust/前端口径统一。
+/// 保持算法口径一致。
 pub fn estimate_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;
     }
 
     let mut cjk_chars: usize = 0;
+    let mut english_words: usize = 0;
+    let mut code_chars: usize = 0;
+    let mut in_word = false; // 是否处于连续 ascii_alphabetic 序列中
+
     for ch in text.chars() {
-        if ('\u{4e00}'..='\u{9fff}').contains(&ch)
+        let is_cjk_char = ('\u{4e00}'..='\u{9fff}').contains(&ch)
             || ('\u{3400}'..='\u{4dbf}').contains(&ch)
-            || ('\u{f900}'..='\u{faff}').contains(&ch)
-        {
+            || ('\u{f900}'..='\u{faff}').contains(&ch);
+
+        if is_cjk_char {
             cjk_chars += 1;
+            in_word = false;
+        } else if ch.is_ascii_alphabetic() {
+            if !in_word {
+                english_words += 1;
+                in_word = true;
+            }
+            // 英文字母不计入 code_chars，避免双重计算
+        } else {
+            // 空白、标点、数字、符号一律归入 code/symbol
+            code_chars += 1;
+            in_word = false;
         }
     }
-
-    // 移除 CJK 后按空白分词统计英文单词数
-    let non_cjk: String = text
-        .chars()
-        .map(|ch| {
-            if ('\u{4e00}'..='\u{9fff}').contains(&ch)
-                || ('\u{3400}'..='\u{4dbf}').contains(&ch)
-                || ('\u{f900}'..='\u{faff}').contains(&ch)
-            {
-                ' '
-            } else {
-                ch
-            }
-        })
-        .collect();
-    let english_words: usize = non_cjk
-        .split_whitespace()
-        .filter(|w| w.chars().any(|c| c.is_ascii_alphabetic()))
-        .count();
-
-    // 英文单词字符数（用于推算代码字符数）
-    let english_chars: usize = non_cjk
-        .split_whitespace()
-        .filter(|w| w.chars().any(|c| c.is_ascii_alphabetic()))
-        .map(|w| w.chars().count())
-        .sum();
-
-    let code_chars = text.chars().count().saturating_sub(cjk_chars).saturating_sub(english_chars);
 
     let cjk_tokens = (cjk_chars as f64) * 1.5;
     let english_tokens = (english_words as f64) * 1.3;
@@ -217,7 +212,7 @@ fn truncate_identity_section(content: &str, filename: &str, role: &str) -> Strin
 /// - 每段身份文件加载后调用 `truncate_identity_section`,超过 `IDENTITY_MAX_CHARS` 时
 ///   head/tail 截断 + 插入 read_file 兜底 marker,把上下文负载转移到工具调用阶段
 /// - 防止用户编辑超长 SOUL.md/CONTEXT.md 导致 system prompt 超过模型上下文窗口
-pub fn build_system_prompt(
+pub async fn build_system_prompt(
     data_dir: &DataDir,
     role: &str,
     custom_instructions: Option<&str>,
@@ -225,10 +220,10 @@ pub fn build_system_prompt(
 ) -> String {
     let mut parts: Vec<String> = Vec::with_capacity(5);
 
-    if let Some(soul) = load_identity(data_dir, role, IdentityKind::Soul) {
+    if let Some(soul) = load_identity(data_dir, role, IdentityKind::Soul).await {
         parts.push(truncate_identity_section(&soul, "SOUL.md", role));
     }
-    if let Some(context) = load_identity(data_dir, role, IdentityKind::Context) {
+    if let Some(context) = load_identity(data_dir, role, IdentityKind::Context).await {
         parts.push(truncate_identity_section(&context, "CONTEXT.md", role));
     }
     if let Some(profile) = user_profile {
@@ -242,7 +237,7 @@ pub fn build_system_prompt(
             parts.push(format!("# Additional Instructions\n\n{}", extra));
         }
     }
-    if let Some(memory) = load_identity(data_dir, role, IdentityKind::Memory) {
+    if let Some(memory) = load_identity(data_dir, role, IdentityKind::Memory).await {
         parts.push(truncate_identity_section(&memory, "MEMORY.md", role));
     }
 
@@ -267,46 +262,46 @@ mod tests {
         assert!(!IdentityKind::Memory.default_content().is_empty());
     }
 
-    #[test]
-    fn load_identity_falls_back_to_default_when_missing() {
+    #[tokio::test]
+    async fn load_identity_falls_back_to_default_when_missing() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         // 不创建文件,直接读 —— 应回退到默认
-        let soul = load_identity(&data_dir, "main", IdentityKind::Soul);
+        let soul = load_identity(&data_dir, "main", IdentityKind::Soul).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("Mnemosyne"));
     }
 
-    #[test]
-    fn load_identity_reads_disk_when_present() {
+    #[tokio::test]
+    async fn load_identity_reads_disk_when_present() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         let role_dir = data_dir.agents_dir().join("main");
         std::fs::create_dir_all(&role_dir).unwrap();
         std::fs::write(role_dir.join("SOUL.md"), "Custom Persona Content").unwrap();
 
-        let soul = load_identity(&data_dir, "main", IdentityKind::Soul);
+        let soul = load_identity(&data_dir, "main", IdentityKind::Soul).await;
         assert_eq!(soul.as_deref(), Some("Custom Persona Content"));
     }
 
-    #[test]
-    fn load_identity_uses_default_when_file_empty() {
+    #[tokio::test]
+    async fn load_identity_uses_default_when_file_empty() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         let role_dir = data_dir.agents_dir().join("main");
         std::fs::create_dir_all(&role_dir).unwrap();
         std::fs::write(role_dir.join("SOUL.md"), "   \n  \n").unwrap();
 
-        let soul = load_identity(&data_dir, "main", IdentityKind::Soul);
+        let soul = load_identity(&data_dir, "main", IdentityKind::Soul).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("Mnemosyne")); // 回退默认
     }
 
-    #[test]
-    fn build_prompt_joins_sections() {
+    #[tokio::test]
+    async fn build_prompt_joins_sections() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
-        let prompt = build_system_prompt(&data_dir, "main", Some("Be extra careful"), None);
+        let prompt = build_system_prompt(&data_dir, "main", Some("Be extra careful"), None).await;
         assert!(prompt.contains("Mnemosyne"));        // SOUL
         assert!(prompt.contains("Tauri"));            // CONTEXT
         assert!(prompt.contains("Be extra careful")); // custom
@@ -314,21 +309,21 @@ mod tests {
         assert!(prompt.contains("---"));              // 分隔符
     }
 
-    #[test]
-    fn build_prompt_includes_user_profile_when_provided() {
+    #[tokio::test]
+    async fn build_prompt_includes_user_profile_when_provided() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         let profile = UserProfile::default();
-        let prompt = build_system_prompt(&data_dir, "main", None, Some(&profile));
+        let prompt = build_system_prompt(&data_dir, "main", None, Some(&profile)).await;
         assert!(prompt.contains("## User Profile"));
         assert!(prompt.contains("Mnemosyne")); // SOUL 仍在
     }
 
-    #[test]
-    fn build_prompt_omits_user_profile_when_none() {
+    #[tokio::test]
+    async fn build_prompt_omits_user_profile_when_none() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
-        let prompt = build_system_prompt(&data_dir, "main", None, None);
+        let prompt = build_system_prompt(&data_dir, "main", None, None).await;
         assert!(!prompt.contains("## User Profile"));
     }
 
@@ -396,8 +391,8 @@ mod tests {
         assert!(result.contains("[...truncated CONTEXT.md"));
     }
 
-    #[test]
-    fn build_prompt_truncates_oversized_soul() {
+    #[tokio::test]
+    async fn build_prompt_truncates_oversized_soul() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         let role_dir = data_dir.agents_dir().join("main");
@@ -406,7 +401,7 @@ mod tests {
         let oversized = format!("# Custom Soul\n\n{}\n\n# End", "B".repeat(IDENTITY_MAX_CHARS + 1000));
         std::fs::write(role_dir.join("SOUL.md"), &oversized).unwrap();
 
-        let prompt = build_system_prompt(&data_dir, "main", None, None);
+        let prompt = build_system_prompt(&data_dir, "main", None, None).await;
         assert!(prompt.contains("[...truncated SOUL.md"));
         assert!(prompt.contains("read_file tool: agents/main/SOUL.md"));
         // 截断后总长度应远小于原始

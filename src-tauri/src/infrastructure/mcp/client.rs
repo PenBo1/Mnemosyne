@@ -5,11 +5,10 @@
 // - 同步请求-响应（一次只处理一个请求，按 id 匹配）
 // - 支持 initialize / list_tools / call_tool 三个核心方法
 // - 使用 tokio::process::Command 启动子进程
-//
-// 不实现：notifications 主动推送、resources/prompts/sampling、
-// 连接重连、请求超时（由调用方控制）。
+// - 所有请求-响应循环受 REQUEST_TIMEOUT 保护，避免子进程死锁/挂起时永久阻塞
 
 use std::process::Stdio;
+use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
@@ -19,6 +18,13 @@ use crate::shared::error::AppError;
 
 /// MCP 协议版本（2024-11-05）
 const PROTOCOL_VERSION: &str = "2024-11-05";
+
+/// 单次请求-响应超时上限。覆盖 write + flush + 读取循环全过程，
+/// 防止子进程死锁、僵尸或缓慢响应导致调用方永久挂起。
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// shutdown 中等待子进程退出的宽限期。超时后仅保证 start_kill 已调用。
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
 /// MCP stdio 客户端
 pub struct McpClient {
@@ -31,7 +37,9 @@ pub struct McpClient {
 impl McpClient {
     /// 连接到 MCP server。
     ///
-    /// Stdio 传输：启动子进程，获取 stdin/stdout 句柄。
+    /// Stdio 传输：启动子进程，获取 stdin/stdout/stderr 句柄。
+    /// stderr 通过 drain task 持续读取并写入 tracing，避免子进程 stderr
+    /// 缓冲区满导致阻塞，同时方便调试 MCP server。
     /// HTTP/SSE 传输：返回 NOT_IMPLEMENTED。
     pub async fn connect(transport: &McpTransport) -> Result<Self, AppError> {
         match transport {
@@ -43,7 +51,7 @@ impl McpClient {
                 }
                 cmd.stdin(Stdio::piped())
                     .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
+                    .stderr(Stdio::piped())
                     .kill_on_drop(true);
 
                 let mut child = cmd.spawn().map_err(|e| {
@@ -59,6 +67,20 @@ impl McpClient {
                 let stdout = child.stdout.take().ok_or_else(|| {
                     AppError::internal("MCP server child stdout unavailable")
                 })?;
+                let stderr = child.stderr.take();
+
+                if let Some(stderr) = stderr {
+                    // 启动 drain task 持续读取 stderr 并写入 tracing。
+                    // 缓冲区满会导致子进程阻塞，必须持续 drain。
+                    tokio::spawn(async move {
+                        use tokio::io::AsyncBufReadExt;
+                        let reader = tokio::io::BufReader::new(stderr);
+                        let mut lines = reader.lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            tracing::debug!(target: "mcp::stderr", line = %line, "MCP server stderr");
+                        }
+                    });
+                }
 
                 Ok(Self {
                     stdin,
@@ -78,6 +100,8 @@ impl McpClient {
     /// 发送 JSON-RPC 请求并等待响应。
     ///
     /// 读取 stdout 直到匹配的 id 出现，跳过 notification（无 id 的消息）。
+    /// 整个 write + flush + 读取循环受 `REQUEST_TIMEOUT` 保护，
+    /// 超时返回错误，避免子进程死锁/挂起时调用方永久阻塞。
     async fn send_request(
         &mut self,
         method: &str,
@@ -93,60 +117,83 @@ impl McpClient {
             "params": params.unwrap_or(serde_json::Value::Null),
         });
         let line = serde_json::to_string(&request)? + "\n";
-        self.stdin.write_all(line.as_bytes()).await.map_err(|e| {
-            AppError::internal(format!("Failed to write to MCP server stdin: {}", e))
-        })?;
-        self.stdin.flush().await.map_err(|e| {
-            AppError::internal(format!("Failed to flush MCP server stdin: {}", e))
-        })?;
 
-        // 读取响应行，跳过 notification（无 id）和不匹配的响应
-        loop {
-            let mut buf = Vec::new();
-            let n = self
-                .stdout
-                .read_until(b'\n', &mut buf)
-                .await
-                .map_err(|e| {
-                    AppError::internal(format!("Failed to read MCP server stdout: {}", e))
-                })?;
-            if n == 0 {
-                return Err(AppError::internal(
-                    "MCP server closed stdout before responding",
-                ));
-            }
-            // 跳过空行
-            if buf.iter().all(|&b| b == b'\n' || b == b'\r') {
-                continue;
-            }
-
-            let msg: serde_json::Value = serde_json::from_slice(&buf).map_err(|e| {
-                AppError::internal(format!("Failed to parse MCP response: {}", e))
+        // 整个请求-响应周期受 REQUEST_TIMEOUT 保护
+        tokio::time::timeout(REQUEST_TIMEOUT, async {
+            self.stdin.write_all(line.as_bytes()).await.map_err(|e| {
+                AppError::internal(format!("Failed to write to MCP server stdin: {}", e))
+            })?;
+            self.stdin.flush().await.map_err(|e| {
+                AppError::internal(format!("Failed to flush MCP server stdin: {}", e))
             })?;
 
-            // 跳过 notification（无 id 字段）
-            if msg.get("id").is_none() {
-                continue;
-            }
+            // 读取响应行，跳过 notification（无 id）和不匹配的响应
+            loop {
+                let mut buf = Vec::new();
+                let n = self
+                    .stdout
+                    .read_until(b'\n', &mut buf)
+                    .await
+                    .map_err(|e| {
+                        AppError::internal(format!("Failed to read MCP server stdout: {}", e))
+                    })?;
+                if n == 0 {
+                    return Err(AppError::internal(
+                        "MCP server closed stdout before responding",
+                    ));
+                }
+                // 跳过空行
+                if buf.iter().all(|&b| b == b'\n' || b == b'\r') {
+                    continue;
+                }
 
-            let resp_id = msg.get("id");
-            if resp_id != Some(&serde_json::Value::from(id)) && resp_id != Some(&serde_json::Value::from(id as i64)) {
-                // 不匹配的响应，跳过
-                continue;
-            }
+                let msg: serde_json::Value = serde_json::from_slice(&buf).map_err(|e| {
+                    AppError::internal(format!("Failed to parse MCP response: {}", e))
+                })?;
 
-            if let Some(error) = msg.get("error") {
-                return Err(AppError::internal(format!(
-                    "MCP server returned error: {}",
-                    serde_json::to_string(error).unwrap_or_else(|_| "unknown".into())
-                )));
-            }
+                // 跳过 notification（无 id 字段）
+                if msg.get("id").is_none() {
+                    tracing::debug!(
+                        method = ?msg.get("method").and_then(|m| m.as_str()),
+                        "Skipping MCP notification (no id)"
+                    );
+                    continue;
+                }
 
-            return msg
-                .get("result")
-                .cloned()
-                .ok_or_else(|| AppError::internal("MCP response missing 'result' field"));
-        }
+                let resp_id = msg.get("id");
+                // JSON-RPC 2.0: id 可为 number/string/null。我们发的是 u64 number。
+                // serde_json::Value::from(u64) 产生 Number，与 resp_id 直接比较即可
+                // （无需再单独处理 i64 —— Value::from(u64) 已选最小可表示类型）。
+                if resp_id != Some(&serde_json::Value::from(id)) {
+                    tracing::debug!(
+                        expected = id,
+                        got = ?resp_id,
+                        "Skipping MCP response with non-matching id"
+                    );
+                    // 不匹配的响应，跳过
+                    continue;
+                }
+
+                if let Some(error) = msg.get("error") {
+                    return Err(AppError::internal(format!(
+                        "MCP server returned error: {}",
+                        serde_json::to_string(error).unwrap_or_else(|_| "unknown".into())
+                    )));
+                }
+
+                return msg
+                    .get("result")
+                    .cloned()
+                    .ok_or_else(|| AppError::internal("MCP response missing 'result' field"));
+            }
+        })
+        .await
+        .map_err(|_| {
+            AppError::internal(format!(
+                "MCP request '{}' timed out after {:?}",
+                method, REQUEST_TIMEOUT
+            ))
+        })?
     }
 
     /// 发送 notification（无 id，不等待响应）。
@@ -234,9 +281,17 @@ impl McpClient {
         parse_tool_call_result(&result)
     }
 
-    /// 关闭连接（kill 子进程）。
+    /// 关闭连接：发送 SIGKILL。子进程由 `kill_on_drop` 兜底回收。
+    /// 用于 Drop 等同步路径；如需等待子进程退出，使用 `shutdown_graceful`。
     pub fn shutdown(&mut self) {
         let _ = self.child.start_kill();
+    }
+
+    /// 优雅关闭：发送 SIGKILL 后在 SHUTDOWN_WAIT 内等待子进程退出。
+    /// 超时则放弃等待（child 仍由 `kill_on_drop` 兜底回收）。
+    pub async fn shutdown_graceful(&mut self) {
+        let _ = self.child.start_kill();
+        let _ = tokio::time::timeout(SHUTDOWN_WAIT, self.child.wait()).await;
     }
 
     /// 检查子进程是否仍在运行。
@@ -251,7 +306,8 @@ impl McpClient {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        self.shutdown();
+        // Drop 中无法 await，仅保证发起 kill；优雅退出由显式调用方完成
+        let _ = self.child.start_kill();
     }
 }
 

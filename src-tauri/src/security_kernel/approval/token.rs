@@ -106,7 +106,11 @@ pub fn calculate_action_hash(op: &Operation) -> String {
             hasher.update("shell");
             hasher.update(scope.to_string().as_bytes());
             hasher.update(command.as_bytes());
-            let args_json = serde_json::to_string(args).unwrap_or_default();
+            // Medium 13: 序列化失败时记录警告（非静默）,Vec<String> 序列化实际不会失败
+            let args_json = serde_json::to_string(args).unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "Failed to serialize shell args for action hash, using empty string");
+                String::new()
+            });
             hasher.update(args_json.as_bytes());
         }
         Operation::Network { scope, endpoint, method } => {

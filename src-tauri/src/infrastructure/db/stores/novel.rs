@@ -1,4 +1,4 @@
-﻿
+
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
@@ -25,19 +25,8 @@ impl Database {
     }
 
     pub fn create_novel(&self, req: &CreateNovelRequest) -> Result<Novel, AppError> {
-        Self::validate_title(&req.title)?;
-        Self::validate_genre(&req.genre)?;
         let id = Uuid::new_v4().to_string();
-        let now = Utc::now().to_rfc3339();
-        {
-            let conn = self.conn()?;
-            conn.execute(
-                "INSERT INTO novels (id, workspace_id, title, genre, platform, status, language, word_count, chapter_count, target_chapters, chapter_words, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'drafting', ?, 0, 0, ?, ?, ?, ?)",
-                params![&id, &req.workspace_id, &req.title, &req.genre, &req.platform, &req.language, &req.target_chapters, &req.chapter_words, &now, &now],
-            ).map_err(db_err)?;
-        }
-        self.get_novel_by_id(&id)?
-            .ok_or_else(|| AppError::internal("Novel not found after creation"))
+        self.insert_novel(&id, req)
     }
 
     pub fn get_novel_by_id(&self, id: &str) -> Result<Option<Novel>, AppError> {

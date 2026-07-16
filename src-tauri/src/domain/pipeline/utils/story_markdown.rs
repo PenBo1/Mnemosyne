@@ -224,7 +224,7 @@ fn is_valid_hook_id(s: &str) -> bool {
 fn parse_pending_hook_row(cols: &[String], _language: Language) -> Option<HookRecord> {
     // 13 列：hook_id | start_chapter | type | status | last_advanced | expected_payoff |
     //        payoff_timing | depends_on | pays_off_in_arc | core_hook | half_life | promoted | notes
-    let hook_id = cols.get(0)?.trim().to_string();
+    let hook_id = cols.first()?.trim().to_string();
     let start_chapter = parse_u32_cell(cols.get(1)).unwrap_or(0);
     let type_ = cols.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
     let status = parse_hook_status_cell(cols.get(3));
@@ -348,10 +348,28 @@ pub fn parse_chapter_summaries_markdown(markdown: &str) -> Vec<ChapterSummaryRow
 // ── 共享工具函数 ─────────────────────────────────────────────
 
 fn is_header_or_separator(line: &str) -> bool {
-    line.contains("---") || line.contains("章节") || line.contains("hook_id")
-        || line.contains("field") || line.contains("字段")
-        || line.contains("Chapter") || line.contains("chapter")
-        || line.contains("Title") || line.contains("title")
+    let cols = split_table_row(line);
+    if cols.is_empty() {
+        return false;
+    }
+
+    // 分隔符行：所有单元格匹配 ^:?-+:?$ 模式（markdown table separator）
+    let is_separator = cols.iter().all(|c| {
+        let t = c.trim();
+        t.contains('-') && t.chars().all(|ch| ch == '-' || ch == ':')
+    });
+    if is_separator {
+        return true;
+    }
+
+    // 表头行：任一单元格精确匹配已知表头关键词（不再用 substring 匹配，避免误伤数据行）
+    cols.iter().any(|c| {
+        let t = c.trim().to_lowercase();
+        matches!(t.as_str(),
+            "章节" | "chapter" | "hook_id" | "field" | "字段"
+            | "title" | "标题"
+        )
+    })
 }
 
 fn split_table_row(line: &str) -> Vec<String> {
@@ -388,7 +406,9 @@ fn parse_hook_payoff_timing_cell(cell: Option<&String>) -> Option<HookPayoffTimi
     match s.as_str() {
         "immediate" | "即时" => Some(HookPayoffTiming::Immediate),
         "near-term" | "近期" | "短期" => Some(HookPayoffTiming::NearTerm),
-        "mid-arc" | "中段" | "中期" => Some(HookPayoffTiming::MidArc),
+        // "mid-term" 为 architect SYSTEM_PROMPT 中使用的别名，不可修改 prompt 文本，
+        // 故在此处作为 MidArc 的解析别名兼容。
+        "mid-arc" | "mid-term" | "中段" | "中期" => Some(HookPayoffTiming::MidArc),
         "slow-burn" | "慢热" | "长线" => Some(HookPayoffTiming::SlowBurn),
         "endgame" | "终局" => Some(HookPayoffTiming::Endgame),
         _ => None,
@@ -498,9 +518,7 @@ fn render_depends_on_cell(depends_on: Option<&[String]>, is_en: bool) -> String 
 fn render_bool_cell(value: bool, is_en: bool) -> String {
     if is_en {
         if value { "true".to_string() } else { "false".to_string() }
-    } else {
-        if value { "是".to_string() } else { "否".to_string() }
-    }
+    } else if value { "是".to_string() } else { "否".to_string() }
 }
 
 fn escape_table_cell(cell: &str) -> String {
@@ -520,10 +538,10 @@ mod tests {
         assert_eq!(facts.len(), 2);
         assert_eq!(facts[0].predicate, "当前位置");
         assert_eq!(facts[0].object, "码头");
-        assert_eq!(facts[0].subject, "protagonist");
+        assert_eq!(facts[0].subject, "current_location");
         assert_eq!(facts[0].valid_from_chapter, 12);
         assert_eq!(facts[1].predicate, "主角状态");
-        assert_eq!(facts[1].subject, "protagonist");
+        assert_eq!(facts[1].subject, "protagonist_state");
     }
 
     #[test]

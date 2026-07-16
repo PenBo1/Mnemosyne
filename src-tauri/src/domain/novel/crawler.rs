@@ -125,6 +125,7 @@ pub async fn download(
     let source_arc = Arc::new(source.clone());
     let total = chapters.len();
     let mut tasks = JoinSet::new();
+    let mut failed_chapters: Vec<String> = Vec::new();
     for ch in chapters {
         let src = source_arc.clone();
         tasks.spawn(async move {
@@ -145,7 +146,7 @@ pub async fn download(
         // 简单的并发节流:任务数达到上限时,等待至少一个完成
         if tasks.len() >= MAX_CONCURRENCY {
             if let Some(res) = tasks.join_next().await {
-                handle_chapter_result(res)?;
+                handle_chapter_result(res, &mut failed_chapters)?;
             }
         }
     }
@@ -153,16 +154,22 @@ pub async fn download(
     // 收集结果,按章节序号排序
     let mut results: Vec<(usize, String)> = Vec::with_capacity(total);
     while let Some(res) = tasks.join_next().await {
-        if let Some((idx, content)) = handle_chapter_result(res)? {
+        if let Some((idx, content)) = handle_chapter_result(res, &mut failed_chapters)? {
             results.push((idx, content));
         }
     }
     results.sort_by_key(|(i, _)| *i);
 
-    // 4) 合并为 TXT 文件
-    std::fs::create_dir_all(novels_dir)
-        .map_err(|e| AppError::internal(format!("failed to create novels dir: {}", e)))?;
+    if !failed_chapters.is_empty() {
+        tracing::warn!(
+            total = total,
+            succeeded = results.len(),
+            failed = failed_chapters.len(),
+            "Download completed with partial failures"
+        );
+    }
 
+    // 4) 合并为 TXT 文件
     let filename = sanitize_filename(&format!("{} ({}).txt", detail.book_name, detail.author));
     let out_path = novels_dir.join(filename);
     let mut out = String::new();
@@ -178,8 +185,18 @@ pub async fn download(
         out.push_str(&content);
         out.push_str("\n\n");
     }
-    std::fs::write(&out_path, out)
-        .map_err(|_| AppError::file_write_error(out_path.display().to_string()))?;
+
+    // create_dir + write 卸载到阻塞线程池
+    let novels_dir_owned = novels_dir.to_path_buf();
+    let out_path = tokio::task::spawn_blocking(move || -> Result<PathBuf, AppError> {
+        std::fs::create_dir_all(&novels_dir_owned)
+            .map_err(|e| AppError::internal(format!("failed to create novels dir: {}", e)))?;
+        std::fs::write(&out_path, out)
+            .map_err(|e| AppError::internal(format!("failed to write novel file: {}", e)))?;
+        Ok(out_path)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     tracing::info!(path = %out_path.display(), "download complete");
     Ok(out_path)
@@ -192,18 +209,21 @@ async fn fetch_chapter_content(source: &BookSource, url: &str) -> Result<String,
 }
 
 /// `handle_chapter_result` 把 `JoinSet::join_next` 的 `Result<Result<T, E>, JoinError>` 拍平:
-/// 任务 panic 或最终失败都返回 Ok(None) 表示跳过该章节。
+/// 任务 panic 或最终失败都返回 Ok(None) 表示跳过该章节,并将失败原因累计到 `failed`。
 fn handle_chapter_result(
     res: Result<Result<(usize, String), String>, tokio::task::JoinError>,
+    failed: &mut Vec<String>,
 ) -> Result<Option<(usize, String)>, AppError> {
     match res {
         Ok(Ok(v)) => Ok(Some(v)),
         Ok(Err(e)) => {
             tracing::warn!(error = %e, "chapter download failed after retries, skipping");
+            failed.push(e);
             Ok(None)
         }
         Err(e) => {
             tracing::warn!(error = %e, "chapter task panicked, skipping");
+            failed.push(format!("task panicked: {}", e));
             Ok(None)
         }
     }

@@ -7,15 +7,15 @@ const MAX_TITLE_LEN: usize = 255;
 const MAX_CONTENT_LEN: usize = 1_000_000;
 
 fn validate_novel_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "novel_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "novel_id").map_err(AppError::invalid_input)
 }
 
 fn validate_entry_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "entry_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "entry_id").map_err(AppError::invalid_input)
 }
 
 fn validate_link_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "link_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "link_id").map_err(AppError::invalid_input)
 }
 
 fn validate_title(title: &str) -> Result<(), AppError> {

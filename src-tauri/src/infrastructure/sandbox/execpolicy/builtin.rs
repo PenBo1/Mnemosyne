@@ -12,13 +12,18 @@ use super::types::{
 };
 
 /// 构造内置默认 ExecPolicy。
+///
+/// 构造后调用 `normalize()` 按 priority 降序排序，使 evaluator 可直接顺序遍历，
+/// 避免每次评估重新 sort（L18）。
 pub fn default_policy() -> ExecPolicy {
-    ExecPolicy {
+    let mut policy = ExecPolicy {
         default_decision: PolicyDecision::AskUser,
         command_rules: default_command_rules(),
         path_rules: default_path_rules(),
         network_rules: default_network_rules(),
-    }
+    };
+    policy.normalize();
+    policy
 }
 
 // ── 命令规则 ──

@@ -1,4 +1,4 @@
-﻿
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -14,7 +14,14 @@ impl OllamaProvider {
     pub fn new(base_url: Option<String>) -> Self {
         let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
         tracing::debug!(base_url = %url, "OllamaProvider created");
-        Self { client: Client::new(), base_url: url }
+        Self {
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(600))
+                .build()
+                .expect("failed to build reqwest client for OllamaProvider"),
+            base_url: url,
+        }
     }
 }
 
@@ -68,13 +75,14 @@ impl Provider for OllamaProvider {
         tracing::info!(status = %resp.status(), "Ollama stream response received");
 
         let byte_stream = resp.bytes_stream();
-        let event_stream = byte_stream.map(|chunk| {
-            match chunk {
+        let buffer = super::sse_buffer::SseLineBuffer::new();
+        let event_stream = byte_stream.scan(buffer, |buf, chunk| {
+            let events: Vec<StreamEvent> = match chunk {
                 Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
+                    let lines = buf.push(bytes.as_ref());
                     let mut events = Vec::new();
-                    for line in text.lines() {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                    for line in lines {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
                             if let Some(content) = json["message"]["content"].as_str() {
                                 if !content.is_empty() { events.push(StreamEvent::TextDelta { content: content.to_string() }); }
                             }
@@ -86,13 +94,14 @@ impl Provider for OllamaProvider {
                             }
                         }
                     }
-                    futures_util::stream::iter(events)
+                    events
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "Ollama stream chunk error");
-                    futures_util::stream::iter(vec![StreamEvent::Error(e.to_string())])
+                    vec![StreamEvent::Error(e.to_string())]
                 }
-            }
+            };
+            futures_util::future::ready(Some(futures_util::stream::iter(events)))
         }).flatten();
         Ok(Box::pin(event_stream))
     }

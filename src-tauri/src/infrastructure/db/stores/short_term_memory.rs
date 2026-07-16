@@ -130,7 +130,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([entry_date], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按日期范围列出(用于每晚合并短期→长期)
@@ -149,7 +149,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([start_date, end_date], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按 book_id 获取该书的 session 摘要(用于小说创作的上下文回顾)
@@ -166,7 +166,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map(params![book_id, limit], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// GC:删除 created_at 早于 cutoff_iso 的短期记忆(30 天滚动保留)
@@ -177,6 +177,17 @@ impl Database {
             params![cutoff_iso],
         ).map_err(db_err)?;
         Ok(affected as u64)
+    }
+
+    /// 统计 memory_short_term 表总行数(用于 stats 命令的 total 字段)。
+    ///
+    /// SQLite COUNT(*) 走索引,性能足够(表本身有 30 天 GC 收缩)。
+    pub fn count_all_short_term(&self) -> Result<u64, AppError> {
+        let conn = self.conn()?;
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_short_term", [], |row| row.get(0))
+            .map_err(db_err)?;
+        Ok(count as u64)
     }
 }
 

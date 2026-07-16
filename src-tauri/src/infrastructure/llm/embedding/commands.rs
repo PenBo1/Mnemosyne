@@ -169,17 +169,16 @@ pub async fn embedding_search(
 
 /// 删除指定文档的向量索引
 #[tauri::command]
-#[allow(non_snake_case)]
 pub fn embedding_delete_doc(
     state: State<'_, DbState>,
-    docType: String,
-    docId: String,
+    doc_type: String,
+    doc_id: String,
 ) -> Result<IpcResponse<usize>, AppError> {
-    validate_doc_type(&docType)?;
-    if docId.trim().is_empty() {
-        return Err(AppError::invalid_input("docId is empty"));
+    validate_doc_type(&doc_type)?;
+    if doc_id.trim().is_empty() {
+        return Err(AppError::invalid_input("doc_id is empty"));
     }
-    let n = state.db.delete_vectors_by_doc(&docType, &docId)?;
+    let n = state.db.delete_vectors_by_doc(&doc_type, &doc_id)?;
     Ok(IpcResponse::ok(n))
 }
 

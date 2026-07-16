@@ -21,7 +21,8 @@ pub async fn memory_list(state: State<'_, MemoryState>, book_id: String) -> Resu
 pub async fn memory_search(state: State<'_, MemoryState>, book_id: String, query: String, top_k: Option<u32>) -> Result<IpcResponse<Vec<MemoryEntry>>, AppError> {
     validate_id_component(&book_id, "book_id")?;
     if query.trim().is_empty() { return Ok(IpcResponse::ok(Vec::new())); }
-    let k = top_k.unwrap_or(10) as usize;
+    // 上限 100 防止前端传超大 top_k 导致结果集过大
+    let k = (top_k.unwrap_or(10).min(100)) as usize;
     let entries = state.store.search(&book_id, &query, k).await;
     Ok(IpcResponse::ok(entries))
 }
@@ -61,7 +62,7 @@ pub async fn memory_update(
     validate_id_component(&entry_id, "entry_id")?;
     if content.trim().is_empty() { return Err(AppError::invalid_input("Content cannot be empty")); }
     if content.len() > 10000 { return Err(AppError::invalid_input("Content too long")); }
-    let updated = state.store.update_entry(&book_id, &entry_id, content, tags).await.ok_or_else(|| AppError::not_found("Memory entry not found"))?;
+    let updated = state.store.update_entry(&book_id, &entry_id, content, tags).await?.ok_or_else(|| AppError::not_found("Memory entry not found"))?;
     Ok(IpcResponse::ok(updated))
 }
 
@@ -69,7 +70,7 @@ pub async fn memory_update(
 pub async fn memory_delete(state: State<'_, MemoryState>, book_id: String, entry_id: String) -> Result<IpcResponse<bool>, AppError> {
     validate_id_component(&book_id, "book_id")?;
     validate_id_component(&entry_id, "entry_id")?;
-    let deleted = state.store.delete_entry(&book_id, &entry_id).await;
+    let deleted = state.store.delete_entry(&book_id, &entry_id).await?;
     if !deleted { return Err(AppError::not_found("Memory entry not found")); }
     Ok(IpcResponse::ok(deleted))
 }
@@ -192,9 +193,14 @@ pub async fn memory_read_archive(
             "Archive file not found: {archive_file}",
         )));
     }
-    let content = std::fs::read_to_string(&path).map_err(|e| {
-        AppError::internal(format!("Failed to read archive {}: {}", path.display(), e))
-    })?;
+    // 文件 I/O 卸载到阻塞线程池
+    let content = tokio::task::spawn_blocking(move || -> Result<String, AppError> {
+        std::fs::read_to_string(&path).map_err(|e| {
+            AppError::internal(format!("Failed to read archive: {}", e))
+        })
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(content))
 }
 
@@ -221,13 +227,14 @@ pub async fn memory_delete_archive(
         .join(&row.role)
         .join(&row.archive_file);
     if file_path.exists() {
-        if let Err(e) = std::fs::remove_file(&file_path) {
-            return Err(AppError::internal(format!(
-                "Failed to delete archive file {}: {}",
-                file_path.display(),
-                e
-            )));
-        }
+        // 文件 I/O 卸载到阻塞线程池
+        tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+            std::fs::remove_file(&file_path).map_err(|e| {
+                AppError::internal(format!("Failed to delete archive file: {}", e))
+            })
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     }
 
     // 删 DB 元数据记录

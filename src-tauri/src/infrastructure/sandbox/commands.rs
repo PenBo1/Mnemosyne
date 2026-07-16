@@ -21,7 +21,7 @@ fn validate_sandbox_path(path: &str) -> Result<PathBuf, AppError> {
             "Path too long (max {} chars)", MAX_PATH_LEN
         )));
     }
-    validate_path(path).map_err(|e| AppError::invalid_input(e))?;
+    validate_path(path).map_err(AppError::invalid_input)?;
 
     let path_buf = PathBuf::from(path);
     if path_buf.components().any(|c| c.as_os_str() == "..") {

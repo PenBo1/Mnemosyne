@@ -7,7 +7,7 @@ static SYSTEM: OnceLock<std::sync::Mutex<System>> = OnceLock::new();
 
 fn get_system() -> std::sync::MutexGuard<'static, System> {
     let sys = SYSTEM.get_or_init(|| std::sync::Mutex::new(System::new_all()));
-    sys.lock().expect("Failed to lock system monitor")
+    sys.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 pub struct ResourceMonitor {

@@ -8,6 +8,8 @@
 // 封面图片生成未实现（仅落盘 cover-prompt.md）。
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
 use super::super::agents::short_fiction::{
@@ -17,6 +19,7 @@ use super::super::agents::short_fiction::{
     SHORT_FICTION_MAX_CHAPTERS, SHORT_FICTION_MIN_CHAPTERS,
 };
 use super::super::types::Language;
+use super::super::utils::fs_safety::{safe_segment, slugify};
 
 // ── 本地常量 ─────────────────────────────────────────────────
 // zh/en 字数边界
@@ -129,7 +132,7 @@ impl ShortFictionRunner {
             )?
         };
 
-        let provided_story_id = options.story_id.as_ref().map(|s| safe_segment(s));
+        let provided_story_id = options.story_id.as_ref().map(|s| safe_segment(s, "short"));
 
         // 断点续跑：若 final/full.md 已存在且 status≠failed，直接返回
         if let Some(sid) = &provided_story_id {
@@ -204,7 +207,7 @@ impl ShortFictionRunner {
                     } else {
                         outline_v1.story_title.as_str()
                     };
-                    safe_segment(&slugify(seed))
+                    safe_segment(&slugify(seed, "short"), "short")
                 });
             let base_dir = self.story_dir(&sid);
 
@@ -474,58 +477,6 @@ fn bounded_integer(
     Ok(parsed)
 }
 
-/// slugify：将标题转为 URL 友好的 slug。
-/// 小写化 → 去引号 → 非字母数字序列替换为单个 - → 去首尾 - → 截断 60 字符。
-fn slugify(value: &str) -> String {
-    let lower: String = value.to_lowercase();
-    let mut slug = String::new();
-    let mut prev_dash = false;
-    for c in lower.chars() {
-        if c == '\'' || c == '"' {
-            continue;
-        }
-        if c.is_alphanumeric() {
-            slug.push(c);
-            prev_dash = false;
-        } else if !prev_dash {
-            slug.push('-');
-            prev_dash = true;
-        }
-    }
-    let trimmed = slug.trim_matches('-');
-    let truncated: String = trimmed.chars().take(60).collect();
-    if truncated.is_empty() {
-        format!("short-{}", chrono::Utc::now().timestamp_millis())
-    } else {
-        truncated
-    }
-}
-
-/// 文件系统安全段。
-/// 危险字符 → -，空白序列 → 单个 -，去首尾 -，截断 80 字符。
-fn safe_segment(value: &str) -> String {
-    // 1. 替换危险字符为 -
-    let after_dangerous: String = value
-        .chars()
-        .map(|c| match c {
-            '\\' | '/' | ':' | '\0' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
-            _ => c,
-        })
-        .collect();
-    // 2. 替换空白字符序列为单个 -
-    let after_ws = regex::Regex::new(r"\s+")
-        .map(|re| re.replace_all(&after_dangerous, "-").to_string())
-        .unwrap_or(after_dangerous);
-    // 3. 去除首尾 -，截断到 80 字符
-    let trimmed = after_ws.trim_matches('-');
-    let truncated: String = trimmed.chars().take(80).collect();
-    if truncated.is_empty() || truncated == "." || truncated == ".." {
-        format!("short-{}", chrono::Utc::now().timestamp_millis())
-    } else {
-        truncated
-    }
-}
-
 /// 文件名安全化。
 /// 危险字符 → _，空白序列 → 单个空格，trim，截断 80 字符。
 fn safe_file_name(value: &str) -> String {
@@ -536,9 +487,11 @@ fn safe_file_name(value: &str) -> String {
             _ => c,
         })
         .collect();
-    let after_ws = regex::Regex::new(r"\s+")
-        .map(|re| re.replace_all(&after_dangerous, " ").to_string())
-        .unwrap_or(after_dangerous);
+    static WS_PLUS_FNAME: OnceLock<regex::Regex> = OnceLock::new();
+    let after_ws = WS_PLUS_FNAME
+        .get_or_init(|| regex::Regex::new(r"\s+").expect("valid ws+ regex"))
+        .replace_all(&after_dangerous, " ")
+        .to_string();
     let trimmed = after_ws.trim();
     let truncated: String = trimmed.chars().take(80).collect();
     if truncated.is_empty() {
@@ -686,73 +639,6 @@ mod tests {
         ShortFictionBatchDraft, ShortFictionChapter, ShortFictionSalesPackage,
     };
     use tempfile::TempDir;
-
-    // ── slugify ──
-
-    #[test]
-    fn slugify_lowercases_and_dashes() {
-        assert_eq!(slugify("Hello World!"), "hello-world");
-    }
-
-    #[test]
-    fn slugify_preserves_alphanumeric() {
-        assert_eq!(slugify("Story #42"), "story-42");
-    }
-
-    #[test]
-    fn slugify_preserves_cjk() {
-        // CJK 字符是 alphanumeric，保留
-        assert_eq!(slugify("暗流 涌动"), "暗流-涌动");
-    }
-
-    #[test]
-    fn slugify_truncates_to_60() {
-        let long = "a".repeat(100);
-        let result = slugify(&long);
-        assert_eq!(result.len(), 60);
-    }
-
-    #[test]
-    fn slugify_empty_returns_fallback() {
-        let result = slugify("!!!");
-        assert!(
-            result.starts_with("short-"),
-            "expected fallback, got: {}",
-            result
-        );
-    }
-
-    // ── safe_segment ──
-
-    #[test]
-    fn safe_segment_replaces_dangerous_chars() {
-        assert_eq!(safe_segment("a/b:c"), "a-b-c");
-    }
-
-    #[test]
-    fn safe_segment_collapses_whitespace_runs() {
-        // 多个空格 collapses 为单个 -
-        assert_eq!(safe_segment("hello   world"), "hello-world");
-    }
-
-    #[test]
-    fn safe_segment_rejects_dot() {
-        let result = safe_segment(".");
-        assert!(result.starts_with("short-"));
-    }
-
-    #[test]
-    fn safe_segment_rejects_empty() {
-        let result = safe_segment("");
-        assert!(result.starts_with("short-"));
-    }
-
-    #[test]
-    fn safe_segment_truncates_to_80() {
-        let long = "a".repeat(100);
-        let result = safe_segment(&long);
-        assert_eq!(result.len(), 80);
-    }
 
     // ── safe_file_name ──
 

@@ -24,7 +24,7 @@ use crate::shared::error::{AppError, IpcResponse};
 pub async fn mcp_list_servers(
     state: State<'_, McpState>,
 ) -> Result<IpcResponse<Vec<McpServerConfig>>, AppError> {
-    Ok(IpcResponse::ok(state.list_servers()))
+    Ok(IpcResponse::ok(state.list_servers()?))
 }
 
 /// 添加 MCP server 配置。

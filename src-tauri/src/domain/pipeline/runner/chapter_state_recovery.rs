@@ -40,12 +40,16 @@ pub struct StateDegradedReviewNote {
 /// 结算重试结果
 ///
 /// retry_settlement 返回：
-/// - Recovered：重试后校验通过，携带新的 ValidationResult
+/// - Recovered：重试后校验通过，携带新的 ValidationResult 与重试后的 truth 文件
 /// - Degraded：重试仍失败，携带降级问题列表
 pub enum SettlementRetryResult {
     /// 重试成功
     Recovered {
         validation: ValidationResult,
+        /// 重试后的 current_state.md 内容（调用方需持久化）
+        retry_state: String,
+        /// 重试后的 pending_hooks.md 内容（调用方需持久化）
+        retry_hooks: String,
     },
     /// 重试仍失败，降级
     Degraded {
@@ -178,7 +182,15 @@ pub fn build_state_degraded_review_note(
             })
             .collect(),
     };
-    serde_json::to_string(&note).expect(r###"StateDegradedReviewNote 序列化不应失败"###)
+    // 序列化 String/Vec<String> 字段理论上不会失败，但避免 expect/panic：
+    // 失败时降级为仅含 baseStatus 的最小 JSON（保留 kind 标识，下游可识别）
+    serde_json::to_string(&note).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "StateDegradedReviewNote 序列化失败，降级为最小 JSON");
+        format!(
+            r#"{{"kind":"state-degraded","baseStatus":"{}","injectedIssues":[]}}"#,
+            base_status.replace('"', r#"\""#)
+        )
+    })
 }
 
 /// 解析状态降级审查笔记

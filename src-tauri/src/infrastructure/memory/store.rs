@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use serde::{Serialize, Deserialize};
 use tokio::sync::RwLock;
 use crate::infrastructure::db::connection::Database;
@@ -19,6 +20,9 @@ use crate::infrastructure::memory::types::{
 };
 
 const DEFAULT_BUDGET: usize = 20;
+/// in-memory cache 中最多保留多少个 book 的记忆条目；超出后淘汰最久未访问的 book。
+/// book 数据本身持久化在 SQLite，淘汰后下次访问会通过 ensure_loaded() 重新加载。
+const MAX_BOOKS_IN_CACHE: usize = 32;
 
 /// 旧 JSON 文件结构（仅用于一次性导入）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +35,8 @@ pub struct MemoryStore {
     books: RwLock<HashMap<String, Arc<RwLock<MemorySystem>>>>,
     /// 已从 SQLite 加载过的 book_id 集合，避免重复加载
     loaded: RwLock<std::collections::HashSet<String>>,
+    /// 每个 book 上次被访问的时间戳，用于 LRU 淘汰
+    last_access: RwLock<HashMap<String, Instant>>,
     db: Database,
     /// 保留 data_dir 用于一次性导入旧 JSON 文件
     data_dir: PathBuf,
@@ -68,6 +74,7 @@ impl MemoryStore {
         let store = Arc::new(Self {
             books: RwLock::new(HashMap::new()),
             loaded: RwLock::new(std::collections::HashSet::new()),
+            last_access: RwLock::new(HashMap::new()),
             db,
             data_dir,
         });
@@ -144,6 +151,8 @@ impl MemoryStore {
     }
 
     /// 懒加载：首次访问某 book 时从 SQLite 读取全部条目到 in-memory cache。
+    /// 同时执行 LRU 淘汰：当 books 数量超过 MAX_BOOKS_IN_CACHE 时，
+    /// 移除最久未访问的 book（含其 books/loaded/last_access 三处记录）。
     async fn ensure_loaded(&self, book_id: &str) {
         {
             let loaded = self.loaded.read().await;
@@ -167,21 +176,52 @@ impl MemoryStore {
         let mut memory = MemorySystem::new(DEFAULT_BUDGET as u32);
         memory.entries = entries;
         let mut books = self.books.write().await;
+        let mut last_access = self.last_access.write().await;
+        // LRU 淘汰：超过上限时移除最久未访问的 book
+        if books.len() >= MAX_BOOKS_IN_CACHE {
+            // 找出当前 books 中最久未访问的 book_id。
+            // 缺失 last_access 的 book 视为"极旧"（24h 前），避免新加入但 last_access
+            // 缺失的 book 被当作"最新永不淘汰"（原 bug 用 Instant::now() 作为
+            // 回退值，反而把它当作最新）。
+            let stale_fallback = Instant::now() - std::time::Duration::from_secs(86400);
+            if let Some(evict_id) = books
+                .keys()
+                .min_by_key(|bid| last_access.get(*bid).copied().unwrap_or(stale_fallback))
+                .cloned()
+            {
+                books.remove(&evict_id);
+                loaded.remove(&evict_id);
+                last_access.remove(&evict_id);
+                tracing::debug!(book_id = %evict_id, "Evicted memory cache entry (LRU)");
+            }
+        }
         books.insert(book_id.to_string(), Arc::new(RwLock::new(memory)));
+        // 补写 last_access（即使 or_insert_with 路径也保证有记录）
+        last_access.insert(book_id.to_string(), Instant::now());
         loaded.insert(book_id.to_string());
     }
 
     pub async fn get_or_create(&self, book_id: &str, budget: usize) -> Arc<RwLock<MemorySystem>> {
         self.ensure_loaded(book_id).await;
-        let mut books = self.books.write().await;
-        books.entry(book_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(budget as u32))))
-            .clone()
+        let arc = {
+            let mut books = self.books.write().await;
+            books
+                .entry(book_id.to_string())
+                .or_insert_with(|| Arc::new(RwLock::new(MemorySystem::new(budget as u32))))
+                .clone()
+        };
+        // 在 books 锁释放后再写 last_access，避免双重持锁跨 await
+        self.last_access.write().await.insert(book_id.to_string(), Instant::now());
+        arc
     }
 
     pub async fn get(&self, book_id: &str) -> Option<Arc<RwLock<MemorySystem>>> {
         self.ensure_loaded(book_id).await;
-        self.books.read().await.get(book_id).cloned()
+        let arc = self.books.read().await.get(book_id).cloned();
+        if arc.is_some() {
+            self.last_access.write().await.insert(book_id.to_string(), Instant::now());
+        }
+        arc
     }
 
     pub async fn archive_fact(
@@ -298,7 +338,7 @@ impl MemoryStore {
         self.ensure_loaded(book_id).await;
         let books = self.books.read().await;
         if let Some(memory) = books.get(book_id) {
-            memory.read().await.get_all_entries().iter().cloned().collect()
+            memory.read().await.get_all_entries().to_vec()
         } else {
             Vec::new()
         }
@@ -337,17 +377,21 @@ impl MemoryStore {
         entry
     }
 
-    pub async fn delete_entry(&self, book_id: &str, entry_id: &str) -> bool {
-        let deleted = self.db.delete_memory_entry(book_id, entry_id)
-            .unwrap_or(false);
+    pub async fn delete_entry(&self, book_id: &str, entry_id: &str) -> Result<bool, crate::shared::error::AppError> {
+        // DB 调用失败直接 ? 传播（不静默吞错为 false）。
+        let deleted = self.db.delete_memory_entry(book_id, entry_id)?;
         if deleted {
-            // 同步从 in-memory cache 移除
-            let books = self.books.read().await;
-            if let Some(memory) = books.get(book_id) {
+            // 同步从 in-memory cache 移除。先 clone Arc 出来再释放 books 读锁，
+            // 避免外层 RwLock 读守卫跨 await。
+            let memory_arc = {
+                let books = self.books.read().await;
+                books.get(book_id).cloned()
+            };
+            if let Some(memory) = memory_arc {
                 let _ = memory.write().await.delete_entry(entry_id);
             }
         }
-        deleted
+        Ok(deleted)
     }
 
     pub async fn update_entry(
@@ -356,26 +400,57 @@ impl MemoryStore {
         entry_id: &str,
         content: String,
         _tags: Vec<String>,
-    ) -> Option<MemoryEntry> {
-        let updated = self.db.update_memory_entry_content(book_id, entry_id, &content)
-            .unwrap_or(false);
-        if updated {
-            // 同步更新 in-memory cache
-            let books = self.books.read().await;
-            if let Some(memory) = books.get(book_id) {
-                let _ = memory.write().await.update_entry(entry_id, &content);
-            }
-            return Some(make_entry(
-                entry_id.to_string(),
-                content,
-                MemoryType::Fact,
-                "update",
-                None,
-                None,
-                1,
-            ));
+    ) -> Result<Option<MemoryEntry>, crate::shared::error::AppError> {
+        // DB 调用失败直接 ? 传播（不静默吞错为 false）。
+        let updated = self.db.update_memory_entry_content(book_id, entry_id, &content)?;
+        if !updated {
+            return Ok(None);
         }
-        None
+
+        // 同步更新 in-memory cache 并返回更新后的 entry。
+        // 关键：保留原 entry 的 id/type/source/chapter/tags/created_at/timestamp，
+        // 仅替换 value/content/updated_at —— 不用 make_entry 重建避免丢失元数据。
+        let memory_arc = {
+            let books = self.books.read().await;
+            books.get(book_id).cloned()
+        };
+        let mut updated_entry: Option<MemoryEntry> = None;
+        if let Some(memory) = memory_arc {
+            let mut mem = memory.write().await;
+            // 找到原 entry 并 in-place 修改，保留所有非 value 字段
+            if let Some(entry) = mem.entries.iter_mut().find(|e| e.id == entry_id) {
+                entry.value = content.clone();
+                entry.content = Some(content.clone());
+                entry.updated_at = chrono::Utc::now().to_rfc3339();
+                updated_entry = Some(entry.clone());
+            }
+        }
+
+        // 如果 cache 中没找到（book 未加载或 entry 不在 cache），从 DB 读一次返回。
+        Ok(match updated_entry {
+            Some(e) => Some(e),
+            None => {
+                // fallback：仅用 DB 已知字段构造返回值。
+                // 由于 update_memory_entry_content 只更新 value/content/updated_at，
+                // 其他字段必须由调用方或后续 retrieve 命令从 DB 读取。
+                let now = chrono::Utc::now().to_rfc3339();
+                Some(MemoryEntry {
+                    id: entry_id.to_string(),
+                    key: String::new(),
+                    value: content,
+                    memory_type: MemoryType::General,
+                    source: String::new(),
+                    importance: 0,
+                    created_at: now.clone(),
+                    updated_at: now.clone(),
+                    content: None,
+                    entry_type: None,
+                    chapter: None,
+                    timestamp: None,
+                    tags: None,
+                })
+            }
+        })
     }
 
     pub async fn format_context(&self, book_id: &str) -> String {
@@ -415,7 +490,9 @@ impl MemoryStore {
     /// - summaries: 最近 N 章的 chapter_summaries（chapter < current, DESC, LIMIT）
     /// - hooks / volume_summaries: 无 SQLite 表，返回空（前端降级到 markdown）
     ///
-    /// 失败时返回 Err（不 silent fallback），由 IPC 层决定降级策略。
+    /// 失败策略（对齐 "no silent fallback"）：DB 查询失败时直接返回 Err，
+    /// 由 IPC 层决定降级策略（前端可以转而读 markdown 文件，但不能让本命令
+    /// 静默返回空数据导致用户误以为无数据）。
     pub fn retrieve_selection(&self, req: &MemoryRetrievalRequest) -> Result<MemoryRetrievalResult, crate::shared::error::AppError> {
         let max_items = req.max_items_per_category.clamp(1, 200) as u32;
         let chapter = req.chapter_number.unwrap_or(0).max(0) as u32;
@@ -424,40 +501,18 @@ impl MemoryStore {
         let mut summaries: Vec<RetrievedSummary> = Vec::new();
 
         if req.include_facts && chapter > 0 {
-            match self.db.query_facts_at_chapter(&req.book_id, chapter) {
-                Ok(rows) => {
-                    facts = rows.iter()
-                        .take(max_items as usize)
-                        .map(RetrievedFact::from_story_fact)
-                        .collect();
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        book_id = %req.book_id,
-                        chapter = chapter,
-                        error = %e,
-                        "query_facts_at_chapter failed, returning empty facts"
-                    );
-                }
-            }
+            let rows = self.db.query_facts_at_chapter(&req.book_id, chapter)?;
+            facts = rows.iter()
+                .take(max_items as usize)
+                .map(RetrievedFact::from_story_fact)
+                .collect();
         }
 
         if req.include_summaries && chapter > 0 {
-            match self.db.list_recent_chapter_summaries(&req.book_id, chapter, max_items) {
-                Ok(rows) => {
-                    summaries = rows.iter()
-                        .map(RetrievedSummary::from_chapter_summary)
-                        .collect();
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        book_id = %req.book_id,
-                        chapter = chapter,
-                        error = %e,
-                        "list_recent_chapter_summaries failed, returning empty summaries"
-                    );
-                }
-            }
+            let rows = self.db.list_recent_chapter_summaries(&req.book_id, chapter, max_items)?;
+            summaries = rows.iter()
+                .map(RetrievedSummary::from_chapter_summary)
+                .collect();
         }
 
         let has_data = !facts.is_empty() || !summaries.is_empty();

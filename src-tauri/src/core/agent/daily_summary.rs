@@ -12,6 +12,7 @@
 // 所有错误都被 catch 并 log,不向上抛出(避免后台任务 panic)。
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -55,7 +56,7 @@ impl Default for DailySummaryConfig {
 /// 每日摘要任务
 pub struct DailySummaryTask {
     config: RwLock<DailySummaryConfig>,
-    running: RwLock<bool>,
+    running: AtomicBool,
     handle: RwLock<Option<JoinHandle<()>>>,
 }
 
@@ -63,7 +64,7 @@ impl DailySummaryTask {
     pub fn new() -> Self {
         Self {
             config: RwLock::new(DailySummaryConfig::default()),
-            running: RwLock::new(false),
+            running: AtomicBool::new(false),
             handle: RwLock::new(None),
         }
     }
@@ -75,16 +76,16 @@ impl DailySummaryTask {
         db: Database,
         data_dir: DataDir,
     ) -> Result<(), AppError> {
-        let mut running = self.running.write().await;
-        if *running {
+        // CAS：若已运行则直接返回
+        if self.running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             return Ok(());
         }
         let config = self.config.read().await.clone();
         if !config.enabled {
+            self.running.store(false, Ordering::SeqCst);
             tracing::info!("Daily summary task is disabled, skipping start");
             return Ok(());
         }
-        *running = true;
 
         let this = self.clone();
         let handle = tokio::spawn(async move {
@@ -94,7 +95,7 @@ impl DailySummaryTask {
             interval.tick().await; // 跳过首次立即触发
             loop {
                 interval.tick().await;
-                if !*this.running.read().await {
+                if !this.running.load(Ordering::SeqCst) {
                     break;
                 }
                 let cfg = this.config.read().await.clone();
@@ -117,8 +118,7 @@ impl DailySummaryTask {
 
     /// 停止定时任务
     pub async fn stop(&self) {
-        let mut running = self.running.write().await;
-        *running = false;
+        self.running.store(false, Ordering::SeqCst);
         if let Some(h) = self.handle.write().await.take() {
             h.abort();
         }
@@ -126,7 +126,7 @@ impl DailySummaryTask {
 
     /// 查询任务是否正在运行
     pub async fn is_running(&self) -> bool {
-        *self.running.read().await
+        self.running.load(Ordering::SeqCst)
     }
 
     /// 手动触发一次执行(用于 IPC 调用)
@@ -203,7 +203,23 @@ impl DailySummaryTask {
         // 4. 为每个 role 调用 LLM 生成"今日要点",追加到 MEMORY.md
         for (role, items) in by_role {
             let memory_path = identity_path(&data_dir, &role, IdentityKind::Memory);
-            let mut existing = std::fs::read_to_string(&memory_path).unwrap_or_default();
+            // 文件读取卸载到阻塞线程池。
+            // 内层 `unwrap_or_default()` 把读取失败（如文件不存在）转为空字符串——
+            // 这是合理的"无历史摘要"语义，不算错误。
+            // 外层 JoinError（阻塞线程 panic）必须显式报错，不能静默吞掉。
+            let mut existing = match tokio::task::spawn_blocking({
+                let path = memory_path.clone();
+                move || std::fs::read_to_string(&path).unwrap_or_default()
+            })
+            .await
+            {
+                Ok(content) => content,
+                Err(e) => {
+                    tracing::error!(error = %e, role = %role, "spawn_blocking panic while reading MEMORY.md");
+                    report.errors.push(format!("read memory {role}: spawn_blocking join failed: {e}"));
+                    continue;
+                }
+            };
 
             let date_header = format!("\n\n## 每日摘要 - {}\n", end_str);
             if existing.contains(&date_header) {
@@ -225,7 +241,18 @@ impl DailySummaryTask {
             // 膨胀控制:超过 100KB 时导出旧内容到归档文件,只保留最近 7 天
             const MAX_MEMORY_SIZE: usize = 100 * 1024; // 100KB
             if existing.len() + section.len() > MAX_MEMORY_SIZE {
-                match archive_old_memory(&memory_path, &existing, &end_str, &role, &db) {
+                // archive 涉及 fs + DB,卸载到阻塞线程池
+                let outcome = tokio::task::spawn_blocking({
+                    let memory_path = memory_path.clone();
+                    let existing = existing.clone();
+                    let end_str = end_str.to_string();
+                    let role = role.clone();
+                    let db = db.clone();
+                    move || archive_old_memory(&memory_path, &existing, &end_str, &role, &db)
+                })
+                .await
+                .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))?;
+                match outcome {
                     Ok(outcome) => {
                         existing = outcome.trimmed_content;
                         tracing::info!(role = %role, "Archived old memory content");
@@ -244,11 +271,25 @@ impl DailySummaryTask {
             }
             existing.push_str(&section);
 
-            if let Err(e) = std::fs::write(&memory_path, &existing) {
-                tracing::warn!(error = %e, role = %role, "Failed to update MEMORY.md");
-                report.errors.push(format!("update MEMORY for {role}: {e}"));
-            } else {
-                report.updated_roles.push(role);
+            // 文件写入卸载到阻塞线程池
+            let write_result = tokio::task::spawn_blocking({
+                let path = memory_path.clone();
+                let content = existing.clone();
+                move || std::fs::write(&path, &content)
+            })
+            .await;
+            match write_result {
+                Ok(Ok(())) => {
+                    report.updated_roles.push(role);
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e, role = %role, "Failed to update MEMORY.md");
+                    report.errors.push(format!("update MEMORY for {role}: {e}"));
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, role = %role, "spawn_blocking join failed");
+                    report.errors.push(format!("update MEMORY for {role}: join {e}"));
+                }
             }
         }
 
@@ -338,9 +379,7 @@ fn archive_old_memory(
     db: &Database,
 ) -> Result<ArchiveOutcome, AppError> {
     const KEEP_DAYS: i64 = 7;
-    let cutoff = (chrono::Utc::now() - chrono::Duration::days(KEEP_DAYS))
-        .format("%Y-%m-%d")
-        .to_string();
+    let cutoff_date = chrono::Utc::now().date_naive() - chrono::Duration::days(KEEP_DAYS);
 
     // 按 "\n\n## 每日摘要 - " 分割:第一段是头部模板,后续每段以 "YYYY-MM-DD\n..." 开头
     let parts: Vec<&str> = existing.split("\n\n## 每日摘要 - ").collect();
@@ -354,11 +393,23 @@ fn archive_old_memory(
         let date_end = part.find('\n').unwrap_or(part.len());
         let date_str = &part[..date_end];
         let section = format!("\n\n## 每日摘要 - {}", part);
-        if date_str >= cutoff.as_str() {
-            kept.push(section);
-        } else {
-            archived.push(section);
-            archived_dates.push(date_str.to_string());
+        // 用 NaiveDate 解析后再比较,避免字符串比较在非 ISO / 非等长日期上出错。
+        // 解析失败时保守地"保留",不归档格式异常的条目。
+        match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            Ok(d) if d < cutoff_date => {
+                archived.push(section);
+                archived_dates.push(date_str.to_string());
+            }
+            Ok(_) => kept.push(section),
+            Err(e) => {
+                tracing::warn!(
+                    role = %role,
+                    date_str = %date_str,
+                    error = %e,
+                    "Malformed date in MEMORY.md section, keeping instead of archiving"
+                );
+                kept.push(section);
+            }
         }
     }
 

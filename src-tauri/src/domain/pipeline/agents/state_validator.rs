@@ -8,6 +8,7 @@
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
+use crate::shared::utils::json::extract_json_block;
 
 /// 单条验证警告
 #[derive(Debug, Clone)]
@@ -234,14 +235,7 @@ fn parse_warning_line(line: &str) -> Option<ValidationWarning> {
     })
 }
 
-/// 从 ```json ... ``` 代码块中提取 JSON
-fn extract_json_block(content: &str) -> Option<&str> {
-    let start_marker = "```json";
-    let start = content.find(start_marker)?;
-    let json_start = start + start_marker.len();
-    let end = content[json_start..].find("```")?;
-    Some(content[json_start..json_start + end].trim())
-}
+// extract_json_block 已收口到 crate::shared::utils::json::extract_json_block，见上方 use 声明。
 
 // JSON 解析用的中间结构
 #[derive(serde::Deserialize)]

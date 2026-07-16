@@ -6,6 +6,7 @@
 // prompt 策略：单次修正模式 + 事实保留约束 + 纯文本输出。
 
 use crate::core::agent::engine::AgentEngine;
+use crate::domain::pipeline::utils::text_parse::{count_non_whitespace_chars, strip_code_fence};
 use crate::shared::error::AppError;
 
 /// LengthNormalizer 输出
@@ -32,7 +33,7 @@ pub async fn normalize_chapter(
     soft_min: u32,
     soft_max: u32,
 ) -> Result<NormalizeOutput, AppError> {
-    let current_count = count_words(chapter_content);
+    let current_count = count_non_whitespace_chars(chapter_content);
     let mode = resolve_mode(current_count, soft_min, soft_max);
 
     // 字数在软边界内，无需修正
@@ -51,7 +52,7 @@ pub async fn normalize_chapter(
     let sanitized = sanitize_wrapper(&response);
 
     // 安全回退：如果输出截断或跨越相反硬边界，保留原文
-    let new_count = count_words(&sanitized);
+    let new_count = count_non_whitespace_chars(&sanitized);
     if !is_safe_output(&sanitized, new_count, mode, soft_min, soft_max) {
         return Ok(NormalizeOutput {
             normalized_content: chapter_content.to_string(),
@@ -76,11 +77,6 @@ fn resolve_mode(current_count: u32, soft_min: u32, soft_max: u32) -> NormalizeMo
     } else {
         NormalizeMode::None
     }
-}
-
-/// 字数统计（非空白字符数）
-fn count_words(content: &str) -> u32 {
-    content.chars().filter(|c| !c.is_whitespace()).count() as u32
 }
 
 /// 判断输出是否安全：非空且未跨越相反硬边界
@@ -212,22 +208,6 @@ fn is_wrapper_line(line: &str) -> bool {
     t.is_empty() || t.starts_with('#') || t.starts_with("下面是") || t.starts_with("```")
 }
 
-/// 去除可能的 ``` 代码块包裹
-fn strip_code_fence(content: &str) -> String {
-    let trimmed = content.trim();
-    if !trimmed.starts_with("```") {
-        return trimmed.to_string();
-    }
-    let after_open = &trimmed[3..];
-    let inner_start = after_open.find('\n').map(|p| p + 1).unwrap_or(0);
-    let inner = &after_open[inner_start..];
-    let inner = inner.trim_end();
-    match inner.strip_suffix("```") {
-        Some(rest) => rest.trim().to_string(),
-        None => inner.trim().to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,8 +229,8 @@ mod tests {
 
     #[test]
     fn counts_non_whitespace_chars() {
-        assert_eq!(count_words("你好 world 123"), 10);
-        assert_eq!(count_words("  \n\t  "), 0);
+        assert_eq!(count_non_whitespace_chars("你好 world 123"), 10);
+        assert_eq!(count_non_whitespace_chars("  \n\t  "), 0);
     }
 
     #[test]

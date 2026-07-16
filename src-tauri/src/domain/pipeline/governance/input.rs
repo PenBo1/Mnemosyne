@@ -186,8 +186,12 @@ fn read_chapter_content(book_dir: &Path, chapter_number: u32) -> Option<String> 
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with(&padded) && name.ends_with(".md") {
             let content = std::fs::read_to_string(entry.path()).ok()?;
-            // 去除首行标题（# 第X章 ...）
-            let without_heading = content.lines().skip(1).collect::<Vec<_>>().join("\n");
+            // 去除首行标题（仅当首行以 "# " 开头时），否则保留全部正文
+            let without_heading = if content.lines().next().map_or(false, |l| l.starts_with("# ")) {
+                content.lines().skip(1).collect::<Vec<_>>().join("\n")
+            } else {
+                content
+            };
             return Some(without_heading.trim().to_string());
         }
     }
@@ -294,9 +298,19 @@ pub fn create_governed_artifacts(
     let language = book.language.unwrap_or_default();
 
     // 1. 读取 planner 输出（runtime/ch{:04}_intent.md）
+    // 文件不存在(planner 尚未运行)视为空串;其他 IO 错误显式上报,不静默降级。
     let intent_path = book_dir.join("story").join("runtime")
         .join(format!("ch{:04}_intent.md", chapter_number));
-    let planner_output = std::fs::read_to_string(&intent_path).unwrap_or_default();
+    let planner_output = match std::fs::read_to_string(&intent_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(AppError::internal(format!(
+                "Failed to read planner intent for chapter {}: {}",
+                chapter_number, e
+            )));
+        }
+    };
 
     let intent = if planner_output.is_empty() {
         ChapterIntent::default()

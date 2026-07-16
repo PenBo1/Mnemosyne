@@ -38,10 +38,14 @@ fn validate_workspace_path(workspace_path: &str) -> Result<PathBuf, AppError> {
     if workspace_path.len() > MAX_PATH_LEN {
         return Err(AppError::invalid_input("Workspace path too long"));
     }
-    if workspace_path.contains("..") {
+    let path_buf = PathBuf::from(workspace_path);
+    // 路径遍历防护:任一组件为 ParentDir 即拒绝(避免误判含 ".." 的合法路径名)
+    if path_buf
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err(AppError::path_traversal());
     }
-    let path_buf = PathBuf::from(workspace_path);
     if !path_buf.exists() {
         return Err(AppError::not_found("Workspace path does not exist"));
     }
@@ -63,13 +67,9 @@ pub async fn git_check_installed(
     };
 
     let kernel = kernel_state.kernel();
-    let version = kernel.execute("git_check_installed", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                Ok(detect_git().await)
-            })
-        })
-    })?;
+    let version = kernel.execute_async("git_check_installed", &op, &ctx, || async {
+        Ok(detect_git().await)
+    }).await?;
     Ok(IpcResponse::ok(version.is_some()))
 }
 
@@ -89,13 +89,9 @@ pub async fn git_install(
     };
 
     let kernel = kernel_state.kernel();
-    let result = kernel.execute("git_install", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                Ok(install_git().await)
-            })
-        })
-    })?;
+    let result = kernel.execute_async("git_install", &op, &ctx, || async {
+        Ok(install_git().await)
+    }).await?;
 
     if result.success {
         tracing::info!(version = ?result.version, "Git installation succeeded");
@@ -121,13 +117,9 @@ pub async fn git_init(
     };
 
     let kernel = kernel_state.kernel();
-    let result = kernel.execute("git_init", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::init(&path).await
-            })
-        })
-    })?;
+    let result = kernel.execute_async("git_init", &op, &ctx, || async {
+        GitOperations::init(&path).await
+    }).await?;
 
     Ok(IpcResponse::ok(result))
 }
@@ -147,13 +139,9 @@ pub async fn git_status(
     };
 
     let kernel = kernel_state.kernel();
-    let status = kernel.execute("git_status", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::status(&path).await
-            })
-        })
-    })?;
+    let status = kernel.execute_async("git_status", &op, &ctx, || async {
+        GitOperations::status(&path).await
+    }).await?;
 
     Ok(IpcResponse::ok(status))
 }
@@ -175,13 +163,9 @@ pub async fn git_log(
     };
 
     let kernel = kernel_state.kernel();
-    let commits = kernel.execute("git_log", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::log(&path, limit).await
-            })
-        })
-    })?;
+    let commits = kernel.execute_async("git_log", &op, &ctx, || async {
+        GitOperations::log(&path, limit).await
+    }).await?;
 
     Ok(IpcResponse::ok(commits))
 }
@@ -203,13 +187,9 @@ pub async fn git_diff(
     };
 
     let kernel = kernel_state.kernel();
-    let diff = kernel.execute("git_diff", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::diff(&path, hash_ref).await
-            })
-        })
-    })?;
+    let diff = kernel.execute_async("git_diff", &op, &ctx, || async {
+        GitOperations::diff(&path, hash_ref).await
+    }).await?;
 
     Ok(IpcResponse::ok(diff))
 }
@@ -228,7 +208,10 @@ pub async fn git_stage(
         if p.is_empty() {
             return Err(AppError::invalid_input("path entry cannot be empty"));
         }
-        if p.contains("..") {
+        if PathBuf::from(p)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err(AppError::path_traversal());
         }
         if p.len() > MAX_PATH_LEN {
@@ -244,13 +227,9 @@ pub async fn git_stage(
     };
 
     let kernel = kernel_state.kernel();
-    kernel.execute("git_stage", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::stage(&path, &paths).await
-            })
-        })
-    })?;
+    kernel.execute_async("git_stage", &op, &ctx, || async {
+        GitOperations::stage(&path, &paths).await
+    }).await?;
 
     Ok(IpcResponse::no_content())
 }
@@ -277,13 +256,9 @@ pub async fn git_commit(
     };
 
     let kernel = kernel_state.kernel();
-    let hash = kernel.execute("git_commit", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::commit(&path, &message).await
-            })
-        })
-    })?;
+    let hash = kernel.execute_async("git_commit", &op, &ctx, || async {
+        GitOperations::commit(&path, &message).await
+    }).await?;
 
     Ok(IpcResponse::ok(hash))
 }
@@ -312,13 +287,9 @@ pub async fn git_rollback(
     };
 
     let kernel = kernel_state.kernel();
-    kernel.execute("git_rollback", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                GitOperations::rollback(&path, &commit_hash, mode).await
-            })
-        })
-    })?;
+    kernel.execute_async("git_rollback", &op, &ctx, || async {
+        GitOperations::rollback(&path, &commit_hash, mode).await
+    }).await?;
 
     Ok(IpcResponse::no_content())
 }
@@ -337,23 +308,15 @@ pub async fn git_get_config(
     };
     let kernel = kernel_state.kernel();
     if workspace_path.trim().is_empty() {
-        let config = kernel.execute("git_get_config", &op, &ctx, || {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    GitOperations::get_global_config().await
-                })
-            })
-        })?;
+        let config = kernel.execute_async("git_get_config", &op, &ctx, || async {
+            GitOperations::get_global_config().await
+        }).await?;
         Ok(IpcResponse::ok(config))
     } else {
         let path = validate_workspace_path(&workspace_path)?;
-        let config = kernel.execute("git_get_config", &op, &ctx, || {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    GitOperations::get_config(&path).await
-                })
-            })
-        })?;
+        let config = kernel.execute_async("git_get_config", &op, &ctx, || async {
+            GitOperations::get_config(&path).await
+        }).await?;
         Ok(IpcResponse::ok(config))
     }
 }
@@ -372,22 +335,14 @@ pub async fn git_set_config(
     };
     let kernel = kernel_state.kernel();
     if workspace_path.trim().is_empty() {
-        kernel.execute("git_set_config", &op, &ctx, || {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    GitOperations::set_global_config(&config).await
-                })
-            })
-        })?;
+        kernel.execute_async("git_set_config", &op, &ctx, || async {
+            GitOperations::set_global_config(&config).await
+        }).await?;
     } else {
         let path = validate_workspace_path(&workspace_path)?;
-        kernel.execute("git_set_config", &op, &ctx, || {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    GitOperations::set_config(&path, &config).await
-                })
-            })
-        })?;
+        kernel.execute_async("git_set_config", &op, &ctx, || async {
+            GitOperations::set_config(&path, &config).await
+        }).await?;
     }
     Ok(IpcResponse::no_content())
 }

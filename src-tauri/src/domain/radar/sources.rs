@@ -4,12 +4,42 @@
 // 网络错误静默跳过(返回空 entries),不阻断扫描流程——
 // LLM 会基于已获取的数据分析,全部失败时基于自身知识分析。
 
+use std::sync::OnceLock;
+
 use async_trait::async_trait;
 use regex::Regex;
 
 use crate::infrastructure::db::types::{PlatformRankings, RankingEntry};
 
 use super::types::RadarSourceInfo;
+
+// ── 复用 HTTP 客户端(OnceLock 缓存,避免每次 fetch 重建) ──────────
+
+fn fanqie_client() -> Option<&'static reqwest::Client> {
+    static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .user_agent("Mozilla/5.0 (compatible; Mnemosyne/0.1)")
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .ok()
+        })
+        .as_ref()
+}
+
+fn qidian_client() -> Option<&'static reqwest::Client> {
+    static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .ok()
+        })
+        .as_ref()
+}
 
 /// 可插拔的雷达数据源接口。
 #[async_trait]
@@ -26,6 +56,12 @@ const FANQIE_RANK_TYPES: &[(u32, &str)] = &[(10, "热门榜"), (13, "黑马榜")
 
 pub struct FanqieRadarSource;
 
+impl Default for FanqieRadarSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FanqieRadarSource {
     pub fn new() -> Self {
         Self
@@ -39,13 +75,9 @@ impl RadarSource for FanqieRadarSource {
     }
 
     async fn fetch(&self) -> PlatformRankings {
-        let client = match reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (compatible; Mnemosyne/0.1)")
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => return PlatformRankings { platform: "番茄小说".into(), entries: vec![] },
+        let client = match fanqie_client() {
+            Some(c) => c,
+            None => return PlatformRankings { platform: "番茄小说".into(), entries: vec![] },
         };
 
         let mut entries: Vec<RankingEntry> = Vec::new();
@@ -84,6 +116,12 @@ impl RadarSource for FanqieRadarSource {
 
 pub struct QidianRadarSource;
 
+impl Default for QidianRadarSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QidianRadarSource {
     pub fn new() -> Self {
         Self
@@ -97,13 +135,9 @@ impl RadarSource for QidianRadarSource {
     }
 
     async fn fetch(&self) -> PlatformRankings {
-        let client = match reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => return PlatformRankings { platform: "起点中文网".into(), entries: vec![] },
+        let client = match qidian_client() {
+            Some(c) => c,
+            None => return PlatformRankings { platform: "起点中文网".into(), entries: vec![] },
         };
 
         let resp = match client.get("https://www.qidian.com/rank/").send().await {

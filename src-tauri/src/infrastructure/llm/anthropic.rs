@@ -1,4 +1,4 @@
-﻿
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -14,7 +14,11 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(30))
+                .timeout(std::time::Duration::from_secs(600))
+                .build()
+                .expect("failed to build reqwest client for AnthropicProvider"),
             api_key,
             base_url: base_url.unwrap_or_else(|| "https://api.anthropic.com".to_string()),
         }
@@ -32,11 +36,7 @@ impl AnthropicProvider {
             }));
         }
 
-        let max_tokens = if model.starts_with("claude-sonnet-4") || model.starts_with("claude-3-7") {
-            16_384
-        } else {
-            4_096
-        };
+        let max_tokens = 8_192;
 
         let mut body = serde_json::json!({
             "model": model,
@@ -88,7 +88,10 @@ impl Provider for AnthropicProvider {
         let json: serde_json::Value = resp.json().await
             .map_err(|e| AppError::internal(format!("Response parse failed: {}", e)))?;
         json["content"][0]["text"].as_str().map(|s| s.to_string())
-            .ok_or_else(|| AppError::internal(format!("No content in response: {}", json)))
+            .ok_or_else(|| {
+                tracing::warn!(response = %json, "Anthropic no content");
+                AppError::internal("No content in Anthropic response")
+            })
     }
 
     async fn stream(&self, model: &str, system: &str, messages: &[Message], tools: &[ToolSpec]) -> Result<std::pin::Pin<Box<dyn futures_util::Stream<Item = StreamEvent> + Send>>, AppError> {
@@ -101,13 +104,14 @@ impl Provider for AnthropicProvider {
             .map_err(|e| AppError::stream_error(e.to_string()))?;
 
         let byte_stream = resp.bytes_stream();
-        let event_stream = byte_stream.map(|chunk| {
-            match chunk {
+        let buffer = super::sse_buffer::SseLineBuffer::new();
+        let event_stream = byte_stream.scan(buffer, |buf, chunk| {
+            let events: Vec<StreamEvent> = match chunk {
                 Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
+                    let lines = buf.push(bytes.as_ref());
                     let mut events = Vec::new();
                     let mut usage = TokenUsage::default();
-                    for line in text.lines() {
+                    for line in lines {
                         let line = line.trim();
                         if line.is_empty() || !line.starts_with("data: ") { continue; }
                         let data = &line[6..];
@@ -151,10 +155,11 @@ impl Provider for AnthropicProvider {
                             }
                         }
                     }
-                    futures_util::stream::iter(events)
+                    events
                 }
-                Err(e) => futures_util::stream::iter(vec![StreamEvent::Error(e.to_string())]),
-            }
+                Err(e) => vec![StreamEvent::Error(e.to_string())],
+            };
+            futures_util::future::ready(Some(futures_util::stream::iter(events)))
         }).flatten();
         Ok(Box::pin(event_stream))
     }

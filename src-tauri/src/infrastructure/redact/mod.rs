@@ -32,8 +32,9 @@ const SENSITIVE_JSON_KEYS: &str = r#"(?:api_?[Kk]ey|token|secret|password|access
 
 /// 预编译的全部模式
 struct Patterns {
-    /// 厂商前缀(单 alternation)
-    prefix: Regex,
+    /// 厂商前缀 + JWT 合并(jwt 与 prefix 均用 mask_secret(&caps[0]),
+    /// 互斥不重叠,合并为单次扫描减少 replace_all 分配)
+    token: Regex,
     /// ENV 赋值
     env_assign: Regex,
     /// JSON 字段
@@ -48,8 +49,6 @@ struct Patterns {
     url_userinfo: Regex,
     /// Telegram bot token
     telegram: Regex,
-    /// JWT(eyJ 开头)
-    jwt: Regex,
 }
 
 fn compile_patterns() -> Patterns {
@@ -99,7 +98,12 @@ fn compile_patterns() -> Patterns {
         .join("|");
     // 不使用 look-around(Rust regex crate 不支持);
     // 前缀模式本身已足够特异(sk-/ghp_/AKIA 等),误报率低。
-    let prefix_re = Regex::new(&prefix_alt).expect("invalid prefix regex");
+
+    // JWT + 厂商前缀合并为单 alternation(两者均用 mask_secret(&caps[0]),
+    // 且互斥:eyJ 与 sk-/ghp_/AKIA 等不会同时匹配同一子串)
+    let jwt_pat = r"eyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2}";
+    let token_alt = format!("(?:{})|(?:{})", jwt_pat, prefix_alt);
+    let token_re = Regex::new(&token_alt).expect("invalid token regex");
 
     // ENV 赋值:KEY=value(value 是非空白字符序列,可能含引号)
     // 不使用反向引用(Rust regex crate 不支持 \1/\2),
@@ -117,7 +121,7 @@ fn compile_patterns() -> Patterns {
     .expect("invalid json_field regex");
 
     Patterns {
-        prefix: prefix_re,
+        token: token_re,
         env_assign: env_assign_re,
         json_field: json_field_re,
         auth_header: Regex::new(r"(?i)(authorization:\s*bearer\s+)(\S+)")
@@ -134,8 +138,6 @@ fn compile_patterns() -> Patterns {
             .expect("invalid url_userinfo regex"),
         telegram: Regex::new(r"(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})")
             .expect("invalid telegram regex"),
-        jwt: Regex::new(r"eyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2}")
-            .expect("invalid jwt regex"),
     }
 }
 
@@ -171,7 +173,7 @@ pub fn mask_secret(value: &str) -> String {
 
 /// 对文本执行全量脱敏(默认场景)。
 ///
-/// 顺序:私钥块 → JWT → 厂商前缀 → Authorization 头 →
+/// 顺序:私钥块 → 厂商前缀/JWT(合并) → Authorization 头 →
 ///       DB 连接串 → URL userinfo → Telegram → ENV 赋值 → JSON 字段
 ///
 /// 后续模式不会破坏前序模式的输出(因为 mask_secret 输出含 `***`,
@@ -182,32 +184,28 @@ pub fn redact_text(text: &str) -> String {
     // 1. 私钥块(整体替换)
     let s = p.private_key.replace_all(text, "[REDACTED PRIVATE KEY]");
 
-    // 2. JWT(eyJ 开头,优先于厂商前缀,因为 sk- 不会匹配 eyJ)
-    let s = p.jwt.replace_all(&s, |caps: &regex::Captures| {
+    // 2. JWT + 厂商前缀(合并为单次扫描,两者均用 mask_secret(&caps[0]),
+    //    且互斥不重叠,减少一次 replace_all 分配)
+    let s = p.token.replace_all(&s, |caps: &regex::Captures| {
         mask_secret(&caps[0])
     });
 
-    // 3. 厂商前缀
-    let s = p.prefix.replace_all(&s, |caps: &regex::Captures| {
-        mask_secret(&caps[0])
-    });
-
-    // 4. Authorization: Bearer xxx
+    // 3. Authorization: Bearer xxx
     let s = p.auth_header.replace_all(&s, |caps: &regex::Captures| {
         format!("{}{}", &caps[1], mask_secret(&caps[2]))
     });
 
-    // 5. DB 连接串 postgres://user:PASSWORD@host
+    // 4. DB 连接串 postgres://user:PASSWORD@host
     let s = p.db_connstr.replace_all(&s, |caps: &regex::Captures| {
         format!("{}{}{}", &caps[1], mask_secret(&caps[2]), &caps[3])
     });
 
-    // 6. URL userinfo https://user:pass@host
+    // 5. URL userinfo https://user:pass@host
     let s = p.url_userinfo.replace_all(&s, |caps: &regex::Captures| {
         format!("{}{}:***@", &caps[1], &caps[2])
     });
 
-    // 7. Telegram bot token
+    // 6. Telegram bot token
     let s = p.telegram.replace_all(&s, |caps: &regex::Captures| {
         format!(
             "{}{}:***",
@@ -216,12 +214,12 @@ pub fn redact_text(text: &str) -> String {
         )
     });
 
-    // 8. ENV 赋值 KEY=value(新正则只有两组:KEY 和 value)
+    // 7. ENV 赋值 KEY=value(新正则只有两组:KEY 和 value)
     let s = p.env_assign.replace_all(&s, |caps: &regex::Captures| {
         format!("{}={}", &caps[1], mask_secret(&caps[2]))
     });
 
-    // 9. JSON 字段 "apiKey": "value"(新正则两组:key 名和 value)
+    // 8. JSON 字段 "apiKey": "value"(新正则两组:key 名和 value)
     let s = p.json_field.replace_all(&s, |caps: &regex::Captures| {
         format!("\"{}\": \"{}\"", &caps[1], mask_secret(&caps[2]))
     });

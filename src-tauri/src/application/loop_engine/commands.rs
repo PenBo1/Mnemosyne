@@ -140,7 +140,7 @@ fn pattern_row_to_dto(row: LoopPatternRow) -> Result<LoopPatternDto, AppError> {
         .as_deref()
         .filter(|s| !s.is_empty())
         .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_else(|| CostConfigDto {
+        .unwrap_or(CostConfigDto {
             tokens_noop: 0,
             tokens_report: 0,
             tokens_action: 0,
@@ -505,7 +505,15 @@ pub async fn loop_upsert_pattern(
     let human_gates_json = human_gates.map(|h| serde_json::to_string(&h).unwrap_or_else(|_| "[]".to_string()));
     let cost_config_json = cost_config.map(|c| serde_json::to_string(&c).unwrap_or_else(|_| "{}".to_string()));
     let skills_json = skills_required.map(|s| serde_json::to_string(&s).unwrap_or_else(|_| "[]".to_string()));
-    // state_schema 目前仅存储,不在 DTO 中暴露
+    // TODO: state_schema 参数当前未持久化（loop_patterns 表无对应列）。
+    // 前端可传入但被显式丢弃，避免 unused 警告。未来加列后需序列化为 JSON 存入。
+    // 不用 `let _ = state_schema;` 静默吞掉——这里显式 log 便于排查"为何传入却不生效"。
+    if let Some(schema) = &state_schema {
+        tracing::warn!(
+            schema_keys = ?schema.as_object().map(|o| o.len()),
+            "state_schema provided but not yet persisted (unimplemented)"
+        );
+    }
     let _ = state_schema;
 
     let row = LoopPatternRow {

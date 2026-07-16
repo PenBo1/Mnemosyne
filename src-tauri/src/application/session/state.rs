@@ -1,4 +1,4 @@
-﻿
+
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
@@ -353,11 +353,26 @@ impl StateManager {
 
         let chapters_dir = self.chapters_dir(book_id);
         if chapters_dir.exists() {
-            for entry in std::fs::read_dir(&chapters_dir).into_iter().flatten().flatten() {
+            // 不用 into_iter().flatten().flatten() 静默吞 read_dir/entry 错误：
+            // read_dir 失败应显式报错，entry 失败应 log warn（单条损坏不应阻塞回滚）。
+            let entries = std::fs::read_dir(&chapters_dir)
+                .map_err(|e| AppError::internal(format!("Failed to read chapters dir: {}", e)))?;
+            for entry in entries {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Skipping malformed chapter entry during rollback");
+                        continue;
+                    }
+                };
                 let path = entry.path();
                 if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
                     if let Ok(num) = name.parse::<u32>() {
-                        if num > chapter { let _ = std::fs::remove_file(&path); }
+                        if num > chapter {
+                            if let Err(e) = std::fs::remove_file(&path) {
+                                tracing::warn!(error = %e, path = %path.display(), "Failed to remove chapter file during rollback");
+                            }
+                        }
                     }
                 }
             }
@@ -365,12 +380,25 @@ impl StateManager {
 
         let snapshots_dir = self.snapshots_dir(book_id);
         if snapshots_dir.exists() {
-            for entry in std::fs::read_dir(&snapshots_dir).into_iter().flatten().flatten() {
+            let entries = std::fs::read_dir(&snapshots_dir)
+                .map_err(|e| AppError::internal(format!("Failed to read snapshots dir: {}", e)))?;
+            for entry in entries {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Skipping malformed snapshot entry during rollback");
+                        continue;
+                    }
+                };
                 let path = entry.path();
                 if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
                     if let Some(num_str) = name.strip_prefix("chapter_") {
                         if let Ok(num) = num_str.parse::<u32>() {
-                            if num > chapter { let _ = std::fs::remove_file(&path); }
+                            if num > chapter {
+                                if let Err(e) = std::fs::remove_file(&path) {
+                                    tracing::warn!(error = %e, path = %path.display(), "Failed to remove snapshot file during rollback");
+                                }
+                            }
                         }
                     }
                 }

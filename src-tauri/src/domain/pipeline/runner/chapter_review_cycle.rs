@@ -116,6 +116,8 @@ pub async fn run_chapter_review_cycle(
     if normalized.applied {
         normalize_applied = true;
     }
+    // 保留 normalize 后、audit 前的字数作为独立字段（后续 review loop 不应覆盖）
+    let pre_audit_normalized_word_count = final_word_count;
 
     // ── 初始评估 ──
     tracing::info!(chapter = chapter_number, "审计草稿");
@@ -144,7 +146,7 @@ pub async fn run_chapter_review_cycle(
         return Ok(CycleResult {
             final_content,
             final_word_count,
-            pre_audit_normalized_word_count: final_word_count,
+            pre_audit_normalized_word_count,
             revised: false,
             audit_result: initial.audit_result,
             total_usage,
@@ -230,7 +232,8 @@ pub async fn run_chapter_review_cycle(
                 );
                 final_content = revised_content;
                 final_word_count = revised_word_count;
-                post_revise_count = revised_word_count;
+                // post_revise_count 记录 revise 后剩余的 issue 数（而非字数）
+                post_revise_count = next_assessment.audit_result.issues.len() as u32;
                 current_audit = Assessment {
                     audit_result: next_assessment.audit_result.clone(),
                     score: next_assessment.score,
@@ -243,7 +246,8 @@ pub async fn run_chapter_review_cycle(
             if next_assessment.score >= current_audit.score + NET_IMPROVEMENT_EPSILON {
                 final_content = revised_content;
                 final_word_count = revised_word_count;
-                post_revise_count = revised_word_count;
+                // post_revise_count 记录 revise 后剩余的 issue 数（而非字数）
+                post_revise_count = next_assessment.audit_result.issues.len() as u32;
                 current_audit = Assessment {
                     audit_result: next_assessment.audit_result.clone(),
                     score: next_assessment.score,
@@ -296,8 +300,8 @@ pub async fn run_chapter_review_cycle(
     Ok(CycleResult {
         final_content,
         final_word_count,
-        // 在此处返回 finalWordCount（已知偏差，保留以对齐）
-        pre_audit_normalized_word_count: final_word_count,
+        // 保留 normalize 后、audit 前的字数（不被 review loop 覆盖）
+        pre_audit_normalized_word_count,
         revised,
         audit_result: current_audit.audit_result,
         total_usage,

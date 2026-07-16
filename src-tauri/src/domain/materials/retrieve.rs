@@ -114,12 +114,12 @@ pub fn delete_material(data_dir: &DataDir, id: &str) -> Result<bool, AppError> {
     let mut removed = false;
     if md_path.exists() {
         std::fs::remove_file(&md_path)
-            .map_err(|_e| AppError::file_write_error(md_path.display().to_string()))?;
+            .map_err(|_e| AppError::file_write_error(format!("material markdown: {}", id)))?;
         removed = true;
     }
     if json_path.exists() {
         std::fs::remove_file(&json_path)
-            .map_err(|_e| AppError::file_write_error(json_path.display().to_string()))?;
+            .map_err(|_e| AppError::file_write_error(format!("material json: {}", id)))?;
         removed = true;
     }
     Ok(removed)

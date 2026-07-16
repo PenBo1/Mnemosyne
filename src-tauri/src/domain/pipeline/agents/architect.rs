@@ -228,16 +228,53 @@ pub fn parse_sections(content: &str) -> Result<ArchitectOutput, AppError> {
     Ok(output)
 }
 
-/// 将 ArchitectOutput 落盘到书籍目录
+/// 将 ArchitectOutput 落盘到书籍目录。
+///
+/// 采用「先全部写 .tmp 再 rename」的两阶段提交：
+/// 1. 第一阶段：所有目标文件写到 `<name>.md.tmp`，任意失败立即清理已写 tmp 文件并返回错误；
+/// 2. 第二阶段：依次 rename 覆盖目标文件（同分区 rename 原子）。
+/// 注意：roles 子目录文件较多，单独走 persist_roles（仍非事务性，但仅作 append-only 落盘）。
 pub fn persist_output(book_dir: &std::path::Path, output: &ArchitectOutput) -> Result<(), AppError> {
     let story_dir = book_dir.join("story");
     let outline_dir = story_dir.join("outline");
     std::fs::create_dir_all(&outline_dir)?;
 
-    std::fs::write(outline_dir.join("story_frame.md"), &output.story_frame)?;
-    std::fs::write(outline_dir.join("volume_map.md"), &output.volume_map)?;
-    std::fs::write(story_dir.join("book_rules.md"), &output.book_rules)?;
-    std::fs::write(story_dir.join("pending_hooks.md"), &output.pending_hooks)?;
+    // 第一阶段：写所有 .tmp
+    let targets: [(std::path::PathBuf, &str); 4] = [
+        (outline_dir.join("story_frame.md"), &output.story_frame),
+        (outline_dir.join("volume_map.md"), &output.volume_map),
+        (story_dir.join("book_rules.md"), &output.book_rules),
+        (story_dir.join("pending_hooks.md"), &output.pending_hooks),
+    ];
+    let mut written_tmps: Vec<std::path::PathBuf> = Vec::with_capacity(targets.len());
+    for (final_path, content) in &targets {
+        let tmp_path = final_path.with_extension("md.tmp");
+        if let Err(e) = std::fs::write(&tmp_path, content) {
+            // 清理已写 tmp 文件
+            for t in &written_tmps {
+                let _ = std::fs::remove_file(t);
+            }
+            return Err(AppError::file_write_error(format!(
+                "{}: {}",
+                tmp_path.display(),
+                e
+            )));
+        }
+        written_tmps.push(tmp_path);
+    }
+
+    // 第二阶段：依次 rename（同分区原子）
+    for (final_path, _) in &targets {
+        let tmp_path = final_path.with_extension("md.tmp");
+        if let Err(e) = std::fs::rename(&tmp_path, final_path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(AppError::file_write_error(format!(
+                "{}: {}",
+                final_path.display(),
+                e
+            )));
+        }
+    }
 
     // roles 需要按 ---ROLE--- 分隔拆分为一人一文件
     persist_roles(&story_dir, &output.roles)?;

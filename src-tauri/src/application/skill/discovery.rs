@@ -38,7 +38,7 @@ impl SkillManager {
     }
 
     fn parse_skill_file(&self, path: &Path) -> Result<Skill, AppError> {
-        let content = fs::read_to_string(path).map_err(|e| AppError::internal(format!("Failed to read skill file: {}", e)))?;
+        let content = crate::infrastructure::fs::fs_utils::read_file(path)?;
         let (meta, body) = parse_frontmatter(&content)?;
         Ok(Skill { meta, content: body, path: path.to_string_lossy().to_string(), history: Vec::new() })
     }
@@ -51,7 +51,7 @@ impl SkillManager {
         fs::create_dir_all(skill_dir).map_err(|e| AppError::file_write_error(format!("{}: {}", skill_dir.to_string_lossy(), e)))?;
         let skill_name = meta.name.replace(' ', "_").to_lowercase();
         let skill_path = skill_dir.join(&skill_name).join("SKILL.md");
-        let parent = skill_path.parent().expect("skill_path always has parent (constructed as dir/name/SKILL.md)");
+        let parent = skill_path.parent().ok_or_else(|| AppError::internal("skill_path has no parent (malformed path)"))?;
         fs::create_dir_all(parent).map_err(|e| AppError::file_write_error(format!("{}: {}", parent.to_string_lossy(), e)))?;
         let frontmatter = serde_yaml::to_string(&meta).map_err(|e| AppError::internal(format!("Failed to serialize skill meta: {}", e)))?;
         let file_content = format!("---\n{}---\n\n{}", frontmatter, content);
@@ -125,9 +125,14 @@ fn parse_frontmatter(content: &str) -> Result<(SkillMeta, String), AppError> {
     if !content.starts_with("---") {
         return Ok((SkillMeta { name: "unnamed".into(), description: String::new(), category: "general".into(), requires_tools: Vec::new(), platforms: None, version: 1, tags: Vec::new(), depends_on: Vec::new() }, content.to_string()));
     }
-    let end = content[3..].find("---").ok_or_else(|| AppError::invalid_format("Unclosed frontmatter"))?;
-    let yaml_str = &content[3..end + 3];
-    let body = content[end + 6..].trim().to_string();
+    // 用 split_once 避免手动字节索引（content[3..] / content[end+6..] 等），
+    // str 方法天然在 char boundary 上切分，杜绝非 ASCII 边界 panic。
+    // `get(3..)` 已验证 starts_with("---")，安全。
+    let after_open = content.get(3..).unwrap_or("");
+    let (yaml_str, rest) = after_open
+        .split_once("---")
+        .ok_or_else(|| AppError::invalid_format("Unclosed frontmatter"))?;
+    let body = rest.trim().to_string();
     let meta: SkillMeta = serde_yaml::from_str(yaml_str).map_err(|e| AppError::invalid_format(format!("Invalid frontmatter YAML: {}", e)))?;
     Ok((meta, body))
 }

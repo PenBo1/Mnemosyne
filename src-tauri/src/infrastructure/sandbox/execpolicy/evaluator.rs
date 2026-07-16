@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::types::{ExecPolicy, NetworkProtocol, PolicyDecision, PrefixRule};
+use super::types::{ExecPolicy, NetworkProtocol, PolicyDecision};
 
 /// 规则求值结果 —— 包含决策与匹配的规则索引（用于审计）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,14 +36,22 @@ impl Evaluation {
 }
 
 impl ExecPolicy {
-    /// 评估命令 —— 按 priority 降序遍历 command_rules，返回首个匹配的决策。
-    pub fn evaluate_command(&self, command: &str) -> Evaluation {
-        let mut rules: Vec<(usize, &PrefixRule)> =
-            self.command_rules.iter().enumerate().collect();
-        // priority 降序（稳定排序保留同 priority 的声明顺序）
-        rules.sort_by(|a, b| b.1.priority.cmp(&a.1.priority));
+    /// 规范化：将三类规则按 priority 降序（稳定）排序。
+    ///
+    /// 在策略加载/更新时调用一次，使 evaluate_* 不必每次重新排序。
+    /// 原实现每次评估都 `collect + sort_by`，对热路径有重复开销。
+    pub fn normalize(&mut self) {
+        self.command_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.path_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.network_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+    }
 
-        for (idx, rule) in rules {
+    /// 评估命令 —— 按 priority 降序遍历 command_rules，返回首个匹配的决策。
+    ///
+    /// 规则须在加载时已通过 `normalize()` 按 priority 降序排列，
+    /// 此处直接顺序遍历，避免每次评估重新 sort。
+    pub fn evaluate_command(&self, command: &str) -> Evaluation {
+        for (idx, rule) in self.command_rules.iter().enumerate() {
             if command_tokens_match(&rule.pattern, command) {
                 return Evaluation::matched(rule.decision, idx);
             }
@@ -54,11 +62,7 @@ impl ExecPolicy {
     /// 评估路径 —— 按 priority 降序遍历 path_rules，返回首个匹配的决策。
     pub fn evaluate_path(&self, path: &str) -> Evaluation {
         let normalized = normalize_path(path);
-        let mut rules: Vec<(usize, &PrefixRule)> =
-            self.path_rules.iter().enumerate().collect();
-        rules.sort_by(|a, b| b.1.priority.cmp(&a.1.priority));
-
-        for (idx, rule) in rules {
+        for (idx, rule) in self.path_rules.iter().enumerate() {
             let pat = normalize_path(&rule.pattern);
             if normalized.starts_with(&pat) {
                 return Evaluation::matched(rule.decision, idx);
@@ -73,11 +77,7 @@ impl ExecPolicy {
     /// protocol 匹配：精确枚举相等。
     pub fn evaluate_network(&self, host: &str, protocol: NetworkProtocol) -> Evaluation {
         let host_lower = host.to_lowercase();
-        let mut rules: Vec<(usize, &super::types::NetworkRule)> =
-            self.network_rules.iter().enumerate().collect();
-        rules.sort_by(|a, b| b.1.priority.cmp(&a.1.priority));
-
-        for (idx, rule) in rules {
+        for (idx, rule) in self.network_rules.iter().enumerate() {
             if rule.protocol != protocol {
                 continue;
             }
@@ -134,33 +134,22 @@ fn normalize_path(path: &str) -> String {
 /// 从 URL 中提取 host（用于网络规则评估的辅助函数）。
 ///
 /// 返回 (host, protocol)。解析失败时返回空 host + Http 默认协议。
+///
+/// 使用 `reqwest::Url::parse` 而非手写 split,正确处理 userinfo:
+/// `https://user:pass@host/path` → host="host"(而非被误判为 "user")。
+/// userinfo 本身由 SecurityKernel 的 url 校验层拦截,此处仅提取 host。
 pub fn extract_host_and_protocol(url: &str) -> (String, NetworkProtocol) {
-    let lower = url.to_lowercase();
-    let protocol = if lower.starts_with("https://") {
-        NetworkProtocol::Https
-    } else if lower.starts_with("http://") {
-        NetworkProtocol::Http
-    } else if lower.starts_with("socks5://") {
-        // socks5 默认走 tcp
-        NetworkProtocol::Socks5Tcp
-    } else {
-        NetworkProtocol::Http
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return (String::new(), NetworkProtocol::Http),
     };
-
-    // 去除 scheme 前缀
-    let rest = lower
-        .strip_prefix("https://")
-        .or_else(|| lower.strip_prefix("http://"))
-        .or_else(|| lower.strip_prefix("socks5://"))
-        .unwrap_or(url);
-
-    // host 在第一个 '/' 或 ':' 之前
-    let host: String = rest
-        .split(|c| c == '/' || c == ':')
-        .next()
-        .unwrap_or("")
-        .to_string();
-
+    let protocol = match parsed.scheme() {
+        "https" => NetworkProtocol::Https,
+        "socks5" => NetworkProtocol::Socks5Tcp,
+        // http 及其他 scheme 统一按 Http 处理(对齐原 fallback 行为)
+        _ => NetworkProtocol::Http,
+    };
+    let host = parsed.host_str().unwrap_or("").to_string();
     (host, protocol)
 }
 
@@ -219,5 +208,13 @@ mod tests {
         let (host, proto) = extract_host_and_protocol("http://169.254.169.254/latest");
         assert_eq!(host, "169.254.169.254");
         assert_eq!(proto, NetworkProtocol::Http);
+    }
+
+    #[test]
+    fn extract_host_ignores_userinfo() {
+        // userinfo 不应被误判为 host(原 split 实现会返回 "user")
+        let (host, proto) = extract_host_and_protocol("https://user:pass@api.openai.com/v1/chat");
+        assert_eq!(host, "api.openai.com");
+        assert_eq!(proto, NetworkProtocol::Https);
     }
 }

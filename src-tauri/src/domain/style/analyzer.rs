@@ -9,6 +9,7 @@
 // - 英文 4 种:simile/rhetorical question/tricolon/short punchy rhythm
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use regex::Regex;
 
@@ -31,6 +32,76 @@ const EN_RHETORICAL_PATTERNS: &[(&str, &str)] = &[
     ("tricolon", r"\b\w+,\s+\w+,\s+and\s+\w+\b"),
     ("short punchy rhythm", r"[.!?]\s+[A-Z][^.!?]{1,24}[.!?]"),
 ];
+
+// ── 预编译正则(OnceLock 缓存,避免每次调用重新编译) ──────────────
+
+fn sentence_split_en_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"[.!?\n]+").unwrap())
+}
+
+fn sentence_split_zh_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"[。！？\n]").unwrap())
+}
+
+fn paragraph_split_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\n\s*\n").unwrap())
+}
+
+fn en_word_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?").unwrap())
+}
+
+fn en_ttr_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)[a-z0-9]+(?:'[a-z0-9]+)?").unwrap())
+}
+
+fn en_top_pattern_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"[A-Za-z']+").unwrap())
+}
+
+/// 预编译中文修辞正则(过滤无效 pattern)。
+fn zh_rhetorical_compiled() -> &'static [(&'static str, Regex)] {
+    static COMPILED: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
+    COMPILED.get_or_init(|| {
+        ZH_RHETORICAL_PATTERNS
+            .iter()
+            .filter_map(|(name, pat)| {
+                match Regex::new(pat) {
+                    Ok(r) => Some((*name, r)),
+                    Err(e) => {
+                        tracing::warn!(pattern = pat, name = *name, error = %e, "Invalid rhetorical regex skipped");
+                        None
+                    }
+                }
+            })
+            .collect()
+    })
+}
+
+/// 预编译英文修辞正则(过滤无效 pattern)。
+fn en_rhetorical_compiled() -> &'static [(&'static str, Regex)] {
+    static COMPILED: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
+    COMPILED.get_or_init(|| {
+        EN_RHETORICAL_PATTERNS
+            .iter()
+            .filter_map(|(name, pat)| {
+                match Regex::new(pat) {
+                    Ok(r) => Some((*name, r)),
+                    Err(e) => {
+                        tracing::warn!(pattern = pat, name = *name, error = %e, "Invalid rhetorical regex skipped");
+                        None
+                    }
+                }
+            })
+            .collect()
+    })
+}
 
 /// 语言选项。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,9 +166,9 @@ pub fn analyze_style(text: &str, source_name: Option<&str>, language: Language) 
 /// 句子分割:中文按 。！？\n,英文按 .!?\n。
 fn split_sentences(text: &str, is_en: bool) -> Vec<String> {
     let re = if is_en {
-        Regex::new(r"[.!?\n]+").unwrap()
+        sentence_split_en_re()
     } else {
-        Regex::new(r"[。！？\n]").unwrap()
+        sentence_split_zh_re()
     };
     re.split(text)
         .map(|s| s.trim().to_string())
@@ -107,8 +178,8 @@ fn split_sentences(text: &str, is_en: bool) -> Vec<String> {
 
 /// 段落分割:按空行。
 fn split_paragraphs(text: &str) -> Vec<String> {
-    let re = Regex::new(r"\n\s*\n").unwrap();
-    re.split(text)
+    paragraph_split_re()
+        .split(text)
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())
         .collect()
@@ -117,8 +188,7 @@ fn split_paragraphs(text: &str) -> Vec<String> {
 /// 计量长度:英文=单词数,中文=去空白后的字符数。
 fn measure(s: &str, is_en: bool) -> usize {
     if is_en {
-        let re = Regex::new(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?").unwrap();
-        re.find_iter(s).count()
+        en_word_re().find_iter(s).count()
     } else {
         s.chars().filter(|c| !c.is_whitespace()).count()
     }
@@ -172,8 +242,7 @@ fn min_max(values: &[usize]) -> (usize, usize) {
 /// - 中文:字符级(去除标点/空白/数字)
 fn compute_ttr(text: &str, is_en: bool) -> f64 {
     if is_en {
-        let re = Regex::new(r"(?i)[a-z0-9]+(?:'[a-z0-9]+)?").unwrap();
-        let words: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
+        let words: Vec<&str> = en_ttr_re().find_iter(text).map(|m| m.as_str()).collect();
         if words.is_empty() {
             return 0.0;
         }
@@ -218,7 +287,7 @@ fn is_cjk_punctuation(c: char) -> bool {
 /// - 中文:前 2 字符
 fn compute_top_patterns(sentences: &[String], is_en: bool) -> Vec<String> {
     let mut counts: HashMap<String, u32> = HashMap::new();
-    let word_re = Regex::new(r"[A-Za-z']+").unwrap();
+    let word_re = en_top_pattern_re();
     for s in sentences {
         let key = if is_en {
             word_re
@@ -253,20 +322,13 @@ fn compute_top_patterns(sentences: &[String], is_en: bool) -> Vec<String> {
 
 /// 检测修辞特征(出现 ≥2 次才记录)。
 fn detect_rhetorical_features(text: &str, is_en: bool) -> Vec<String> {
-    let patterns = if is_en {
-        EN_RHETORICAL_PATTERNS
+    let compiled = if is_en {
+        en_rhetorical_compiled()
     } else {
-        ZH_RHETORICAL_PATTERNS
+        zh_rhetorical_compiled()
     };
     let mut features = Vec::new();
-    for (name, pattern) in patterns {
-        let re = match Regex::new(pattern) {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(pattern = pattern, error = %e, "Invalid rhetorical regex skipped");
-                continue;
-            }
-        };
+    for (name, re) in compiled {
         let count = re.find_iter(text).count();
         if count >= 2 {
             if is_en {

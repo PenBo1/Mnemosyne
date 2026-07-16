@@ -6,6 +6,7 @@
 // prompt 策略：6 条文笔类雷点 + 文字层修改边界 + 纯文本输出。
 
 use crate::core::agent::engine::AgentEngine;
+use crate::domain::pipeline::utils::text_parse::strip_code_fence;
 use crate::shared::error::AppError;
 
 /// Polisher 输出
@@ -110,24 +111,6 @@ fn build_user_message(chapter_content: &str, chapter_number: u32, chapter_memo: 
         memo_block = memo_block,
         chapter_content = chapter_content,
     )
-}
-
-/// 去除可能的 ``` 代码块包裹
-fn strip_code_fence(content: &str) -> String {
-    let trimmed = content.trim();
-    if !trimmed.starts_with("```") {
-        return trimmed.to_string();
-    }
-    // 去掉开头的 ``` 和可能的语言标识行
-    let after_open = &trimmed[3..];
-    let inner_start = after_open.find('\n').map(|p| p + 1).unwrap_or(0);
-    let inner = &after_open[inner_start..];
-    // 去掉结尾的 ```
-    let inner = inner.trim_end();
-    match inner.strip_suffix("```") {
-        Some(rest) => rest.trim().to_string(),
-        None => inner.trim().to_string(),
-    }
 }
 
 #[cfg(test)]

@@ -156,15 +156,21 @@ struct LlmSource {
     published_at: Option<String>,
 }
 
+/// 安全切片:按字符边界截取前 max_chars 个字符(避免 UTF-8 字节切片 panic)。
+fn safe_char_slice(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
 /// 从 LLM 输出中提取 JSON 并解析为 ResearchReport。
 fn parse_report(raw: &str, topic: &str, depth: &str) -> Result<ResearchReport, AppError> {
     let json_str = extract_json_block(raw).ok_or_else(|| {
         let preview = if raw.is_empty() {
             "(empty response)"
-        } else if raw.len() > 300 {
-            &raw[..300]
         } else {
-            raw
+            safe_char_slice(raw, 300)
         };
         AppError::invalid_input(format!(
             "Researcher output format error: no JSON found. LLM response (preview): {}",
@@ -209,7 +215,7 @@ fn parse_report(raw: &str, topic: &str, depth: &str) -> Result<ResearchReport, A
     let report = ResearchReport {
         query: topic.to_string(),
         depth: depth.to_string(),
-        claims: claims.clone(),
+        claims,
         conflicts: parsed.conflicts,
         unknowns: parsed.unknowns,
         creative_implications: parsed.creative_implications,

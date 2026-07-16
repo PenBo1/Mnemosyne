@@ -35,7 +35,11 @@ impl ApprovalManager {
         let risk = calculate_operation_risk(op);
         let token = ApprovalToken::new(op, workspace, risk);
 
-        let mut store = self.store.lock().expect("Failed to lock approval store");
+        // C7: 非 Result 方法无法传播 poison,用 error 日志确保可见（非静默降级）
+        let mut store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.add_pending(token.clone());
 
         token
@@ -50,14 +54,20 @@ impl ApprovalManager {
         let risk = calculate_operation_risk(op);
         let token = ApprovalToken::with_ttl(op, workspace, risk, ttl_seconds);
 
-        let mut store = self.store.lock().expect("Failed to lock approval store");
+        let mut store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.add_pending(token.clone());
 
         token
     }
 
     pub fn approve(&self, id: ApprovalId, approved_by: impl Into<String>) -> Result<ApprovalToken, AppError> {
-        let mut store = self.store.lock().expect("Failed to lock approval store");
+        // C7: Result 方法用 map_err 传播 poison
+        let mut store = self.store.lock().map_err(|e|
+            AppError::internal(format!("ApprovalStore lock poisoned: {}", e))
+        )?;
 
         if let Some(token) = store.get_pending(&id) {
             if token.is_expired() {
@@ -77,7 +87,9 @@ impl ApprovalManager {
     }
 
     pub fn reject(&self, id: ApprovalId, reason: impl Into<String>) -> Result<ApprovalToken, AppError> {
-        let mut store = self.store.lock().expect("Failed to lock approval store");
+        let mut store = self.store.lock().map_err(|e|
+            AppError::internal(format!("ApprovalStore lock poisoned: {}", e))
+        )?;
 
         let _reason = reason.into();
         let token = store.reject(id)
@@ -87,7 +99,9 @@ impl ApprovalManager {
     }
 
     pub fn validate(&self, id: &ApprovalId, op: &Operation, workspace: &WorkspaceId) -> Result<(), AppError> {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().map_err(|e|
+            AppError::internal(format!("ApprovalStore lock poisoned: {}", e))
+        )?;
 
         if !store.is_approved(id) {
             if store.is_rejected(id) {
@@ -114,47 +128,74 @@ impl ApprovalManager {
     }
 
     pub fn get_token(&self, id: &ApprovalId) -> Option<ApprovalToken> {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.get_pending(id).cloned()
     }
 
     pub fn is_pending(&self, id: &ApprovalId) -> bool {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.is_pending(id)
     }
 
     pub fn is_approved(&self, id: &ApprovalId) -> bool {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.is_approved(id)
     }
 
     pub fn cleanup_expired(&self) -> Vec<ApprovalToken> {
-        let mut store = self.store.lock().expect("Failed to lock approval store");
+        let mut store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.cleanup_expired()
     }
 
     pub fn stats(&self) -> ApprovalStats {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.stats()
     }
 
     pub fn pending_count(&self) -> usize {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.pending_count()
     }
 
     pub fn approved_count(&self) -> usize {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.approved_count()
     }
 
     pub fn get_pending_tokens(&self) -> Vec<ApprovalToken> {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.get_pending_tokens().into_iter().cloned().collect()
     }
 
     pub fn get_pending_for_workspace(&self, workspace: &WorkspaceId) -> Vec<ApprovalToken> {
-        let store = self.store.lock().expect("Failed to lock approval store");
+        let store = self.store.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
+            e.into_inner()
+        });
         store.get_pending_for_workspace(workspace).into_iter().cloned().collect()
     }
 

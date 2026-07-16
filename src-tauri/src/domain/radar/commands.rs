@@ -7,7 +7,7 @@ use crate::infrastructure::validation::validate_id;
 use tauri::State;
 
 fn validate_scan_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "scan_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "scan_id").map_err(AppError::invalid_input)
 }
 
 #[tauri::command]

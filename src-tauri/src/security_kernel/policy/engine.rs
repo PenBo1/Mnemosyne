@@ -18,6 +18,13 @@ use super::workspace_override::{WorkspaceOverride, WorkspaceOverrideRegistry};
 #[derive(Debug)]
 pub struct PolicyEngine {
     global_policy: GlobalPolicy,
+    // C5 锁模型说明：三个 registry 各自独立 RwLock，evaluate 按优先级
+    // (temporary > user > workspace > global) 顺序加锁查询，首个命中即返回。
+    // 锁顺序约定：如需在一次调用中持有多把锁，必须按 temporary → user → workspace
+    // 顺序获取，避免死锁。当前 evaluate 实现每轮只持有一把锁（读后释放再取下一把），
+    // 因此存在 TOCTOU 窗口：两次 evaluate 之间 override 可能被注册/移除。
+    // 这对策略决策是可接受的（worst case 是用过期 override 决策一次，下次调用会刷新），
+    // 且合并为单锁会牺牲并发读性能。register_* 方法只持有一把锁，无 TOCTOU 风险。
     workspace_registry: Arc<RwLock<WorkspaceOverrideRegistry>>,
     user_registry: Arc<RwLock<UserOverrideRegistry>>,
     temporary_registry: Arc<RwLock<TemporaryOverrideRegistry>>,
@@ -56,43 +63,43 @@ impl PolicyEngine {
     }
 
     pub fn register_workspace_override(&self, override_entry: WorkspaceOverride) {
-        let mut registry = self.workspace_registry.write().unwrap();
+        let mut registry = self.workspace_registry.write().unwrap_or_else(|e| e.into_inner());
         registry.register(override_entry);
     }
 
     pub fn register_user_override(&self, override_entry: UserOverride) {
-        let mut registry = self.user_registry.write().unwrap();
+        let mut registry = self.user_registry.write().unwrap_or_else(|e| e.into_inner());
         registry.register(override_entry);
     }
 
     pub fn register_temporary_override(&self, override_entry: TemporaryOverride) {
-        let mut registry = self.temporary_registry.write().unwrap();
+        let mut registry = self.temporary_registry.write().unwrap_or_else(|e| e.into_inner());
         registry.register(override_entry);
     }
 
     pub fn remove_workspace_override(&self, workspace_id: &WorkspaceId) -> Option<WorkspaceOverride> {
-        let mut registry = self.workspace_registry.write().unwrap();
+        let mut registry = self.workspace_registry.write().unwrap_or_else(|e| e.into_inner());
         registry.remove(workspace_id)
     }
 
     pub fn remove_user_override(&self, user_id: &UserId) -> Option<UserOverride> {
-        let mut registry = self.user_registry.write().unwrap();
+        let mut registry = self.user_registry.write().unwrap_or_else(|e| e.into_inner());
         registry.remove(user_id)
     }
 
     pub fn remove_temporary_override(&self, session_id: &SessionId) -> Option<TemporaryOverride> {
-        let mut registry = self.temporary_registry.write().unwrap();
+        let mut registry = self.temporary_registry.write().unwrap_or_else(|e| e.into_inner());
         registry.remove(session_id)
     }
 
     pub fn cleanup_expired(&self) {
-        let mut workspace_registry = self.workspace_registry.write().unwrap();
+        let mut workspace_registry = self.workspace_registry.write().unwrap_or_else(|e| e.into_inner());
         workspace_registry.cleanup_all_expired();
 
-        let mut user_registry = self.user_registry.write().unwrap();
+        let mut user_registry = self.user_registry.write().unwrap_or_else(|e| e.into_inner());
         user_registry.cleanup_all_expired();
 
-        let mut temp_registry = self.temporary_registry.write().unwrap();
+        let mut temp_registry = self.temporary_registry.write().unwrap_or_else(|e| e.into_inner());
         temp_registry.cleanup_expired();
     }
 
@@ -121,23 +128,26 @@ impl PolicyEngine {
         ctx: &OperationContext,
         risk: OperationRisk,
     ) -> Option<PolicyEvaluation> {
-        let registry = self.temporary_registry.read().unwrap();
+        // 仅读不写：evaluate 为纯决策方法，不消费 approval。
+        // approval 的消费由 consume_temporary_approval 在 executor 成功后显式调用，
+        // 避免操作失败时白白浪费授权次数。
+        let registry = self.temporary_registry.read().unwrap_or_else(|e| e.into_inner());
         let temp_override = registry.get(&ctx.session)?;
+        let o = temp_override.get_override(op)?;
 
-        let operation_override = temp_override.get_override(op)?;
-        let decision = operation_override.decision.to_policy_decision();
-        let remaining = operation_override.remaining_count;
+        let decision = o.decision.to_policy_decision();
+        let remaining = o.remaining_count;
+        let reason = o.reason.clone();
+        let approved_by = o.approved_by.clone();
 
-        if remaining.map_or(true, |r| r > 0) {
+        if remaining.is_none_or(|r| r > 0) {
             Some(PolicyEvaluation {
                 decision,
                 risk,
                 source: PolicySource::TemporaryOverride,
                 reason: format!(
                     "Temporary override: {} (approved by {:?}, remaining: {:?})",
-                    operation_override.reason,
-                    operation_override.approved_by,
-                    remaining
+                    reason, approved_by, remaining
                 ),
             })
         } else {
@@ -150,13 +160,24 @@ impl PolicyEngine {
         }
     }
 
+    /// 在操作执行成功后消费临时 override 的 approval（递减 remaining_count）。
+    /// 由 SecurityKernel 在 executor 成功后调用，确保只有真正成功的操作才消耗授权。
+    /// 返回 true 表示成功消费，false 表示无 override / 已过期 / remaining 已耗尽。
+    pub fn consume_temporary_approval(&self, op: &Operation, ctx: &OperationContext) -> bool {
+        let mut registry = self.temporary_registry.write().unwrap_or_else(|e| e.into_inner());
+        let Some(temp_override) = registry.get_mut(&ctx.session) else {
+            return false;
+        };
+        temp_override.consume_approval(op)
+    }
+
     fn check_user_override(
         &self,
         op: &Operation,
         ctx: &OperationContext,
         risk: OperationRisk,
     ) -> Option<PolicyEvaluation> {
-        let registry = self.user_registry.read().unwrap();
+        let registry = self.user_registry.read().unwrap_or_else(|e| e.into_inner());
         let user_override = registry.get(&ctx.user)?;
 
         let operation_override = user_override.get_global_override(op)
@@ -184,7 +205,7 @@ impl PolicyEngine {
         ctx: &OperationContext,
         risk: OperationRisk,
     ) -> Option<PolicyEvaluation> {
-        let registry = self.workspace_registry.read().unwrap();
+        let registry = self.workspace_registry.read().unwrap_or_else(|e| e.into_inner());
         let workspace_override = registry.get(&ctx.workspace)?;
 
         let operation_override = workspace_override.get_override(op)?;
@@ -299,19 +320,19 @@ impl PolicyEngine {
     }
 
     pub fn get_workspace_count(&self) -> usize {
-        self.workspace_registry.read().unwrap().count()
+        self.workspace_registry.read().unwrap_or_else(|e| e.into_inner()).count()
     }
 
     pub fn get_user_count(&self) -> usize {
-        self.user_registry.read().unwrap().count()
+        self.user_registry.read().unwrap_or_else(|e| e.into_inner()).count()
     }
 
     pub fn get_temporary_count(&self) -> usize {
-        self.temporary_registry.read().unwrap().count()
+        self.temporary_registry.read().unwrap_or_else(|e| e.into_inner()).count()
     }
 
     pub fn get_active_temporary_count(&self) -> usize {
-        self.temporary_registry.read().unwrap().active_count()
+        self.temporary_registry.read().unwrap_or_else(|e| e.into_inner()).active_count()
     }
 }
 

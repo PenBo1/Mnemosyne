@@ -9,3 +9,4 @@ pub mod registry;
 pub mod commands;
 pub mod state;
 pub mod embedding;
+pub mod sse_buffer;

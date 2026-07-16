@@ -125,7 +125,7 @@ impl Database {
         let rows = stmt
             .query_map(params![trace_id, limit], map_span_row)
             .map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 列出最近的 span（跨所有 trace，按 start_time DESC）。
@@ -141,7 +141,7 @@ impl Database {
         )
         .map_err(db_err)?;
         let rows = stmt.query_map([limit], map_span_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按 name 列出 span（按 start_time DESC）。
@@ -160,7 +160,7 @@ impl Database {
         let rows = stmt
             .query_map(params![name, limit], map_span_row)
             .map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 列出最近的 trace（每个 trace 取最早 span 的时间作为 trace 起始）。
@@ -187,7 +187,7 @@ impl Database {
                 })
             })
             .map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// GC:删除 start_time 早于 cutoff_ms 的 span 记录。

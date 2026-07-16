@@ -12,6 +12,8 @@
 // - notify.rs(本文件): 走网络,推送到外部 IM 平台
 // 两者互补,不替代。
 
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
 use crate::shared::error::{AppError, IpcResponse};
 
@@ -20,6 +22,31 @@ use crate::shared::error::{AppError, IpcResponse};
 pub struct NotifyMessage {
     pub title: String,
     pub body: String,
+    /// Webhook 事件类型（仅 Webhook 渠道使用；None 时 dispatch 用 "notification" 兜底）。
+    ///
+    /// 此前 WebhookPayload.event 被硬编码为 "pipeline-complete"，导致所有
+    /// 通知走同一事件类型，webhook events 过滤失效。现由调用方按事件语义传入
+    /// （如 chapter-written / chapter-audited）。
+    #[serde(default)]
+    pub event: Option<String>,
+    /// 关联 book_id（仅 Webhook 渠道使用，用于 webhook 端按书聚合）。
+    #[serde(default)]
+    pub book_id: Option<String>,
+    /// 关联章节号（仅 Webhook 渠道使用）。
+    #[serde(default)]
+    pub chapter_number: Option<u32>,
+}
+
+impl Default for NotifyMessage {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            body: String::new(),
+            event: None,
+            book_id: None,
+            chapter_number: None,
+        }
+    }
 }
 
 /// 输出格式
@@ -86,7 +113,11 @@ pub struct WebhookPayload {
     pub data: Option<serde_json::Value>,
 }
 
-/// 分发通知到所有渠道(并行发送,失败不阻塞)
+/// 分发通知到所有渠道(串行发送,失败不阻塞)。
+///
+/// 串行而非并行的取舍：channels 数量通常 1-3，串行实现简单且避免
+/// `'static` 约束带来的 clone 开销；若后续单次 dispatch 延迟成为瓶颈，
+/// 可再引入 `futures_util::future::join_all` 并 clone 入参。
 pub async fn dispatch_notification(
     channels: &[NotifyChannel],
     message: &NotifyMessage,
@@ -94,6 +125,9 @@ pub async fn dispatch_notification(
     let markdown_text = format!("**{}**\n\n{}", message.title, message.body);
     let plain_body = strip_markdown_marks(&message.body);
     let plain_text = format!("{}\n\n{}", message.title, plain_body);
+    // webhook 事件 / book_id / chapter_number 缺省兜底
+    let webhook_event = message.event.clone().unwrap_or_else(|| "notification".to_string());
+    let webhook_book_id = message.book_id.clone().unwrap_or_default();
 
     let mut results = Vec::with_capacity(channels.len());
     for channel in channels {
@@ -112,9 +146,9 @@ pub async fn dispatch_notification(
             }
             NotifyChannel::Webhook { url, secret, events } => {
                 let payload = WebhookPayload {
-                    event: "pipeline-complete".to_string(),
-                    book_id: String::new(),
-                    chapter_number: None,
+                    event: webhook_event.clone(),
+                    book_id: webhook_book_id.clone(),
+                    chapter_number: message.chapter_number,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     data: Some(serde_json::json!({
                         "title": message.title,
@@ -157,6 +191,23 @@ fn channel_type_name(c: &NotifyChannel) -> &'static str {
 
 // === Telegram ===
 
+/// 模块级共享 reqwest::Client —— 避免每次 dispatch 重建连接池。
+///
+/// reqwest::Client 内部已是 Arc，clone 廉价；OnceLock 保证只 build 一次。
+/// 超时配置：连接 15s、整体 30s，覆盖所有渠道发送。
+fn shared_http_client() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default()
+        })
+        .clone()
+}
+
 async fn send_telegram(
     bot_token: &str,
     chat_id: &str,
@@ -173,7 +224,7 @@ async fn send_telegram(
     if format == NotifyFormat::Markdown {
         body["parse_mode"] = serde_json::Value::String("Markdown".into());
     }
-    let client = reqwest::Client::new();
+    let client = shared_http_client();
     let resp = client.post(&url).json(&body).send().await
         .map_err(|e| AppError::internal(format!("Telegram request failed: {}", e)))?;
     if !resp.status().is_success() {
@@ -230,7 +281,7 @@ async fn send_feishu(
             },
         })
     };
-    let client = reqwest::Client::new();
+    let client = shared_http_client();
     let resp = client.post(webhook_url).json(&payload).send().await
         .map_err(|e| AppError::internal(format!("Feishu request failed: {}", e)))?;
     if !resp.status().is_success() {
@@ -254,7 +305,7 @@ async fn send_wechat_work(
     } else {
         serde_json::json!({ "msgtype": "markdown", "markdown": { "content": content } })
     };
-    let client = reqwest::Client::new();
+    let client = shared_http_client();
     let resp = client.post(webhook_url).json(&payload).send().await
         .map_err(|e| AppError::internal(format!("WeCom request failed: {}", e)))?;
     if !resp.status().is_success() {
@@ -282,7 +333,7 @@ async fn send_webhook(
     let body = serde_json::to_string(payload)
         .map_err(|e| AppError::internal(format!("Webhook payload serialize failed: {}", e)))?;
 
-    let client = reqwest::Client::new();
+    let client = shared_http_client();
     let mut req = client.post(url)
         .header("Content-Type", "application/json")
         .body(body.clone());
@@ -328,16 +379,28 @@ fn validate_webhook_url(url: &str) -> Result<(), AppError> {
 }
 
 /// 剥离 markdown 标记(转纯文本)
+///
+/// 正则通过 OnceLock 静态缓存，避免每次调用重新编译（原实现每次调用
+/// 都 `Regex::new` 3 次，编译开销显著）。
 fn strip_markdown_marks(text: &str) -> String {
+    static CODE_BLOCK: OnceLock<regex::Regex> = OnceLock::new();
+    static BOLD: OnceLock<regex::Regex> = OnceLock::new();
+    static INLINE: OnceLock<regex::Regex> = OnceLock::new();
+    let code_block = CODE_BLOCK.get_or_init(|| {
+        regex::Regex::new(r"```[^\n]*\n?").expect("invalid code_block regex")
+    });
+    let bold = BOLD.get_or_init(|| {
+        regex::Regex::new(r"\*\*([^*]+)\*\*").expect("invalid bold regex")
+    });
+    let inline = INLINE.get_or_init(|| {
+        regex::Regex::new(r"`([^`]+)`").expect("invalid inline regex")
+    });
     // 移除代码块 ```lang\n...```
-    let no_code_blocks = regex::Regex::new(r"```[^\n]*\n?").unwrap()
-        .replace_all(text, "");
+    let no_code_blocks = code_block.replace_all(text, "");
     // 加粗 **text** → text
-    let no_bold = regex::Regex::new(r"\*\*([^*]+)\*\*").unwrap()
-        .replace_all(&no_code_blocks, "$1");
+    let no_bold = bold.replace_all(&no_code_blocks, "$1");
     // 行内代码 `text` → text
-    let no_inline = regex::Regex::new(r"`([^`]+)`").unwrap()
-        .replace_all(&no_bold, "$1");
+    let no_inline = inline.replace_all(&no_bold, "$1");
     no_inline.into_owned()
 }
 
@@ -426,7 +489,12 @@ impl ChapterEvent {
 ///
 /// 生成统一的 NotifyMessage,可经 dispatch_notification 推送到所有渠道。
 /// `summary` 可选,用于附加章节摘要或备注。
+///
+/// Webhook 字段（event/book_id/chapter_number）会被填充，使 webhook 端
+/// 可按事件类型与书聚合过滤；其他渠道（Telegram/Feishu/WeCom）仅使用
+/// title/body，忽略这些字段。
 pub fn format_chapter_notification(
+    book_id: &str,
     book_title: &str,
     chapter_number: u32,
     chapter_title: Option<&str>,
@@ -444,7 +512,13 @@ pub fn format_chapter_notification(
             body.push_str(&format!("\n**摘要**: {}", s));
         }
     }
-    NotifyMessage { title, body }
+    NotifyMessage {
+        title,
+        body,
+        event: Some(event.as_str().to_string()),
+        book_id: Some(book_id.to_string()),
+        chapter_number: Some(chapter_number),
+    }
 }
 
 /// 测试通知配置 —— 向给定渠道发送一条测试消息,返回每个渠道的发送结果。
@@ -461,6 +535,7 @@ pub async fn notify_test(
     let message = NotifyMessage {
         title: "Mnemosyne 通知测试".to_string(),
         body: "这是一条测试通知,用于验证通知渠道配置是否正确。".to_string(),
+        ..Default::default()
     };
     let results = dispatch_notification(&channels, &message).await;
     let success_count = results.iter().filter(|r| r.success).count();
@@ -594,6 +669,7 @@ mod tests {
     #[test]
     fn format_chapter_notification_with_full_fields() {
         let msg = format_chapter_notification(
+            "book-1",
             "测试书",
             3,
             Some("风起"),
@@ -604,20 +680,28 @@ mod tests {
         assert!(msg.body.contains("**章节标题**: 风起"));
         assert!(msg.body.contains("**事件**: 写作完成"));
         assert!(msg.body.contains("**摘要**: 主角登场"));
+        // webhook 字段
+        assert_eq!(msg.event.as_deref(), Some("chapter-written"));
+        assert_eq!(msg.book_id.as_deref(), Some("book-1"));
+        assert_eq!(msg.chapter_number, Some(3));
     }
 
     #[test]
     fn format_chapter_notification_without_optional_fields() {
-        let msg = format_chapter_notification("书名", 1, None, ChapterEvent::Audited, None);
+        let msg = format_chapter_notification("book-2", "书名", 1, None, ChapterEvent::Audited, None);
         assert_eq!(msg.title, "[书名] 第 1 章 审核通过");
         assert!(!msg.body.contains("章节标题"));
         assert!(!msg.body.contains("摘要"));
         assert!(msg.body.contains("**事件**: 审核通过"));
+        // 即使无 summary/chapter_title，event/book_id/chapter_number 仍填充
+        assert_eq!(msg.event.as_deref(), Some("chapter-audited"));
+        assert_eq!(msg.book_id.as_deref(), Some("book-2"));
+        assert_eq!(msg.chapter_number, Some(1));
     }
 
     #[test]
     fn format_chapter_notification_ignores_blank_summary() {
-        let msg = format_chapter_notification("书", 2, None, ChapterEvent::Revised, Some("   "));
+        let msg = format_chapter_notification("b", "书", 2, None, ChapterEvent::Revised, Some("   "));
         assert!(!msg.body.contains("摘要"));
     }
 }

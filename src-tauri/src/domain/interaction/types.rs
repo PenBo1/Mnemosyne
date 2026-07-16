@@ -78,8 +78,10 @@ impl SessionKind {
 /// - Manual: 手动，内容生成 + 编辑类操作都等待用户
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum AutomationMode {
     Auto,
+    #[default]
     Semi,
     Manual,
 }
@@ -103,11 +105,6 @@ impl AutomationMode {
     }
 }
 
-impl Default for AutomationMode {
-    fn default() -> Self {
-        AutomationMode::Semi
-    }
-}
 
 // ── 交互意图（23 种） ────────────────────────────────────────
 

@@ -15,7 +15,7 @@ pub fn load_history(data_dir: &DataDir, book_id: &str) -> Result<Vec<DetectionHi
         return Ok(Vec::new());
     }
     let raw = std::fs::read_to_string(&path)
-        .map_err(|e| AppError::file_read_error(format!("{}: {}", path.display(), e)))?;
+        .map_err(|e| AppError::file_read_error(format!("detection history (book {}): {}", book_id, e)))?;
     let entries: Vec<DetectionHistoryEntry> = serde_json::from_str(&raw)
         .map_err(|e| AppError::invalid_format(format!("Detection history corrupt: {}", e)))?;
     Ok(entries)
@@ -55,7 +55,7 @@ pub fn record_entry(
     let json = serde_json::to_string_pretty(&history)
         .map_err(|e| AppError::internal(format!("History serialize failed: {}", e)))?;
     std::fs::write(&path, json)
-        .map_err(|_e| AppError::file_write_error(path.display().to_string()))?;
+        .map_err(|_e| AppError::file_write_error(format!("detection history (book {})", book_id)))?;
     Ok(entry)
 }
 
@@ -64,7 +64,7 @@ pub fn delete_history(data_dir: &DataDir, book_id: &str) -> Result<bool, AppErro
     let path = data_dir.detection_dir().join(format!("{}.json", book_id));
     if path.exists() {
         std::fs::remove_file(&path)
-            .map_err(|_e| AppError::file_write_error(path.display().to_string()))?;
+            .map_err(|_e| AppError::file_write_error(format!("detection history (book {})", book_id)))?;
         Ok(true)
     } else {
         Ok(false)

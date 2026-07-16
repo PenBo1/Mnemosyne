@@ -24,7 +24,7 @@ impl RateStore {
         operation: &str,
         window: Duration,
     ) -> Vec<DateTime<Utc>> {
-        let records = self.records.read().unwrap();
+        let records = self.records.read().unwrap_or_else(|e| e.into_inner());
         let key = (workspace, operation.to_string());
         
         let now = Utc::now();
@@ -57,17 +57,17 @@ impl RateStore {
         operation: &str,
         timestamp: DateTime<Utc>,
     ) {
-        let mut records = self.records.write().unwrap();
+        let mut records = self.records.write().unwrap_or_else(|e| e.into_inner());
         let key = (workspace, operation.to_string());
         
         records
             .entry(key)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(timestamp);
     }
 
     pub fn cleanup_expired(&self, max_age: Duration) {
-        let mut records = self.records.write().unwrap();
+        let mut records = self.records.write().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let cutoff = now - max_age;
 
@@ -79,17 +79,17 @@ impl RateStore {
     }
 
     pub fn clear_workspace(&self, workspace: WorkspaceId) {
-        let mut records = self.records.write().unwrap();
+        let mut records = self.records.write().unwrap_or_else(|e| e.into_inner());
         records.retain(|(ws, _), _| *ws != workspace);
     }
 
     pub fn clear_all(&self) {
-        let mut records = self.records.write().unwrap();
+        let mut records = self.records.write().unwrap_or_else(|e| e.into_inner());
         records.clear();
     }
 
     pub fn total_records(&self) -> usize {
-        self.records.read().unwrap().len()
+        self.records.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 

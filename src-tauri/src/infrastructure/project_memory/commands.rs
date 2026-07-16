@@ -87,9 +87,10 @@ pub async fn project_memory_stats(
     state: State<'_, ProjectMemoryState>,
 ) -> Result<IpcResponse<ProjectMemoryStats>, AppError> {
     validate_id_component(&workspace_id, "workspace_id")?;
+    // exists 用 path.exists() 而非 !content.is_empty(),否则空文件会被误判为不存在
+    let exists = state.store.exists(&workspace_id);
     let content = state.store.read(&workspace_id)?;
     let max = state.store.max_size();
-    let exists = !content.is_empty();
     Ok(IpcResponse::ok(ProjectMemoryStats {
         bytes: content.len(),
         chars: content.chars().count(),

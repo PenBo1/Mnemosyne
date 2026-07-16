@@ -152,7 +152,7 @@ pub fn validate_endpoint(url: &Url, endpoint: &NetworkEndpoint) -> Result<(), Ap
         }
     }
 
-    let port = url.port().unwrap_or_else(|| {
+    let port = url.port().unwrap_or({
         match scheme {
             "https" => 443,
             "http" => 80,
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_validate_endpoint_port() {
-        let endpoint = NetworkEndpoint::new().allow_port(8080);
+        let endpoint = NetworkEndpoint::new().allow_any_host().allow_port(8080);
         let url = Url::parse("https://example.com:8080/").unwrap();
         assert!(validate_endpoint(&url, &endpoint).is_ok());
     }

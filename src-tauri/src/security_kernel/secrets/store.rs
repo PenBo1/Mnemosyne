@@ -45,31 +45,21 @@ impl SecretStore {
         let now = chrono::Utc::now().timestamp();
         let compound = key.as_compound_key();
 
-        let entry = {
-            let guard = self.secrets.lock().map_err(|e|
-                AppError::internal(format!("store lock poisoned: {}", e))
-            )?;
-            
-            if let Some(existing) = guard.get(&compound) {
-                SecretEntry {
-                    key: key.clone(),
-                    encoded_value: encoded,
-                    created_at: existing.created_at,
-                    updated_at: now,
-                }
-            } else {
-                SecretEntry {
-                    key: key.clone(),
-                    encoded_value: encoded,
-                    created_at: now,
-                    updated_at: now,
-                }
-            }
-        };
-
+        // C18: 单次加锁完成读+写,消除双锁 TOCTOU 窗口。
         let mut guard = self.secrets.lock().map_err(|e|
             AppError::internal(format!("store lock poisoned: {}", e))
         )?;
+
+        let created_at = guard.get(&compound)
+            .map(|existing| existing.created_at)
+            .unwrap_or(now);
+
+        let entry = SecretEntry {
+            key: key.clone(),
+            encoded_value: encoded,
+            created_at,
+            updated_at: now,
+        };
         guard.insert(compound, entry);
 
         Ok(())

@@ -124,5 +124,17 @@ pub fn apply_story_graph_delta(
         }
     }
 
+    // Referential integrity (blocking): every choice.target_node_id must point at an existing node.
+    for node in &graph.nodes {
+        for choice in &node.choices {
+            if !node_ids.contains(choice.target_node_id.as_str()) {
+                return Err(AppError::invalid_state(format!(
+                    "choice {} in node {} references missing target node {}",
+                    choice.id, node.id, choice.target_node_id
+                )));
+            }
+        }
+    }
+
     Ok(())
 }

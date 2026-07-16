@@ -64,83 +64,98 @@ impl StateManager {
     /// 2. 再尝试原子创建 <bookDir>/.write.lock
     /// 3. 创建失败（EEXIST）→ 读取 PID + stale 检测 → 回收或抛错
     pub fn acquire_book_lock(book_id: &str, book_dir: &Path) -> Result<BookLockGuard, AppError> {
-        // ── Step 1: 进程内快速路径 ──
-        {
-            let mut registry = global_lock_registry()
-                .lock()
-                .map_err(|e| AppError::internal(format!("lock registry poisoned: {}", e)))?;
-            if registry.contains_key(book_id) {
-                return Err(AppError::agent_busy());
-            }
-            registry.insert(book_id.to_string(), ());
-        }
-
-        // ── Step 2: 跨进程 lock 文件 ──
+        // 迭代式获取锁，限制最大重试次数避免无限递归/循环。
+        // 每轮：进程内快速路径 → 原子 create_new lock 文件 → 已存在则 stale 检测 → 回收后重试。
+        const MAX_ACQUIRE_RETRIES: usize = 3;
         let lock_path = book_dir.join(".write.lock");
-        let lock_content = format!(
-            "pid:{} ts:{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0)
-        );
 
-        match std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&lock_path)
-        {
-            Ok(mut f) => {
-                use std::io::Write;
-                if let Err(e) = f.write_all(lock_content.as_bytes()) {
-                    rollback_registry(book_id);
-                    let _ = std::fs::remove_file(&lock_path);
-                    return Err(AppError::internal(format!("lock file write failed: {}", e)));
+        for attempt in 0..MAX_ACQUIRE_RETRIES {
+            // ── Step 1: 进程内快速路径 ──
+            {
+                let mut registry = global_lock_registry()
+                    .lock()
+                    .map_err(|e| AppError::internal(format!("lock registry poisoned: {}", e)))?;
+                if registry.contains_key(book_id) {
+                    return Err(AppError::agent_busy());
                 }
+                registry.insert(book_id.to_string(), ());
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // ── Step 3: stale 检测 ──
-                let stale = Self::check_lock_stale(&lock_path, book_id);
-                if stale {
-                    if let Err(e) = std::fs::remove_file(&lock_path) {
+
+            // ── Step 2: 跨进程 lock 文件（原子 create_new）──
+            let lock_content = format!(
+                "pid:{} ts:{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            );
+
+            match std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .truncate(true)
+                .open(&lock_path)
+            {
+                Ok(mut f) => {
+                    use std::io::Write;
+                    if let Err(e) = f.write_all(lock_content.as_bytes()) {
                         rollback_registry(book_id);
-                        return Err(AppError::internal(format!(
-                            "failed to remove stale lock: {}",
-                            e
-                        )));
+                        let _ = std::fs::remove_file(&lock_path);
+                        return Err(AppError::internal(format!("lock file write failed: {}", e)));
+                    }
+                    // ── Step 4: 加入同进程活跃写集合 ──
+                    if let Ok(mut set) = active_writes_set().lock() {
+                        set.insert(book_id.to_string());
+                    }
+                    return Ok(BookLockGuard {
+                        book_id: book_id.to_string(),
+                        book_dir: book_dir.to_path_buf(),
+                    });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // ── Step 3: stale 检测 ──
+                    let stale = Self::check_lock_stale(&lock_path, book_id);
+                    if stale {
+                        if let Err(e) = std::fs::remove_file(&lock_path) {
+                            rollback_registry(book_id);
+                            return Err(AppError::internal(format!(
+                                "failed to remove stale lock: {}",
+                                e
+                            )));
+                        }
+                        // 回收成功 → 回滚 registry 进入下一轮重试（原子 create_new 会重新竞争）
+                        rollback_registry(book_id);
+                        if attempt + 1 >= MAX_ACQUIRE_RETRIES {
+                            tracing::warn!(
+                                book_id = %book_id,
+                                attempts = attempt + 1,
+                                "Acquire lock: stale lock recycled but retry limit reached"
+                            );
+                            return Err(AppError::agent_busy());
+                        }
+                        continue;
                     }
                     rollback_registry(book_id);
-                    return Self::acquire_book_lock(book_id, book_dir);
+                    let lock_data = std::fs::read_to_string(&lock_path).unwrap_or_default();
+                    tracing::warn!(
+                        book_id = %book_id,
+                        lock_data = %lock_data,
+                        "Book is locked by another process"
+                    );
+                    return Err(AppError::agent_busy());
                 }
-                rollback_registry(book_id);
-                let lock_data = std::fs::read_to_string(&lock_path).unwrap_or_default();
-                tracing::warn!(
-                    book_id = %book_id,
-                    lock_data = %lock_data,
-                    "Book is locked by another process"
-                );
-                return Err(AppError::agent_busy());
-            }
-            Err(e) => {
-                rollback_registry(book_id);
-                return Err(AppError::internal(format!(
-                    "failed to create lock file at {}: {}",
-                    lock_path.display(),
-                    e
-                )));
+                Err(e) => {
+                    rollback_registry(book_id);
+                    return Err(AppError::internal(format!(
+                        "failed to create lock file at {}: {}",
+                        lock_path.display(),
+                        e
+                    )));
+                }
             }
         }
-
-        // ── Step 4: 加入同进程活跃写集合 ──
-        if let Ok(mut set) = active_writes_set().lock() {
-            set.insert(book_id.to_string());
-        }
-
-        Ok(BookLockGuard {
-            book_id: book_id.to_string(),
-            book_dir: book_dir.to_path_buf(),
-        })
+        Err(AppError::agent_busy())
     }
 
     /// 检测 lock 文件是否 stale。
@@ -277,6 +292,12 @@ fn extract_lock_pid(content: &str) -> Option<u32> {
 /// 保守策略：探测失败时返回 true（避免误删他人持有的锁）。
 #[cfg(windows)]
 fn is_process_alive(pid: u32) -> bool {
+    // PID 0 是 System Idle Process，永远存活且不属于任何用户进程；
+    // 视为非法输入，保守返回 true 以避免误删可能存在的他人锁。
+    if pid == 0 {
+        return true;
+    }
+
     extern "system" {
         fn OpenProcess(
             desired_access: u32,
@@ -284,19 +305,30 @@ fn is_process_alive(pid: u32) -> bool {
             process_id: u32,
         ) -> *mut std::ffi::c_void;
         fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+        fn GetExitCodeProcess(handle: *mut std::ffi::c_void, exit_code: *mut u32) -> i32;
     }
 
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const STILL_ACTIVE: u32 = 259;
 
+    // SAFETY: 调用 Win32 API。`pid` 来自 lock 文件解析（已校验非 0）。
+    // - OpenProcess 返回的句柄在 CloseHandle 前有效；本函数在所有返回路径前都调用 CloseHandle。
+    // - GetExitCodeProcess 写入 exit_code 指向的栈变量，指针有效且对齐。
+    // - 句柄不跨 await/FFI 边界泄漏，生命周期严格局限于本函数。
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() {
-            // OpenProcess 失败：可能进程不存在，也可能权限不足。
-            // 保守起见返回 true（避免误删他人锁）。
+            // OpenProcess 失败:可能进程不存在,也可能权限不足。
+            // 保守起见返回 true(避免误删他人锁)。
             true
         } else {
+            // 用 GetExitCodeProcess 判断进程是否仍在运行
+            let mut exit_code: u32 = 0;
+            let ok = GetExitCodeProcess(handle, &mut exit_code);
             CloseHandle(handle);
-            true
+            // 调用成功且退出码为 STILL_ACTIVE 表示进程存活；
+            // 退出码非 STILL_ACTIVE（包括 0）表示进程已退出。
+            ok != 0 && exit_code == STILL_ACTIVE
         }
     }
 }

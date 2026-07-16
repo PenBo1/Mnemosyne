@@ -89,7 +89,7 @@ async fn detect_gptzero(
     let score = data
         .pointer("/documents/0/completely_generated_prob")
         .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
+        .ok_or_else(|| AppError::invalid_format("GPTZero response missing completely_generated_prob"))?;
     Ok(DetectionResult {
         score,
         provider: "gptzero".into(),
@@ -130,7 +130,7 @@ async fn detect_originality(
     let score = data
         .pointer("/score/ai")
         .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
+        .ok_or_else(|| AppError::invalid_format("Originality response missing score.ai"))?;
     Ok(DetectionResult {
         score,
         provider: "originality".into(),
@@ -172,7 +172,7 @@ async fn detect_custom(
     let score = data
         .get("score")
         .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
+        .ok_or_else(|| AppError::invalid_format("Custom detection response missing score"))?;
     Ok(DetectionResult {
         score,
         provider: "custom".into(),

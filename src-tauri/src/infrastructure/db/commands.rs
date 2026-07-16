@@ -1,4 +1,4 @@
-﻿
+
 use tauri::State;
 use crate::shared::error::{IpcResponse, AppError};
 use crate::infrastructure::db::state::DbState;
@@ -21,11 +21,15 @@ pub async fn create_trend(
     if platform.len() > 100 {
         return Err(AppError::invalid_input("Platform name too long (max 100 chars)"));
     }
-    if !score.is_finite() || score < 0.0 || score > 1_000_000.0 {
+    if !score.is_finite() || !(0.0..=1_000_000.0).contains(&score) {
         return Err(AppError::invalid_input("Score must be a finite number between 0 and 1000000"));
     }
     tracing::info!(keyword = %keyword, platform = %platform, score = score, "create_trend");
-    let trend = state.db.create_trend(&keyword, &platform, score, metadata)?;
+    let db = state.db.clone();
+    let trend = tokio::task::spawn_blocking(move || {
+        db.create_trend(&keyword, &platform, score, metadata)
+    }).await
+        .map_err(|e| AppError::internal(format!("Database task join failed: {}", e)))??;
     tracing::info!(trend_id = %trend.id, "Trend created");
     Ok(IpcResponse::created(trend))
 }
@@ -37,7 +41,11 @@ pub async fn list_trends(
     limit: Option<i64>,
 ) -> Result<IpcResponse<Vec<crate::infrastructure::db::types::Trend>>, AppError> {
     tracing::debug!(platform = ?platform, limit = ?limit, "list_trends");
-    let trends = state.db.list_trends(platform.as_deref(), limit)?;
+    let db = state.db.clone();
+    let trends = tokio::task::spawn_blocking(move || {
+        db.list_trends(platform.as_deref(), limit)
+    }).await
+        .map_err(|e| AppError::internal(format!("Database task join failed: {}", e)))??;
     tracing::debug!(count = trends.len(), "Trends listed");
     Ok(IpcResponse::ok(trends))
 }
@@ -49,7 +57,12 @@ pub async fn delete_trend(
 ) -> Result<IpcResponse<bool>, AppError> {
     validate_id_component(&id, "trend_id")?;
     tracing::info!(trend_id = %id, "delete_trend");
-    let deleted = state.db.delete_trend(&id)?;
-    tracing::info!(trend_id = %id, deleted, "Trend deleted");
+    let db = state.db.clone();
+    let id_for_log = id.clone();
+    let deleted = tokio::task::spawn_blocking(move || {
+        db.delete_trend(&id)
+    }).await
+        .map_err(|e| AppError::internal(format!("Database task join failed: {}", e)))??;
+    tracing::info!(trend_id = %id_for_log, deleted, "Trend deleted");
     Ok(IpcResponse::ok(deleted))
 }

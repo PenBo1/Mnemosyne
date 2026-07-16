@@ -77,7 +77,7 @@ impl HookRegistry {
     /// 注册一个完整 ConfiguredHook（内部使用，handler 由调用方提供）。
     pub fn register_hook(&self, hook: ConfiguredHook) -> String {
         let id = hook.id.clone();
-        let mut hooks = self.hooks.write().unwrap();
+        let mut hooks = self.hooks.write().unwrap_or_else(|e| e.into_inner());
         hooks.push(hook);
         // 按 priority 降序排序（稳定排序保留插入顺序）
         hooks.sort_by(|a, b| b.priority.cmp(&a.priority));
@@ -115,7 +115,7 @@ impl HookRegistry {
 
     /// 注销 hook。返回是否成功删除。
     pub fn unregister(&self, id: &str) -> bool {
-        let mut hooks = self.hooks.write().unwrap();
+        let mut hooks = self.hooks.write().unwrap_or_else(|e| e.into_inner());
         let before = hooks.len();
         hooks.retain(|h| h.id != id);
         let removed = before != hooks.len();
@@ -127,13 +127,13 @@ impl HookRegistry {
 
     /// 列出所有已注册 hook 的描述信息。
     pub fn list(&self) -> Vec<HookInfo> {
-        let hooks = self.hooks.read().unwrap();
+        let hooks = self.hooks.read().unwrap_or_else(|e| e.into_inner());
         hooks.iter().map(HookInfo::from).collect()
     }
 
     /// 统计已注册 hook 数量。
     pub fn count(&self) -> usize {
-        self.hooks.read().unwrap().len()
+        self.hooks.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// 异步派发 hook —— 按 priority 顺序执行匹配的 hook。
@@ -144,7 +144,7 @@ impl HookRegistry {
     /// - handler 内部 panic → 记录 error，视为 FailedContinue。
     pub async fn dispatch(&self, event: HookEvent, payload: &HookPayload) -> HookDispatchOutcome {
         let matched: Vec<ConfiguredHook> = {
-            let hooks = self.hooks.read().unwrap();
+            let hooks = self.hooks.read().unwrap_or_else(|e| e.into_inner());
             hooks
                 .iter()
                 .filter(|h| h.event == event && matcher_matches(&h.matcher, payload))
@@ -183,7 +183,7 @@ impl HookRegistry {
 
     /// 清空所有 hook（用于测试或重置）。
     pub fn clear(&self) {
-        let mut hooks = self.hooks.write().unwrap();
+        let mut hooks = self.hooks.write().unwrap_or_else(|e| e.into_inner());
         hooks.clear();
     }
 }

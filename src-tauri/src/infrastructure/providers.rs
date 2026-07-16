@@ -1,4 +1,4 @@
-﻿
+
 use serde::{Deserialize, Serialize};
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::llm::state::LlmState;
@@ -64,17 +64,19 @@ pub async fn provider_models(
 }
 
 #[tauri::command]
-#[allow(non_snake_case)]
 pub async fn provider_test_connection(
     state: State<'_, LlmState>,
     provider: String,
-    apiKey: String,
-    baseUrl: String,
+    api_key: String,
+    base_url: String,
     model: String,
 ) -> Result<IpcResponse<()>, AppError> {
     tracing::info!(provider = %provider, model = %model, "provider_test_connection");
-    let registry = state.registry.lock().await;
-    registry.test_connection(&provider, &apiKey, &baseUrl, &model).await?;
+    // test_connection 不依赖 registry 状态（内部构造临时 provider 句柄），
+    // 因此无需持有 registry 锁。直接从 state.data_dir 重建 registry 仅供查询。
+    // 这样避免了跨 await 持有 Mutex（test_connection 会发起网络请求，可能长阻塞）。
+    let registry = crate::infrastructure::llm::registry::ProviderRegistry::new(&state.data_dir);
+    registry.test_connection(&provider, &api_key, &base_url, &model).await?;
     tracing::info!(provider = %provider, model = %model, "Connection test passed");
     Ok(IpcResponse::ok(()))
 }

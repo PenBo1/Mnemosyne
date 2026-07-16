@@ -1,23 +1,31 @@
-﻿use crate::shared::error::{AppError, IpcResponse};
+use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::validation::{validate_id, validate_path};
 use tauri::State;
 use std::path::PathBuf;
+use tokio::sync::Mutex;
+use std::sync::OnceLock;
 
 const MAX_CONTENT_SIZE: usize = 10 * 1024 * 1024;
 
+/// 全局串行化 story state.json 的读改写，防止 TOCTOU 竞态。
+fn story_state_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn validate_novel_id(novel_id: &str) -> Result<(), AppError> {
-    validate_id(novel_id, "novel_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(novel_id, "novel_id").map_err(AppError::invalid_input)
 }
 
 fn build_story_path(workspace_path: &str, novel_id: &str) -> Result<PathBuf, AppError> {
-    validate_path(workspace_path).map_err(|e| AppError::invalid_input(e))?;
+    validate_path(workspace_path).map_err(AppError::invalid_input)?;
     let path = PathBuf::from(workspace_path)
         .join("books")
         .join(novel_id)
         .join("story")
         .join("state.json");
-    if path.components().any(|c| c.as_os_str() == "..") {
+    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
         return Err(AppError::invalid_input("Path traversal denied"));
     }
     Ok(path)
@@ -38,11 +46,16 @@ pub async fn story_state_get(
 
     let state_path = build_story_path(&workspace.path, &novel_id)?;
 
+    // 文件 I/O 卸载到阻塞线程池，避免阻塞 tokio worker
     let story_state = if state_path.exists() {
-        let raw = std::fs::read_to_string(&state_path)
-            .map_err(|e| AppError::internal(format!("Failed to read state: {}", e)))?;
-        serde_json::from_str(&raw)
-            .map_err(|e| AppError::internal(format!("Failed to parse state: {}", e)))?
+        tokio::task::spawn_blocking(move || -> Result<crate::domain::story::models::StoryState, AppError> {
+            let raw = std::fs::read_to_string(&state_path)
+                .map_err(|e| AppError::internal(format!("Failed to read state: {}", e)))?;
+            serde_json::from_str(&raw)
+                .map_err(|e| AppError::internal(format!("Failed to parse state: {}", e)))
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
     } else {
         crate::domain::story::models::StoryState::default()
     };
@@ -66,10 +79,8 @@ pub async fn story_state_save(
 
     let state_path = build_story_path(&workspace.path, &novel_id)?;
     let parent = state_path.parent()
-        .ok_or_else(|| AppError::internal("Invalid state path"))?;
-
-    std::fs::create_dir_all(parent)
-        .map_err(|e| AppError::internal(format!("Failed to create directory: {}", e)))?;
+        .ok_or_else(|| AppError::internal("Invalid state path"))?
+        .to_path_buf();
 
     let json = serde_json::to_string_pretty(&story_state)
         .map_err(|e| AppError::internal(format!("Failed to serialize: {}", e)))?;
@@ -78,8 +89,16 @@ pub async fn story_state_save(
         return Err(AppError::invalid_input("Story state too large (max 10MB)"));
     }
 
-    std::fs::write(&state_path, &json)
-        .map_err(|e| AppError::internal(format!("Failed to write state: {}", e)))?;
+    // create_dir + write 卸载到阻塞线程池
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        std::fs::create_dir_all(&parent)
+            .map_err(|e| AppError::internal(format!("Failed to create directory: {}", e)))?;
+        std::fs::write(&state_path, &json)
+            .map_err(|e| AppError::internal(format!("Failed to write state: {}", e)))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     Ok(IpcResponse::ok(true))
 }
@@ -92,7 +111,7 @@ pub async fn hook_update_status(
     new_status: String,
 ) -> Result<IpcResponse<crate::domain::story::models::StoryState>, AppError> {
     validate_novel_id(&novel_id)?;
-    validate_id(&hook_id, "hook_id").map_err(|e| AppError::invalid_input(e))?;
+    validate_id(&hook_id, "hook_id").map_err(AppError::invalid_input)?;
 
     let status = match new_status.as_str() {
         "open" => crate::domain::story::models::HookStatus::Open,
@@ -112,11 +131,20 @@ pub async fn hook_update_status(
 
     let state_path = build_story_path(&workspace.path, &novel_id)?;
 
+    // 用全局 Mutex 串行化读改写，防止 TOCTOU 竞态
+    let _guard = story_state_lock().lock().await;
+
+    // 文件读取卸载到阻塞线程池
+    let read_path = state_path.clone();
     let mut story_state: crate::domain::story::models::StoryState = if state_path.exists() {
-        let raw = std::fs::read_to_string(&state_path)
-            .map_err(|e| AppError::internal(format!("Failed to read state: {}", e)))?;
-        serde_json::from_str(&raw)
-            .map_err(|e| AppError::internal(format!("Failed to parse state: {}", e)))?
+        tokio::task::spawn_blocking(move || -> Result<crate::domain::story::models::StoryState, AppError> {
+            let raw = std::fs::read_to_string(&read_path)
+                .map_err(|e| AppError::internal(format!("Failed to read state: {}", e)))?;
+            serde_json::from_str(&raw)
+                .map_err(|e| AppError::internal(format!("Failed to parse state: {}", e)))
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
     } else {
         crate::domain::story::models::StoryState::default()
     };
@@ -139,8 +167,16 @@ pub async fn hook_update_status(
 
     let state_json = serde_json::to_string_pretty(&story_state)
         .map_err(|e| AppError::internal(format!("Failed to serialize state: {}", e)))?;
-    std::fs::write(&state_path, &state_json)
-        .map_err(|e| AppError::internal(format!("Failed to write state: {}", e)))?;
+
+    // 文件写入卸载到阻塞线程池（复用已构造的 state_path）
+    let write_path = state_path.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        std::fs::write(&write_path, &state_json)
+            .map_err(|e| AppError::internal(format!("Failed to write state: {}", e)))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     Ok(IpcResponse::ok(story_state))
 }

@@ -16,10 +16,13 @@ use crate::shared::error::AppError;
 
 use super::continuity::{AuditIssue, IssueSeverity, RepairScope};
 use super::super::types::BookConfig;
+use super::super::utils::text_parse::extract_section;
 
 /// 修订模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ReviseMode {
+    #[default]
     Auto,
     Polish,
     Rewrite,
@@ -28,11 +31,6 @@ pub enum ReviseMode {
     SpotFix,
 }
 
-impl Default for ReviseMode {
-    fn default() -> Self {
-        ReviseMode::Auto
-    }
-}
 
 /// Auto 模式下的输出模式（由 issue 类型决定）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -470,21 +468,6 @@ fn parse_output(
     }
 }
 
-/// 从 === TAG === 格式中提取区块内容
-fn extract_section(content: &str, tag: &str) -> Option<String> {
-    let marker = format!("=== {} ===", tag);
-    let start = content.find(&marker)?;
-    let content_start = start + marker.len();
-
-    let remaining = &content[content_start..];
-    let end = remaining
-        .find("\n=== ")
-        .map(|pos| content_start + pos)
-        .unwrap_or(content.len());
-
-    Some(content[content_start..end].trim().to_string())
-}
-
 // ── Spot-fix patch 解析与应用 ────────────────────────────────
 
 /// Spot-fix 补丁
@@ -558,7 +541,11 @@ fn parse_spot_fix_patches(patches_raw: &str) -> Vec<SpotFixPatch> {
     patches
 }
 
-/// 应用 spot-fix 补丁到原文
+/// 应用 spot-fix 补丁到原文。
+///
+/// 仅替换每个 target_text 的**首次**出现（replacen(_, _, 1)），避免章节中
+/// 多次出现相同子串时被全部替换导致意外破坏。LLM 应在 target_text 中提供足够
+/// 上下文以唯一定位目标片段。
 fn apply_spot_fix_patches(original: &str, patches: &[SpotFixPatch]) -> (String, usize) {
     let mut result = original.to_string();
     let mut applied_count = 0;
@@ -568,7 +555,7 @@ fn apply_spot_fix_patches(original: &str, patches: &[SpotFixPatch]) -> (String, 
             continue;
         }
         if result.contains(&patch.target_text) {
-            result = result.replace(&patch.target_text, &patch.replacement_text);
+            result = result.replacen(&patch.target_text, &patch.replacement_text, 1);
             applied_count += 1;
         }
     }

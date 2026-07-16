@@ -6,6 +6,9 @@ use rig::tool::Tool;
 use serde::Deserialize;
 
 use crate::core::agent::approval::ApprovalManager;
+use crate::security_kernel::validation::path::{
+    check_symlink_target, validate_path_with_base,
+};
 
 // ── EditTool (single string replace) ─────────────────────
 
@@ -70,11 +73,15 @@ impl Tool for EditTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let path = resolve_path(&self.workspace_root, &args.path);
 
-        if !path.starts_with(&self.workspace_root) {
-            return Err(EditError::PathTraversal);
-        }
+        // 路径校验：canonicalize-based，防止符号链接绕过 workspace 边界
+        // （EditTool 要求文件已存在，因为后续要读其内容做替换）
+        let canonical = validate_path_with_base(&path, &self.workspace_root)
+            .map_err(|_| EditError::PathTraversal)?;
+        // 若目标为符号链接，校验其 target 仍在 workspace 内
+        check_symlink_target(canonical.as_path(), &self.workspace_root)
+            .map_err(|_| EditError::PathTraversal)?;
 
-        let content = tokio::fs::read_to_string(&path).await
+        let content = tokio::fs::read_to_string(&canonical).await
             .map_err(|e| EditError::Io(e.to_string()))?;
 
         let count = content.matches(&args.old_string).count();
@@ -95,7 +102,7 @@ impl Tool for EditTool {
         }
 
         let new_content = content.replacen(&args.old_string, &args.new_string, 1);
-        tokio::fs::write(&path, &new_content).await
+        tokio::fs::write(&canonical, &new_content).await
             .map_err(|e| EditError::Io(e.to_string()))?;
 
         Ok(format!("Edited {}", args.path))
@@ -174,11 +181,13 @@ impl Tool for MultiEditTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let path = resolve_path(&self.workspace_root, &args.path);
 
-        if !path.starts_with(&self.workspace_root) {
-            return Err(MultiEditError::PathTraversal);
-        }
+        // 路径校验：canonicalize-based，防止符号链接绕过 workspace 边界
+        let canonical = validate_path_with_base(&path, &self.workspace_root)
+            .map_err(|_| MultiEditError::PathTraversal)?;
+        check_symlink_target(canonical.as_path(), &self.workspace_root)
+            .map_err(|_| MultiEditError::PathTraversal)?;
 
-        let mut content = tokio::fs::read_to_string(&path).await
+        let mut content = tokio::fs::read_to_string(&canonical).await
             .map_err(|e| MultiEditError::Io(e.to_string()))?;
 
         // Validate all edits can apply
@@ -206,7 +215,7 @@ impl Tool for MultiEditTool {
             content = content.replacen(&edit.old_string, &edit.new_string, 1);
         }
 
-        tokio::fs::write(&path, &content).await
+        tokio::fs::write(&canonical, &content).await
             .map_err(|e| MultiEditError::Io(e.to_string()))?;
 
         Ok(format!("Applied {} edits to {}", args.edits.len(), args.path))

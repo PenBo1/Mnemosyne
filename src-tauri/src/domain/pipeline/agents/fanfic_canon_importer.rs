@@ -9,6 +9,7 @@
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::pipeline::types::FanficMode;
 use crate::shared::error::AppError;
+use futures_util::future::try_join_all;
 
 /// 同人 canonical 导入单段素材超过此字符数时触发分块编译。
 const SOURCE_CHUNK_CHARS: usize = 50_000;
@@ -68,10 +69,16 @@ async fn prepare_source_text(
 
     let chunks = split_into_chunks(source_text, SOURCE_CHUNK_CHARS);
     let total = chunks.len();
-    let mut notes: Vec<String> = Vec::with_capacity(total);
 
-    for (index, chunk) in chunks.iter().enumerate() {
-        let compiled = compile_chunk(engine, chunk, index, total, source_name).await?;
+    // 并发编译各片段（片段间相互独立），try_join_all 保留顺序
+    let futures = chunks
+        .iter()
+        .enumerate()
+        .map(|(index, chunk)| compile_chunk(engine, chunk, index, total, source_name));
+    let compiled_results = try_join_all(futures).await?;
+
+    let mut notes: Vec<String> = Vec::with_capacity(total);
+    for (index, compiled) in compiled_results.iter().enumerate() {
         let trimmed = compiled.trim();
         if !trimmed.is_empty() {
             notes.push(format!(

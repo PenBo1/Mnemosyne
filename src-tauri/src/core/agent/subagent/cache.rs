@@ -31,7 +31,9 @@ impl CacheKey {
 
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
-    result: SubAgentResult,
+    // 用 Arc<SubAgentResult> 让 `get()` 仅做 refcount bump，避免深拷贝
+    // （SubAgentResult.output 可能是大段 LLM 输出文本）。
+    result: Arc<SubAgentResult>,
     created_at: DateTime<Utc>,
     hits: u32,
 }
@@ -39,7 +41,7 @@ pub struct CacheEntry {
 impl CacheEntry {
     pub fn new(result: SubAgentResult) -> Self {
         Self {
-            result,
+            result: Arc::new(result),
             created_at: Utc::now(),
             hits: 0,
         }
@@ -52,7 +54,7 @@ impl CacheEntry {
     }
 
     pub fn result(&self) -> &SubAgentResult {
-        &self.result
+        &*self.result
     }
 
     pub fn increment_hits(&mut self) {
@@ -75,7 +77,7 @@ impl SubAgentCache {
         }
     }
 
-    pub async fn get(&self, role: SubAgentRole, task: &str, context: &str) -> Option<SubAgentResult> {
+    pub async fn get(&self, role: SubAgentRole, task: &str, context: &str) -> Option<Arc<SubAgentResult>> {
         let key = CacheKey::new(role, task, context);
         let mut entries = self.entries.write().await;
 
@@ -86,7 +88,8 @@ impl SubAgentCache {
             }
 
             entry.increment_hits();
-            return Some(entry.result.clone());
+            // Arc::clone 仅 refcount bump，避免深拷贝 SubAgentResult.output（可能很长）。
+            return Some(Arc::clone(&entry.result));
         }
 
         None
@@ -105,6 +108,9 @@ impl SubAgentCache {
         entries.insert(key, entry);
     }
 
+    // TODO(perf): evict_oldest 是 O(n) 全表扫描。max_entries 默认 100，开销可忽略；
+    // 若未来大幅扩容，可改为 BTreeMap<DateTime, Vec<CacheKey>> 索引实现 O(log n) 淘汰。
+    // 当前保留 O(n) 实现，避免引入额外的索引维护复杂度与一致性问题。
     fn evict_oldest(&self, entries: &mut HashMap<CacheKey, CacheEntry>) {
         if let Some((oldest_key, _)) = entries
             .iter()

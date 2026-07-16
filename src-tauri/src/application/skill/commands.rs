@@ -1,4 +1,4 @@
-﻿
+
 use crate::shared::error::{AppError, IpcResponse};
 use super::types::{SkillMeta, Skill};
 use super::state::SkillState;
@@ -91,6 +91,9 @@ pub async fn skill_create(
         tags: Vec::new(),
         depends_on: Vec::new(),
     };
+    // TODO(perf): Mutex 跨 fs::write 持有，并发 skill_create/update/delete 会串行化。
+    // 当前 skill 写操作频率低，可接受。若未来高频化，需重构 SkillManager：
+    // 1) 锁内只读 dirs/skills 等状态；2) 释放锁做 fs I/O；3) 重锁 push 到 skills。
     let mut manager = state.manager.lock().await;
     let skill = manager.create_skill(meta, &req.content)?;
     tracing::info!(name = %skill.meta.name, "Skill created");

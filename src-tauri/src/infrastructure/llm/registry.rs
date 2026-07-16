@@ -110,7 +110,32 @@ impl ProviderRegistry {
                     }
                 }
                 _ => {
-                    tracing::warn!(provider = %model_config.provider, "Unknown provider skipped");
+                    // 查 presets 表：匹配则按 preset.protocol 构造对应 provider，
+                    // 否则才是真正未知的 provider。
+                    if let Some(preset) = ProviderPreset::find(&model_config.provider) {
+                        if providers.contains_key(preset.id) {
+                            continue;
+                        }
+                        let base_url = if model_config.base_url.is_empty() {
+                            preset.base_url.to_string()
+                        } else {
+                            model_config.base_url.clone()
+                        };
+                        let provider: Arc<dyn Provider> = match preset.protocol {
+                            PresetProtocol::OpenAi => Arc::new(OpenAiProvider::new(
+                                model_config.api_key.clone(),
+                                Some(base_url),
+                            )),
+                            PresetProtocol::Anthropic => Arc::new(super::anthropic::AnthropicProvider::new(
+                                model_config.api_key.clone(),
+                                Some(base_url),
+                            )),
+                        };
+                        providers.insert(preset.id.to_string(), provider);
+                        tracing::info!(provider = preset.id, "Provider registered from config preset");
+                    } else {
+                        tracing::warn!(provider = %model_config.provider, "Unknown provider skipped");
+                    }
                 }
             }
         }
@@ -170,12 +195,20 @@ impl ProviderRegistry {
     }
 
     fn load_settings(path: &PathBuf) -> AppSettings {
-        if let Ok(data) = std::fs::read_to_string(path) {
-            if let Ok(settings) = serde_json::from_str(&data) {
-                return settings;
+        let data = match std::fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "Failed to read settings file, falling back to defaults");
+                return AppSettings::default();
+            }
+        };
+        match serde_json::from_str::<AppSettings>(&data) {
+            Ok(settings) => settings,
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "Failed to parse settings JSON, falling back to defaults");
+                AppSettings::default()
             }
         }
-        AppSettings::default()
     }
 
     pub fn register(&mut self, name: String, provider: Arc<dyn Provider>) {
@@ -256,24 +289,19 @@ impl ProviderRegistry {
                 active_model_id: self.active_model_id.clone(),
             },
         };
-        let json = serde_json::to_string_pretty(&settings)
-            .map_err(|e| AppError::internal(format!("Failed to serialize settings: {}", e)))?;
-        std::fs::write(&self.config_path, json)
-            .map_err(|e| AppError::internal(format!(
-                "Failed to write config to {}: {}",
-                self.config_path.display(), e
-            )))?;
-        tracing::debug!(path = %self.config_path.display(), "Settings persisted");
+        crate::infrastructure::fs::fs_utils::atomic_write_json(&self.config_path, &settings)?;
+        tracing::debug!(path = %self.config_path.display(), "Settings persisted atomically");
         Ok(())
     }
 
-    pub async fn test_connection(&self, provider_name: &str, api_key: &str, base_url: &str, _model: &str) -> Result<(), AppError> {
+    pub async fn test_connection(&self, provider_name: &str, api_key: &str, base_url: &str, model: &str) -> Result<(), AppError> {
         use super::openai::OpenAiProvider;
         use super::ollama::OllamaProvider;
         use super::agnes::AgnesProvider;
         use super::anthropic::AnthropicProvider;
         use std::sync::Arc;
 
+        tracing::info!(provider = %provider_name, model = %model, "Testing provider connection");
         // 先尝试内置 provider
         let provider: Arc<dyn Provider> = match provider_name {
             "openai" => Arc::new(OpenAiProvider::new(

@@ -1,4 +1,4 @@
-﻿
+
 use super::types::{Message, ToolSpec};
 
 pub fn build_tools_payload(tools: &[ToolSpec]) -> Vec<serde_json::Value> {
@@ -28,7 +28,7 @@ pub fn build_request(
         }
         msgs.push(entry);
     }
-    let mut body = serde_json::json!({ "model": model, "messages": msgs, "stream": stream });
+    let mut body = serde_json::json!({ "model": model, "messages": msgs, "stream": stream, "max_tokens": 8192 });
     if !tools.is_empty() {
         body["tools"] = serde_json::json!(build_tools_payload(tools));
         body["tool_choice"] = serde_json::json!("auto");

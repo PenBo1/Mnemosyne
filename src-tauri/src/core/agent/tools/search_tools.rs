@@ -10,6 +10,7 @@ use rig::tool::Tool;
 use serde::Deserialize;
 
 use crate::infrastructure::fs::data_dir::DataDir;
+use crate::infrastructure::fs::fs_utils::MAX_READ_SIZE;
 
 // ── GrepTool ──────────────────────────────────────────────
 
@@ -76,28 +77,36 @@ impl Tool for GrepTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        // GrepTool 内部使用 `std::fs::read_dir` / `std::fs::read_to_string` / `std::fs::metadata`
+        // 等同步 I/O，整体卸载到 `spawn_blocking` 避免阻塞 tokio runtime。
         let root = self.data_dir.books_dir();
-        let re = regex::Regex::new(&args.pattern)
-            .map_err(|e| GrepError::InvalidRegex(e.to_string()))?;
+        let root_clone = root.clone();
+        let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, GrepError> {
+            let re = regex::Regex::new(&args.pattern)
+                .map_err(|e| GrepError::InvalidRegex(e.to_string()))?;
 
-        let search_root = resolve_under_root(&root, &args.path)?;
-        let ext_filter = args.glob.as_deref().map(normalize_glob);
+            let search_root = resolve_under_root(&root_clone, &args.path)?;
+            let ext_filter = args.glob.as_deref().map(normalize_glob);
 
-        let mut matches: Vec<serde_json::Value> = Vec::new();
-        collect_matches(&search_root, &root, &re, ext_filter.as_deref(), &mut matches)
-            .map_err(|e| GrepError::Io(e.to_string()))?;
+            let mut matches: Vec<serde_json::Value> = Vec::new();
+            collect_matches(&search_root, &root_clone, &re, ext_filter.as_deref(), &mut matches)
+                .map_err(|e| GrepError::Io(e.to_string()))?;
 
-        let total = matches.len();
-        let truncated = total > MAX_GREP_LINES;
-        if truncated {
-            matches.truncate(MAX_GREP_LINES);
-        }
+            let total = matches.len();
+            let truncated = total > MAX_GREP_LINES;
+            if truncated {
+                matches.truncate(MAX_GREP_LINES);
+            }
 
-        Ok(serde_json::json!({
-            "matches": matches,
-            "count": total,
-            "truncated": truncated,
-        }))
+            Ok(serde_json::json!({
+                "matches": matches,
+                "count": total,
+                "truncated": truncated,
+            }))
+        })
+        .await
+        .map_err(|e| GrepError::Io(format!("spawn_blocking join failed: {}", e)))??;
+        Ok(result)
     }
 }
 
@@ -132,6 +141,10 @@ fn collect_matches(
             }
             // 仅搜索文本文件
             if !is_text_file(&path) {
+                continue;
+            }
+            // 跳过超大文件，避免 OOM
+            if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > MAX_READ_SIZE as u64 {
                 continue;
             }
             let content = match std::fs::read_to_string(&path) {

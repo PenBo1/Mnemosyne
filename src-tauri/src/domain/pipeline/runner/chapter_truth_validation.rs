@@ -32,6 +32,7 @@ use super::super::agents::continuity::{AuditResult, AuditIssue};
 use super::super::agents::state_validator::{self, ValidationResult};
 use super::super::governance::input::GovernedArtifacts;
 use super::super::types::{BookConfig, Language};
+use super::super::utils::text_parse::extract_section;
 use super::chapter_state_recovery::{
     build_state_degraded_issues, build_state_validation_feedback, SettlementRetryResult,
 };
@@ -49,6 +50,10 @@ pub struct TruthValidationResult {
     pub chapter_status: Option<String>,
     /// 降级时的注入问题（仅 chapter_status = "state-degraded" 时非空）
     pub degraded_issues: Vec<AuditIssue>,
+    /// 重试结算成功后的 current_state.md 内容（调用方需持久化）
+    pub recovered_state: Option<String>,
+    /// 重试结算成功后的 pending_hooks.md 内容（调用方需持久化）
+    pub recovered_hooks: Option<String>,
 }
 
 /// 旧真相文件（用于校验对比）
@@ -124,6 +129,8 @@ pub async fn validate_chapter_truth_persistence(
             validation,
             chapter_status: None,
             degraded_issues: Vec::new(),
+            recovered_state: None,
+            recovered_hooks: None,
         });
     }
 
@@ -144,12 +151,16 @@ pub async fn validate_chapter_truth_persistence(
     match recovery {
         SettlementRetryResult::Recovered {
             validation: retry_validation,
+            retry_state,
+            retry_hooks,
         } => {
-            // 重试成功 → 用新 validation 结果，章节正常
+            // 重试成功 → 用新 validation 结果，章节正常；并返回重试后的 truth 文件供调用方持久化
             Ok(TruthValidationResult {
                 validation: retry_validation,
                 chapter_status: None,
                 degraded_issues: Vec::new(),
+                recovered_state: Some(retry_state),
+                recovered_hooks: Some(retry_hooks),
             })
         }
         SettlementRetryResult::Degraded { issues } => {
@@ -158,6 +169,8 @@ pub async fn validate_chapter_truth_persistence(
                 validation,
                 chapter_status: Some(r###"state-degraded"###.to_string()),
                 degraded_issues: issues,
+                recovered_state: None,
+                recovered_hooks: None,
             })
         }
     }
@@ -242,10 +255,12 @@ async fn retry_settlement(
         }
     }
 
-    // 5. 通过 → Recovered；仍失败 → Degraded
+    // 5. 通过 → Recovered（携带 retry_state/retry_hooks 供调用方持久化）；仍失败 → Degraded
     if retry_validation.passed {
         return Ok(SettlementRetryResult::Recovered {
             validation: retry_validation,
+            retry_state,
+            retry_hooks,
         });
     }
 
@@ -331,27 +346,6 @@ fn build_retry_settler_user_message(
     )
 }
 
-/// 从 === TAG === 格式中提取区块内容
-///
-/// 对应 writer.rs 的 extract_section（私有函数，此处复制以避免修改 writer 模块）。
-/// 找到 `=== TAG ===` 标记后，提取到下一个 `=== TAG ===` 或文本结尾的内容。
-fn extract_section(content: &str, tag: &str) -> Option<String> {
-    let marker = format!(r###"=== {tag} ==="###, tag = tag);
-    let start = content.find(&marker)?;
-    let content_start = start + marker.len();
-
-    // 找下一个 === TAG === 或文本结尾
-    let remaining = &content[content_start..];
-    let next_marker = r###"
-=== "###;
-    let end = remaining
-        .find(next_marker)
-        .map(|pos| content_start + pos)
-        .unwrap_or(content.len());
-
-    Some(content[content_start..end].trim().to_string())
-}
-
 // ── 测试 ─────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -378,6 +372,8 @@ mod tests {
             validation: make_validation(true, 0),
             chapter_status: None,
             degraded_issues: Vec::new(),
+            recovered_state: None,
+            recovered_hooks: None,
         };
         assert!(result.validation.passed);
         assert!(result.chapter_status.is_none());
@@ -398,6 +394,8 @@ mod tests {
             validation: make_validation(false, 1),
             chapter_status: Some(r###"state-degraded"###.to_string()),
             degraded_issues,
+            recovered_state: None,
+            recovered_hooks: None,
         };
         assert!(!result.validation.passed);
         assert_eq!(

@@ -2,7 +2,7 @@
 use std::path::Path;
 use crate::shared::error::AppError;
 
-pub fn init_logging(logs_dir: &Path, _data_dir: &crate::infrastructure::fs::data_dir::DataDir) {
+pub fn init_logging(logs_dir: &Path) {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt, EnvFilter};
 
     let _ = std::fs::create_dir_all(logs_dir);
@@ -50,7 +50,19 @@ pub fn atomic_write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<
     atomic_write(path, json.as_bytes())
 }
 
+/// 读取文件的大小上限：10MB。
+/// 超过此大小的文件不应一次性读入内存（避免 OOM）。
+pub const MAX_READ_SIZE: usize = 10 * 1024 * 1024;
+
 pub fn read_file(path: &Path) -> Result<String, AppError> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| AppError::internal(format!("Failed to get metadata for {}: {}", path.display(), e)))?;
+    if metadata.len() > MAX_READ_SIZE as u64 {
+        return Err(AppError::invalid_input(format!(
+            "File too large ({} bytes > {} max): {}",
+            metadata.len(), MAX_READ_SIZE, path.display()
+        )));
+    }
     std::fs::read_to_string(path)
         .map_err(|e| AppError::internal(format!("Failed to read {}: {}", path.display(), e)))
 }
@@ -84,13 +96,58 @@ pub fn validate_path_within_root(
     root: &Path,
     _field_name: &str,
 ) -> Result<std::path::PathBuf, AppError> {
-    let canonical_root = root.canonicalize()
-        .map_err(|e| AppError::internal(format!("Failed to canonicalize root: {}", e)))?;
-    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if !canonical_path.starts_with(&canonical_root) {
+    use std::path::Component;
+
+    // 防御层 1：拒绝任何含 `..` 组件的路径，避免符号化穿越。
+    // 此前版本在 canonicalize 失败时回退到原路径，导致 `..` 未被解析，
+    // 攻击者可构造 `root/../../etc/passwd` 绕过 starts_with 检查。
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(AppError::path_traversal());
     }
-    Ok(canonical_path)
+
+    let canonical_root = root.canonicalize()
+        .map_err(|e| AppError::internal(format!("Failed to canonicalize root: {}", e)))?;
+
+    // 文件已存在：直接 canonicalize 后与 root 比对
+    if let Ok(canonical_path) = path.canonicalize() {
+        if !canonical_path.starts_with(&canonical_root) {
+            return Err(AppError::path_traversal());
+        }
+        return Ok(canonical_path);
+    }
+
+    // 文件不存在：canonicalize 最近存在的祖先目录，校验祖先在 root 内，
+    // 然后把剩余不存在的路径组件追加回去（已通过 `..` 检查，不含穿越）。
+    let mut suffix: Vec<std::ffi::OsString> = Vec::new();
+    let mut current = path.to_path_buf();
+    loop {
+        match current.canonicalize() {
+            Ok(canonical_ancestor) => {
+                if !canonical_ancestor.starts_with(&canonical_root) {
+                    return Err(AppError::path_traversal());
+                }
+                let mut result = canonical_ancestor;
+                for part in suffix.into_iter().rev() {
+                    result.push(part);
+                }
+                return Ok(result);
+            }
+            Err(_) => {
+                match current.file_name().map(std::ffi::OsString::from) {
+                    Some(name) => {
+                        suffix.push(name);
+                        match current.parent() {
+                            Some(parent) => current = parent.to_path_buf(),
+                            None => break,
+                        }
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
+    Err(AppError::path_traversal())
 }
 
 #[cfg(test)]
@@ -170,6 +227,34 @@ mod tests {
 
         let result = validate_path_within_root(&outside, &dir, "test");
         assert!(result.is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_validate_path_within_root_nonexistent_inside() {
+        // 不存在的路径，但位于 root 内部：应通过（祖先 canonicalize 后在 root 内）
+        let dir = std::env::temp_dir().join("mnemosyne_test_pathval3");
+        let _ = fs::create_dir_all(&dir);
+        let nonexistent = dir.join("subdir").join("file.txt");
+
+        let result = validate_path_within_root(&nonexistent, &dir, "test");
+        assert!(result.is_ok(), "non-existent path inside root should pass");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_validate_path_within_root_rejects_parent_dir_component() {
+        // 含 `..` 组件的路径一律拒绝（即使最终会落在 root 内）
+        let dir = std::env::temp_dir().join("mnemosyne_test_pathval4");
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::create_dir_all(dir.join("a"));
+        let _ = fs::create_dir_all(dir.join("b"));
+        let tricky = dir.join("a").join("..").join("b");
+
+        let result = validate_path_within_root(&tricky, &dir, "test");
+        assert!(result.is_err(), "path with `..` component must be rejected");
 
         let _ = fs::remove_dir_all(&dir);
     }

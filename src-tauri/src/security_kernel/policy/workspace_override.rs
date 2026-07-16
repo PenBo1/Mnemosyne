@@ -139,7 +139,7 @@ impl WorkspaceOverride {
     pub fn cleanup_expired(&mut self) {
         let now = Utc::now();
         self.overrides.retain(|_, override_entry| {
-            override_entry.expires_at.map_or(true, |expires| expires > now)
+            override_entry.expires_at.is_none_or(|expires| expires > now)
         });
         self.updated_at = now;
     }

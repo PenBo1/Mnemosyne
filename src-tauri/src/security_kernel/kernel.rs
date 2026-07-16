@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
@@ -143,7 +144,10 @@ impl SecurityKernel {
         }
     }
 
-    pub fn execute<F, T>(
+    /// 异步执行器入口：executor 本身为 async（如 git 子进程、HTTP 请求）。
+    ///
+    /// hook 通过 `.await` 正确集成，无 `block_in_place`，不会阻塞 tokio worker。
+    pub async fn execute_async<F, Fut, T>(
         &self,
         operation_name: &str,
         op: &Operation,
@@ -151,12 +155,17 @@ impl SecurityKernel {
         executor: F,
     ) -> Result<T, AppError>
     where
-        F: FnOnce() -> Result<T, AppError>,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, AppError>>,
     {
-        self.execute_internal(operation_name, op, ctx, executor, true)
+        self.execute_internal_async(operation_name, op, ctx, executor, true).await
     }
 
-    pub fn execute_without_quota<F, T>(
+    /// 阻塞执行器入口：executor 为同步 I/O（如 `std::fs`）。
+    ///
+    /// executor 通过 `tokio::task::spawn_blocking` 卸载到专用阻塞线程池，
+    /// 避免同步 I/O 阻塞 tokio runtime 的 worker 线程。要求 `F` 与 `T` 为 `Send + 'static`。
+    pub async fn execute_blocking<F, T>(
         &self,
         operation_name: &str,
         op: &Operation,
@@ -164,17 +173,17 @@ impl SecurityKernel {
         executor: F,
     ) -> Result<T, AppError>
     where
-        F: FnOnce() -> Result<T, AppError>,
+        F: FnOnce() -> Result<T, AppError> + Send + 'static,
+        T: Send + 'static,
     {
-        self.execute_internal(operation_name, op, ctx, executor, false)
+        self.execute_internal_blocking(operation_name, op, ctx, executor, true).await
     }
 
     /// 统一执行流程：Validation → Policy → RateLimiter →（可选）ResourceManager →
     /// Permission → executor → Audit。
     ///
     /// `enforce_quota` 为 false 时跳过资源配额检查（用于不消耗配额的系统操作）。
-    /// 审计事件（OperationStart/PolicyDenied/ApprovalRequested/OperationComplete）
-    /// 与频率记录行为在两种入口下保持一致。
+    /// 审计事件与频率记录行为在两种入口下保持一致。
     ///
     /// Hook 集成：
     /// - PreToolUse：在 OperationStart emit 之后、Validation 之前派发；aborted 则直接返回 Err。
@@ -183,12 +192,12 @@ impl SecurityKernel {
     /// - PostToolUse：在 executor 完成后派发（无论成功/失败）；aborted 仅记录警告，
     ///   不覆盖 executor 的结果（操作已经发生）。
     ///
-    /// 同步派发 async hook：使用 `tokio::task::block_in_place` + `Handle::current().block_on`。
-    /// 若 registry 为空则跳过派发（避免无 tokio runtime 时 panic）。
+    /// **Send 约束**：所有 `std::sync` 锁守卫（RwLockReadGuard/MutexGuard）均为 `!Send`，
+    /// 不得跨 `.await` 持有。pre-checks 完成后显式 drop 守卫，再进入 executor await。
     ///
     /// **约束**：hook handler 不得回调 SecurityKernel 的任何加锁方法（validation/policy/rate/
     /// resource_manager/permission），否则会死锁。内置 action（Log/Audit/Block/Custom）均不回调。
-    fn execute_internal<F, T>(
+    async fn execute_internal_async<F, Fut, T>(
         &self,
         operation_name: &str,
         op: &Operation,
@@ -197,7 +206,8 @@ impl SecurityKernel {
         enforce_quota: bool,
     ) -> Result<T, AppError>
     where
-        F: FnOnce() -> Result<T, AppError>,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, AppError>>,
     {
         let workspace_id_str = ctx.workspace.0.to_string();
 
@@ -207,118 +217,273 @@ impl SecurityKernel {
             timestamp: Utc::now(),
         });
 
-        // PreToolUse hook —— aborted 则直接拒绝操作。
-        self.dispatch_hook_sync(HookEvent::PreToolUse, operation_name, ctx, None)?;
+        // PreToolUse hook —— aborted 则直接拒绝操作。（无锁守卫持有）
+        self.dispatch_hook_async(HookEvent::PreToolUse, operation_name, ctx, None).await?;
 
         let start = Instant::now();
 
-        let validation = self.validation.read().unwrap();
-        validation.validate_operation(op)?;
+        // ── 阶段 1：Validation + Policy 决策（同步，守卫在块内释放）──
+        let policy_decision = {
+            let validation = self.validation.read().unwrap_or_else(|e| e.into_inner());
+            validation.validate_operation(op)?;
+            drop(validation);
 
-        let policy = self.policy.read().unwrap();
-        let evaluation = policy.evaluate(op, ctx)?;
+            let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
+            let evaluation = policy.evaluate(op, ctx)?;
+            match evaluation.decision {
+                PolicyDecision::Deny => {
+                    self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                        operation: operation_name.to_string(),
+                        workspace: ctx.workspace,
+                        reason: evaluation.reason.clone(),
+                    });
+                    return Err(AppError::forbidden(format!(
+                        "Policy denied: {}",
+                        evaluation.reason
+                    )));
+                }
+                PolicyDecision::RequireApproval => PolicyDecision::RequireApproval,
+                PolicyDecision::Allow => PolicyDecision::Allow,
+            }
+        }; // validation/policy 守卫已释放
 
-        match evaluation.decision {
-            PolicyDecision::Deny => {
-                self.audit_bus.emit(SecurityEvent::PolicyDenied {
+        // ── 阶段 2：审批处理（若需审批）──
+        if policy_decision == PolicyDecision::RequireApproval {
+            // PermissionRequest hook —— 在 approval_token 校验之前派发。（无锁守卫持有）
+            self.dispatch_hook_async(
+                HookEvent::PermissionRequest,
+                operation_name,
+                ctx,
+                None,
+            ).await?;
+
+            if let Some(token_id) = &ctx.approval_token {
+                let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
+                approval.validate(&ApprovalId(token_id.0), op, &ctx.workspace)?;
+            } else {
+                self.audit_bus.emit(SecurityEvent::ApprovalRequested {
+                    approval_id: uuid::Uuid::new_v4(),
+                    operation: operation_name.to_string(),
+                    risk_level: super::types::RiskLevel::High,
+                    workspace: ctx.workspace,
+                });
+                return Err(AppError::forbidden(
+                    "Operation requires approval but no approval token provided"
+                ));
+            }
+        }
+
+        // ── 阶段 3：RateLimiter + Quota + Permission（同步，守卫在块内释放）──
+        {
+            let rate = self.rate_limiter.read().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = rate.check_and_fail(operation_name, ctx.workspace) {
+                self.audit_bus.emit(SecurityEvent::RateLimited {
                     operation: operation_name.to_string(),
                     workspace: ctx.workspace,
-                    reason: evaluation.reason.clone(),
-                });
-                return Err(AppError::forbidden(format!(
-                    "Policy denied: {}",
-                    evaluation.reason
-                )));
-            }
-            PolicyDecision::RequireApproval => {
-                // PermissionRequest hook —— 在 approval_token 校验之前派发，
-                // 让 hook 有机会记录或拦截审批请求。aborted 则返回 Err。
-                self.dispatch_hook_sync(
-                    HookEvent::PermissionRequest,
-                    operation_name,
-                    ctx,
-                    None,
-                )?;
-
-                if let Some(token_id) = &ctx.approval_token {
-                    let approval = self.approval.lock().unwrap();
-                    approval.validate(&ApprovalId(token_id.0), op, &ctx.workspace)?;
-                } else {
-                    self.audit_bus.emit(SecurityEvent::ApprovalRequested {
-                        approval_id: uuid::Uuid::new_v4(),
-                        operation: operation_name.to_string(),
-                        risk_level: super::types::RiskLevel::High,
-                        workspace: ctx.workspace,
-                    });
-                    return Err(AppError::forbidden(
-                        "Operation requires approval but no approval token provided"
-                    ));
-                }
-            }
-            PolicyDecision::Allow => {}
-        }
-
-        let rate = self.rate_limiter.read().unwrap();
-        if let Err(e) = rate.check_and_fail(operation_name, ctx.workspace) {
-            self.audit_bus.emit(SecurityEvent::RateLimited {
-                operation: operation_name.to_string(),
-                workspace: ctx.workspace,
-                reason: e.to_string(),
-            });
-            return Err(e);
-        }
-
-        if enforce_quota {
-            let rm = self.resource_manager.lock().unwrap();
-            if let Err(e) = rm.check_quota(&ctx.workspace) {
-                self.audit_bus.emit(SecurityEvent::ResourceExceeded {
-                    workspace: ctx.workspace,
-                    resource: "quota".to_string(),
-                    quota: e.to_string(),
+                    reason: e.to_string(),
                 });
                 return Err(e);
             }
-        }
+            drop(rate); // 释放后再 acquire 用于 record
 
-        let permission = self.permission.lock().unwrap();
-        if let Err(e) = permission.check(op, &workspace_id_str) {
-            // Permission 拒绝目前复用 PolicyDenied 事件 —— reason 区分
-            self.audit_bus.emit(SecurityEvent::PolicyDenied {
-                operation: operation_name.to_string(),
-                workspace: ctx.workspace,
-                reason: format!("Permission denied: {}", e),
-            });
-            return Err(e);
-        }
+            if enforce_quota {
+                let rm = self.resource_manager.lock().unwrap_or_else(|e| e.into_inner());
+                if let Err(e) = rm.check_quota(&ctx.workspace) {
+                    self.audit_bus.emit(SecurityEvent::ResourceExceeded {
+                        workspace: ctx.workspace,
+                        resource: "quota".to_string(),
+                        quota: e.to_string(),
+                    });
+                    return Err(e);
+                }
+            }
 
-        let result = executor();
+            let permission = self.permission.lock().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = permission.check(op, &workspace_id_str) {
+                self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                    operation: operation_name.to_string(),
+                    workspace: ctx.workspace,
+                    reason: format!("Permission denied: {}", e),
+                });
+                return Err(e);
+            }
+        } // rate/quota/permission 守卫已释放
 
+        // ── 阶段 4：执行 executor（无锁守卫持有，可安全 .await）──
+        let result = executor().await;
+
+        // ── 阶段 5：审计 + 频率记录 + PostToolUse hook ──
         let duration_ms = start.elapsed().as_millis() as u64;
+        let success = result.is_ok();
 
         self.audit_bus.emit(SecurityEvent::OperationComplete {
             operation: operation_name.to_string(),
             workspace: ctx.workspace,
             duration_ms,
-            success: result.is_ok(),
+            success,
         });
 
-        if result.is_ok() {
+        if success {
+            // 操作成功后才消费临时 override 的 approval（C12：evaluate 不再消费，避免失败浪费授权）
+            let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
+            policy.consume_temporary_approval(op, ctx);
+
+            let rate = self.rate_limiter.read().unwrap_or_else(|e| e.into_inner());
             rate.record(operation_name, ctx.workspace);
         }
 
-        // PostToolUse hook —— 操作已发生，aborted 仅记录警告，不覆盖 result。
-        let success = result.is_ok();
-        self.dispatch_hook_sync_post(operation_name, ctx, success);
+        self.dispatch_hook_async_post(operation_name, ctx, success).await;
 
         result
     }
 
-    /// 同步派发 hook（用于 PreToolUse / PermissionRequest）—— aborted 时返回 Err。
+    /// 同步 executor 的异步包装：pre/post 检查在 async 线程上（仅锁操作，无 I/O），
+    /// executor 通过 `spawn_blocking` 卸载到阻塞线程池。
+    async fn execute_internal_blocking<F, T>(
+        &self,
+        operation_name: &str,
+        op: &Operation,
+        ctx: &OperationContext,
+        executor: F,
+        enforce_quota: bool,
+    ) -> Result<T, AppError>
+    where
+        F: FnOnce() -> Result<T, AppError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let workspace_id_str = ctx.workspace.0.to_string();
+
+        self.audit_bus.emit(SecurityEvent::OperationStart {
+            operation: operation_name.to_string(),
+            workspace: ctx.workspace,
+            timestamp: Utc::now(),
+        });
+
+        // PreToolUse hook —— aborted 则直接拒绝操作。（无锁守卫持有）
+        self.dispatch_hook_async(HookEvent::PreToolUse, operation_name, ctx, None).await?;
+
+        let start = Instant::now();
+
+        // ── 阶段 1：Validation + Policy 决策（同步，守卫在块内释放）──
+        let policy_decision = {
+            let validation = self.validation.read().unwrap_or_else(|e| e.into_inner());
+            validation.validate_operation(op)?;
+            drop(validation);
+
+            let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
+            let evaluation = policy.evaluate(op, ctx)?;
+            match evaluation.decision {
+                PolicyDecision::Deny => {
+                    self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                        operation: operation_name.to_string(),
+                        workspace: ctx.workspace,
+                        reason: evaluation.reason.clone(),
+                    });
+                    return Err(AppError::forbidden(format!(
+                        "Policy denied: {}",
+                        evaluation.reason
+                    )));
+                }
+                PolicyDecision::RequireApproval => PolicyDecision::RequireApproval,
+                PolicyDecision::Allow => PolicyDecision::Allow,
+            }
+        };
+
+        // ── 阶段 2：审批处理（若需审批）──
+        if policy_decision == PolicyDecision::RequireApproval {
+            self.dispatch_hook_async(
+                HookEvent::PermissionRequest,
+                operation_name,
+                ctx,
+                None,
+            ).await?;
+
+            if let Some(token_id) = &ctx.approval_token {
+                let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
+                approval.validate(&ApprovalId(token_id.0), op, &ctx.workspace)?;
+            } else {
+                self.audit_bus.emit(SecurityEvent::ApprovalRequested {
+                    approval_id: uuid::Uuid::new_v4(),
+                    operation: operation_name.to_string(),
+                    risk_level: super::types::RiskLevel::High,
+                    workspace: ctx.workspace,
+                });
+                return Err(AppError::forbidden(
+                    "Operation requires approval but no approval token provided"
+                ));
+            }
+        }
+
+        // ── 阶段 3：RateLimiter + Quota + Permission（同步，守卫在块内释放）──
+        {
+            let rate = self.rate_limiter.read().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = rate.check_and_fail(operation_name, ctx.workspace) {
+                self.audit_bus.emit(SecurityEvent::RateLimited {
+                    operation: operation_name.to_string(),
+                    workspace: ctx.workspace,
+                    reason: e.to_string(),
+                });
+                return Err(e);
+            }
+            drop(rate);
+
+            if enforce_quota {
+                let rm = self.resource_manager.lock().unwrap_or_else(|e| e.into_inner());
+                if let Err(e) = rm.check_quota(&ctx.workspace) {
+                    self.audit_bus.emit(SecurityEvent::ResourceExceeded {
+                        workspace: ctx.workspace,
+                        resource: "quota".to_string(),
+                        quota: e.to_string(),
+                    });
+                    return Err(e);
+                }
+            }
+
+            let permission = self.permission.lock().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = permission.check(op, &workspace_id_str) {
+                self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                    operation: operation_name.to_string(),
+                    workspace: ctx.workspace,
+                    reason: format!("Permission denied: {}", e),
+                });
+                return Err(e);
+            }
+        }
+
+        // ── 阶段 4：执行 executor（spawn_blocking，无锁守卫持有）──
+        let join_result = tokio::task::spawn_blocking(executor)
+            .await
+            .map_err(|e| AppError::internal(format!("blocking executor join failed: {}", e)))?;
+
+        // ── 阶段 5：审计 + 频率记录 + PostToolUse hook ──
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let success = join_result.is_ok();
+
+        self.audit_bus.emit(SecurityEvent::OperationComplete {
+            operation: operation_name.to_string(),
+            workspace: ctx.workspace,
+            duration_ms,
+            success,
+        });
+
+        if success {
+            // 操作成功后才消费临时 override 的 approval（C12：evaluate 不再消费，避免失败浪费授权）
+            let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
+            policy.consume_temporary_approval(op, ctx);
+
+            let rate = self.rate_limiter.read().unwrap_or_else(|e| e.into_inner());
+            rate.record(operation_name, ctx.workspace);
+        }
+
+        self.dispatch_hook_async_post(operation_name, ctx, success).await;
+
+        join_result
+    }
+
+    /// 异步派发 hook（用于 PreToolUse / PermissionRequest）—— aborted 时返回 Err。
     ///
-    /// 快速路径：registry 为空时直接返回 Ok（避免无 tokio runtime 时 panic）。
-    ///
-    /// `success_meta`：可选的 `success: bool` 元数据，PostToolUse 用。
-    fn dispatch_hook_sync(
+    /// 快速路径：registry 为空时直接返回 Ok（避免无谓 payload 构造）。
+    async fn dispatch_hook_async(
         &self,
         event: HookEvent,
         operation_name: &str,
@@ -340,29 +505,22 @@ impl SecurityKernel {
             );
         }
 
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.hook_engine.dispatch(&payload).await
-            })
-        })?;
+        self.hook_engine.dispatch(&payload).await?;
         Ok(())
     }
 
-    /// PostToolUse 专用派发 —— 不传播 abort 错误（操作已发生）。
-    fn dispatch_hook_sync_post(&self, operation_name: &str, ctx: &OperationContext, success: bool) {
+    /// PostToolUse 专用异步派发 —— 不传播 abort 错误（操作已发生）。
+    async fn dispatch_hook_async_post(&self, operation_name: &str, ctx: &OperationContext, success: bool) {
         if self.hook_engine.registry().count() == 0 {
             return;
         }
 
-        match self.dispatch_hook_sync(HookEvent::PostToolUse, operation_name, ctx, Some(success)) {
-            Ok(()) => {}
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    operation = operation_name,
-                    "PostToolUse hook aborted (operation already completed — abort ignored)"
-                );
-            }
+        if let Err(e) = self.dispatch_hook_async(HookEvent::PostToolUse, operation_name, ctx, Some(success)).await {
+            tracing::warn!(
+                error = %e,
+                operation = operation_name,
+                "PostToolUse hook aborted (operation already completed — abort ignored)"
+            );
         }
     }
 
@@ -373,7 +531,7 @@ impl SecurityKernel {
         ctx: &OperationContext,
         _reason: String,
     ) -> Result<ApprovalId, AppError> {
-        let approval = self.approval.lock().unwrap();
+        let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
         let token = approval.create_token(op, ctx.workspace);
 
         let risk = super::policy::calculate_operation_risk(op);
@@ -394,7 +552,7 @@ impl SecurityKernel {
         approval_id: ApprovalId,
         approved_by: String,
     ) -> Result<(), AppError> {
-        let approval = self.approval.lock().unwrap();
+        let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
         let token = approval.approve(approval_id, approved_by.clone())?;
 
         self.audit_bus.emit(SecurityEvent::ApprovalGranted {
@@ -412,7 +570,7 @@ impl SecurityKernel {
         rejected_by: String,
         reason: String,
     ) -> Result<(), AppError> {
-        let approval = self.approval.lock().unwrap();
+        let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
         let token = approval.reject(approval_id, rejected_by.clone())?;
 
         self.audit_bus.emit(SecurityEvent::ApprovalRejected {
@@ -464,24 +622,24 @@ impl SecurityKernel {
     }
 
     pub fn cleanup(&self) {
-        let policy = self.policy.read().unwrap();
+        let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
         policy.cleanup_expired();
 
-        let rate = self.rate_limiter.read().unwrap();
+        let rate = self.rate_limiter.read().unwrap_or_else(|e| e.into_inner());
         rate.cleanup_expired();
 
         self.audit_bus.cleanup_expired();
 
-        let approval = self.approval.lock().unwrap();
+        let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
         approval.cleanup_expired();
     }
 
     pub fn stats(&self) -> KernelStats {
-        let policy = self.policy.read().unwrap();
-        let rate = self.rate_limiter.read().unwrap();
-        let approval = self.approval.lock().unwrap();
-        let rm = self.resource_manager.lock().unwrap();
-        let permission = self.permission.lock().unwrap();
+        let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
+        let rate = self.rate_limiter.read().unwrap_or_else(|e| e.into_inner());
+        let approval = self.approval.lock().unwrap_or_else(|e| e.into_inner());
+        let rm = self.resource_manager.lock().unwrap_or_else(|e| e.into_inner());
+        let permission = self.permission.lock().unwrap_or_else(|e| e.into_inner());
 
         KernelStats {
             policy_workspaces: policy.get_workspace_count(),

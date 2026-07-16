@@ -44,6 +44,11 @@ fn today_utc_bounds() -> (String, String) {
 ///
 /// 用于跨 pattern 的全局预算控制。例如 audit-revise + observation 共享
 /// 一个总预算池,任一超 80% 都降级。
+///
+/// ⚠️ 同步阻塞:此函数直接调用 `rusqlite::Connection::query_row`,会阻塞当前线程。
+/// 在 async 调用路径中,调用方必须通过 `tokio::task::spawn_blocking` 卸载到阻塞线程池
+/// (需传入 owned `Database` 或 `Arc<Database>`,因为 `spawn_blocking` 闭包要求 `'static`)。
+/// 当前无生产环境调用方,仅测试调用。
 pub fn daily_token_usage(db: &Database) -> Result<u64, AppError> {
     let (start, end) = today_utc_bounds();
     let conn = db.conn()?;
@@ -59,6 +64,8 @@ pub fn daily_token_usage(db: &Database) -> Result<u64, AppError> {
 }
 
 /// 查询今日累计运行次数(用于 attempt cap 全局检查)
+///
+/// ⚠️ 同步阻塞:同 `daily_token_usage`,async 调用方需自行 `spawn_blocking` 卸载。
 pub fn run_count_today(db: &Database, pattern_id: &LoopPatternId) -> Result<u32, AppError> {
     let (start, end) = today_utc_bounds();
     let conn = db.conn()?;
@@ -86,6 +93,10 @@ pub fn run_count_today(db: &Database, pattern_id: &LoopPatternId) -> Result<u32,
 /// 3. 本次 + 累计 ≥ tokens_per_run_cap → DegradeToReportOnly
 /// 4. 本次 < early_exit_tokens 且 pattern 强制早退 → EarlyExit
 /// 5. 默认 → Allow
+///
+/// ⚠️ 同步阻塞:内部调用 `daily_token_usage`(同步 rusqlite 查询)。
+/// 在 async 调用路径中,调用方必须通过 `tokio::task::spawn_blocking` 卸载
+/// (需传入 owned `Database` 或 `Arc<Database>`)。当前无生产环境调用方。
 pub fn check_budget(
     db: &Database,
     pattern_id: &LoopPatternId,

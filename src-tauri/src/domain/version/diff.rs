@@ -6,21 +6,36 @@
 //! 3. 将连续的差异行聚合成 hunks，context 行作为上下文（默认前后保留 3 行）
 //! 4. 统计行数与字符数
 
+use crate::shared::error::AppError;
 use crate::shared::version::types::{DiffHunk, DiffLine, DiffLineType, DiffStats, LineDiffResult};
 
 /// 上下文行数（hunk 前后保留的未变更行数）
 const CONTEXT_LINES: usize = 3;
+/// 单侧文本字节上限（防止 OOM）
+const MAX_SOURCE_BYTES: usize = 1_000_000;
+/// 单侧行数上限（防止 dp 表 O(n*m) 过大导致 OOM）
+const MAX_LINES: usize = 5000;
 
 /// 计算两段文本的行级 diff
-pub fn compute_line_diff(old: &str, new: &str) -> LineDiffResult {
+pub fn compute_line_diff(old: &str, new: &str) -> Result<LineDiffResult, AppError> {
+    if old.len() > MAX_SOURCE_BYTES || new.len() > MAX_SOURCE_BYTES {
+        return Err(AppError::invalid_input(format!(
+            "Diff source too large (max {} bytes per side)", MAX_SOURCE_BYTES
+        )));
+    }
     let old_lines: Vec<&str> = old.split('\n').collect();
     let new_lines: Vec<&str> = new.split('\n').collect();
+    if old_lines.len() > MAX_LINES || new_lines.len() > MAX_LINES {
+        return Err(AppError::invalid_input(format!(
+            "Diff source too many lines (max {} per side)", MAX_LINES
+        )));
+    }
 
     let ops = lcs_diff_ops(&old_lines, &new_lines);
     let hunks = build_hunks(&ops, &old_lines, &new_lines);
     let stats = build_stats(&ops);
 
-    LineDiffResult { hunks, stats }
+    Ok(LineDiffResult { hunks, stats })
 }
 
 /// LCS 回溯产生的操作序列

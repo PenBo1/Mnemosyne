@@ -55,6 +55,7 @@ pub fn extract_text_from_file(path: &Path) -> Result<ExtractedMaterial, AppError
     let meta = std::fs::metadata(path)
         .map_err(|e| AppError::invalid_input(format!("Cannot read file metadata: {}", e)))?;
     if meta.len() as usize > MAX_SOURCE_BYTES {
+        tracing::warn!(path = %path.display(), size = meta.len(), max = MAX_SOURCE_BYTES, "File too large, rejecting");
         return Err(AppError::invalid_input(format!(
             "File too large ({} bytes, max {})", meta.len(), MAX_SOURCE_BYTES
         )));
@@ -63,9 +64,15 @@ pub fn extract_text_from_file(path: &Path) -> Result<ExtractedMaterial, AppError
     let ext = path.extension()
         .and_then(|s| s.to_str())
         .unwrap_or("");
-    let kind = MaterialKind::from_extension(ext)
-        .ok_or_else(|| AppError::invalid_input(format!("Unsupported file type: {}", ext)))?;
+    let kind = match MaterialKind::from_extension(ext) {
+        Some(k) => k,
+        None => {
+            tracing::warn!(path = %path.display(), ext = %ext, "Unsupported file type");
+            return Err(AppError::invalid_input(format!("Unsupported file type: {}", ext)));
+        }
+    };
 
+    tracing::info!(path = %path.display(), kind = ?kind, size = meta.len(), "Extracting text from file");
     let bytes = std::fs::read(path)
         .map_err(|e| AppError::invalid_input(format!("Failed to read file: {}", e)))?;
 
@@ -159,7 +166,7 @@ fn collect_text_skip(node: scraper::ElementRef, buf: &mut String) {
             }
         }
         if let Some(text) = child.value().as_text() {
-            buf.push_str(&text);
+            buf.push_str(text);
         }
     }
 }

@@ -25,24 +25,33 @@ pub async fn create_workspace(
         return Err(AppError::missing_field("path"));
     }
 
-    if path.contains("..") {
+    // 用 components().any 检测 ParentDir 组件，比 path.contains("..") 更精确
+    // （后者会误拒 `my..file.txt` 这类合法路径名）
+    let path_buf = std::path::PathBuf::from(&path);
+    use std::path::Component;
+    if path_buf.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(AppError::path_traversal());
     }
-
-    let path_buf = std::path::PathBuf::from(&path);
-    std::fs::create_dir_all(&path_buf)
-        .map_err(|e| {
-            tracing::error!(error = %e, path = %path, "Failed to create workspace directory");
-            AppError::file_write_error(path.clone())
-        })?;
-
-    for sub in ["chapters", "story/state", "story/snapshots", "story/drafts"] {
-        std::fs::create_dir_all(path_buf.join(sub))
+    // 多个 create_dir_all 卸载到阻塞线程池一次性完成
+    let path_buf_for_io = path_buf.clone();
+    let path_for_err = path.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        std::fs::create_dir_all(&path_buf_for_io)
             .map_err(|e| {
-                tracing::error!(error = %e, sub = %sub, "Failed to create workspace subdirectory");
-                AppError::file_write_error(format!("{}/{}", path, sub))
+                tracing::error!(error = %e, path = %path_for_err, "Failed to create workspace directory");
+                AppError::file_write_error(path_for_err.clone())
             })?;
-    }
+        for sub in ["chapters", "story/state", "story/snapshots", "story/drafts"] {
+            std::fs::create_dir_all(path_buf_for_io.join(sub))
+                .map_err(|e| {
+                    tracing::error!(error = %e, sub = %sub, "Failed to create workspace subdirectory");
+                    AppError::file_write_error(format!("{}/{}", path_for_err, sub))
+                })?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     // 创建后自动授权工作空间根路径，使 fs_* 命令立即可用
     registry.authorize(&path_buf)

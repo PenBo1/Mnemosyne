@@ -46,7 +46,7 @@ pub async fn ingest_material(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .or(extracted.title.as_deref())
-        .or_else(|| Some(source.filename.as_str()))
+        .or(Some(source.filename.as_str()))
         .map(|s| s.chars().take(120).collect::<String>())
         .unwrap_or_else(|| "material".to_string());
 
@@ -58,8 +58,6 @@ pub async fn ingest_material(
     );
 
     let materials_dir = data_dir.materials_dir();
-    std::fs::create_dir_all(&materials_dir)
-        .map_err(|e| AppError::internal(format!("Failed to create materials dir: {}", e)))?;
 
     let markdown = render_markdown(
         &title,
@@ -75,10 +73,8 @@ pub async fn ingest_material(
     let markdown_path = materials_dir.join(&markdown_filename);
     let manifest_path = materials_dir.join(&manifest_filename);
 
-    std::fs::write(&markdown_path, &markdown)
-        .map_err(|_e| AppError::file_write_error(markdown_path.display().to_string()))?;
-
     let excerpt = safe_slice(&extracted.text, 0, EXCERPT_CHARS);
+    let char_count = extracted.text.chars().count() as u32;
     let asset = MaterialAsset {
         id: id.clone(),
         title: title.clone(),
@@ -88,15 +84,26 @@ pub async fn ingest_material(
         mime_type: source.mime_type.clone(),
         markdown_path: markdown_filename,
         manifest_path: manifest_filename,
-        char_count: extracted.text.chars().count() as u32,
+        char_count,
         excerpt,
         total_pages: extracted.total_pages.map(|n| n as u32),
     };
 
     let manifest_json = serde_json::to_string_pretty(&asset)
         .map_err(|e| AppError::internal(format!("Manifest serialize failed: {}", e)))?;
-    std::fs::write(&manifest_path, manifest_json)
-        .map_err(|_e| AppError::file_write_error(manifest_path.display().to_string()))?;
+
+    // create_dir + 2 个 write 卸载到阻塞线程池
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        std::fs::create_dir_all(&materials_dir)
+            .map_err(|e| AppError::internal(format!("Failed to create materials dir: {}", e)))?;
+        std::fs::write(&markdown_path, &markdown)
+            .map_err(|e| AppError::internal(format!("Failed to write markdown: {}", e)))?;
+        std::fs::write(&manifest_path, &manifest_json)
+            .map_err(|e| AppError::internal(format!("Failed to write manifest: {}", e)))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     tracing::info!(
         material_id = %asset.id,
@@ -133,8 +140,16 @@ async fn read_source(input: &IngestMaterialInput) -> Result<SourceBuffer, AppErr
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| AppError::missing_field("filePath"))?;
-            read_file(file_path, input.filename.as_deref(), input.mime_type.as_deref())
+                .ok_or_else(|| AppError::missing_field("filePath"))?
+                .to_string();
+            let filename_override = input.filename.clone();
+            let mime_override = input.mime_type.clone();
+            // 同步文件读取卸载到阻塞线程池
+            tokio::task::spawn_blocking(move || {
+                read_file(&file_path, filename_override.as_deref(), mime_override.as_deref())
+            })
+            .await
+            .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))?
         }
         other => Err(AppError::invalid_input(format!(
             "Unsupported sourceKind: {} (expected url/file)",
@@ -175,17 +190,30 @@ async fn read_url(url: &str) -> Result<SourceBuffer, AppError> {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| mime_from_url(url));
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| AppError::internal(format!("Read body failed: {}", e)))?
-        .to_vec();
-    if bytes.len() > MAX_SOURCE_BYTES {
-        return Err(AppError::invalid_input(format!(
-            "Fetched material too large ({} bytes, max {})",
-            bytes.len(),
-            MAX_SOURCE_BYTES
-        )));
+    // 先检查 Content-Length 响应头，超限直接拒绝，避免读取超大响应导致 OOM
+    if let Some(content_length) = resp.content_length() {
+        if content_length as usize > MAX_SOURCE_BYTES {
+            return Err(AppError::invalid_input(format!(
+                "Fetched material too large (Content-Length: {} bytes, max {})",
+                content_length, MAX_SOURCE_BYTES
+            )));
+        }
+    }
+
+    // 流式读取 body 并累计大小，防止恶意服务器返回无 Content-Length 的超大响应
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| AppError::internal(format!("Read body chunk failed: {}", e)))?;
+        if bytes.len() + chunk.len() > MAX_SOURCE_BYTES {
+            return Err(AppError::invalid_input(format!(
+                "Fetched material exceeded max size ({} bytes, max {})",
+                bytes.len() + chunk.len(),
+                MAX_SOURCE_BYTES
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
     }
 
     let filename = filename_from_url(url);

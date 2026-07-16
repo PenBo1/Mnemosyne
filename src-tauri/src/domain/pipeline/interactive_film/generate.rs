@@ -6,11 +6,16 @@
 // 注意：AgentEngine.prompt_once 不支持 temperature 参数，
 // 温度引导（"保持中等创造性"）写入 system prompt 文本。
 
+use std::time::Duration;
+
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
 use crate::shared::utils::json::extract_json_block;
 
 use super::graph_schema::{NodeType, StoryGraph};
+
+/// LLM 调用超时（秒）
+const LLM_TIMEOUT_SECS: u64 = 120;
 
 /// 从故事前提一次性生成完整 StoryGraph。
 pub async fn generate_story_graph(
@@ -21,7 +26,14 @@ pub async fn generate_story_graph(
     let system_prompt = build_generate_prompt(language);
     let user_message = format!("故事前提：\n{}", premise);
 
-    let raw = engine.prompt_once(&system_prompt, &user_message).await?;
+    let raw = tokio::time::timeout(
+        Duration::from_secs(LLM_TIMEOUT_SECS),
+        engine.prompt_once(&system_prompt, &user_message),
+    )
+    .await
+    .map_err(|_| {
+        AppError::task_timeout()
+    })??;
     tracing::info!(
         response_len = raw.len(),
         "generate_story_graph LLM 响应"

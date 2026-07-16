@@ -14,6 +14,13 @@
 // - 内置 agent 列表在构造时确定，只读
 // - register() 通过 RwLock 保护自定义 agent 列表
 // - 整体 Send + Sync，可作为 Tauri State
+//
+// 锁中毒策略:
+// - 所有 RwLock 读写都用 `unwrap_or_else(|e| e.into_inner())` 恢复中毒锁。
+//   原因：AgentRegistry 是非关键元数据缓存，中毒（某持锁线程 panic）不应
+//   导致整个注册表不可用。恢复中毒锁返回的可能是部分更新的数据，但鉴于
+//   register() 只做 push（无原地修改），最坏情况是丢失一次未完成的注册，
+//   不会读到结构不一致的状态。
 
 use std::sync::RwLock;
 
@@ -43,7 +50,7 @@ impl AgentRegistry {
     /// 列出所有 agent（内置 + 自定义）。
     /// 自定义 agent 覆盖同 id 的内置 agent。
     pub fn list_all(&self) -> Vec<AgentDescriptor> {
-        let custom = self.custom.read().unwrap();
+        let custom = self.custom.read().unwrap_or_else(|e| e.into_inner());
         let custom_ids: std::collections::HashSet<&str> =
             custom.iter().map(|a| a.id.as_str()).collect();
         let mut result: Vec<AgentDescriptor> = self
@@ -71,7 +78,7 @@ impl AgentRegistry {
     /// 按 id 查询单个 agent。自定义优先于内置。
     pub fn get(&self, id: &str) -> Option<AgentDescriptor> {
         // 先查自定义
-        let custom = self.custom.read().unwrap();
+        let custom = self.custom.read().unwrap_or_else(|e| e.into_inner());
         if let Some(a) = custom.iter().find(|a| a.id == id) {
             return Some(a.clone());
         }
@@ -92,7 +99,7 @@ impl AgentRegistry {
                 descriptor.id
             ));
         }
-        let mut custom = self.custom.write().unwrap();
+        let mut custom = self.custom.write().unwrap_or_else(|e| e.into_inner());
         // 检查自定义冲突
         if custom.iter().any(|a| a.id == descriptor.id) {
             return Err(format!(

@@ -420,6 +420,10 @@ fn compute_edge_reachable(graph: &StoryGraph) -> HashSet<String> {
 }
 
 /// 找出长度 >= threshold 的单选项 normal 节点直链的链头。
+///
+/// 使用 chain_len_cache 缓存每个 chain node 的下游链长度（含自身），
+/// 避免多个链头共享后段时重复遍历（如 A→B→C 与 X→C，C 的下游只需计算一次）。
+/// 遇到环时停止计数且不回填缓存（环上节点保守重算）。
 fn find_long_linear_chain_heads(graph: &StoryGraph, threshold: usize) -> Vec<String> {
     let node_by_id: HashMap<&str, &StoryNode> =
         graph.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
@@ -438,6 +442,8 @@ fn find_long_linear_chain_heads(graph: &StoryGraph, threshold: usize) -> Vec<Str
             }
         }
     }
+    // 缓存：chain node id → 下游链长度（含自身）
+    let mut chain_len_cache: HashMap<String, usize> = HashMap::new();
     let mut heads: Vec<String> = Vec::new();
     for node in &graph.nodes {
         if !is_chain_node(&node.id) {
@@ -446,20 +452,36 @@ fn find_long_linear_chain_heads(graph: &StoryGraph, threshold: usize) -> Vec<Str
         if incoming_is_chain.contains(&node.id) {
             continue;
         }
-        // 沿单选项链向下计数
-        let mut length: usize = 0;
-        let mut cur: Option<&str> = Some(&node.id);
+        // 沿单选项链向下计数，命中缓存则复用下游长度
+        let mut path: Vec<String> = Vec::new();
         let mut visited: HashSet<String> = HashSet::new();
+        let mut cur: Option<&str> = Some(&node.id);
+        let mut suffix_len: usize = 0;
+        let mut hit_cycle = false;
         while let Some(cur_id) = cur {
-            if !is_chain_node(cur_id) || visited.contains(cur_id) {
+            if !is_chain_node(cur_id) {
                 break;
             }
-            visited.insert(cur_id.to_string());
-            length += 1;
+            if let Some(&cached) = chain_len_cache.get(cur_id) {
+                suffix_len = cached;
+                break;
+            }
+            if !visited.insert(cur_id.to_string()) {
+                hit_cycle = true;
+                break;
+            }
+            path.push(cur_id.to_string());
             cur = node_by_id
                 .get(cur_id)
                 .and_then(|n| n.choices.first())
                 .map(|c| c.target_node_id.as_str());
+        }
+        let length = path.len() + suffix_len;
+        // 仅在非环退出时回填缓存（环上节点保守重算）
+        if !hit_cycle {
+            for (i, id) in path.iter().enumerate() {
+                chain_len_cache.insert(id.clone(), length - i);
+            }
         }
         if length >= threshold {
             heads.push(node.id.clone());

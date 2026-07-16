@@ -276,7 +276,7 @@ pub fn execute_edit_transaction(
         EditTransactionType::EntityRename => {
             let (old_name, new_name) = match &planned.request {
                 EditRequest::EntityRename { old_name, new_name, .. } => (old_name.clone(), new_name.clone()),
-                _ => unreachable!(),
+                _ => return Err(AppError::internal("EntityRename: request kind mismatch")),
             };
             execute_entity_rename(&book_dir, &book_id, &old_name, &new_name)
         }
@@ -286,21 +286,21 @@ pub fn execute_edit_transaction(
         EditTransactionType::ChapterReplace => {
             let (chapter_number, new_content) = match &planned.request {
                 EditRequest::ChapterReplace { chapter_number, new_content, .. } => (*chapter_number, new_content.clone()),
-                _ => unreachable!(),
+                _ => return Err(AppError::internal("ChapterReplace: request kind mismatch")),
             };
             execute_chapter_replace(&book_dir, &book_id, chapter_number, &new_content)
         }
         EditTransactionType::ChapterLocalEdit => {
             let (chapter_number, find, replace) = match &planned.request {
                 EditRequest::ChapterLocalEdit { chapter_number, find, replace, .. } => (*chapter_number, find.clone(), replace.clone()),
-                _ => unreachable!(),
+                _ => return Err(AppError::internal("ChapterLocalEdit: request kind mismatch")),
             };
             execute_chapter_local_edit(&book_dir, &book_id, chapter_number, &find, &replace)
         }
         EditTransactionType::TruthFileEdit => {
             let (file_name, new_content) = match &planned.request {
                 EditRequest::TruthFileEdit { file_name, new_content, .. } => (file_name.clone(), new_content.clone()),
-                _ => unreachable!(),
+                _ => return Err(AppError::internal("TruthFileEdit: request kind mismatch")),
             };
             let normalized = normalize_truth_file_name(&file_name)
                 .ok_or_else(|| AppError::invalid_input("非法真相文件名"))?;
@@ -309,7 +309,7 @@ pub fn execute_edit_transaction(
         EditTransactionType::FocusEdit => {
             let new_focus = match &planned.request {
                 EditRequest::FocusEdit { new_focus, .. } => new_focus.clone(),
-                _ => unreachable!(),
+                _ => return Err(AppError::internal("FocusEdit: request kind mismatch")),
             };
             execute_truth_file_edit(&book_dir, &book_id, "current_focus.md", &new_focus)
                 .map(|mut r| {
@@ -759,9 +759,7 @@ fn find_chapter_path(book_dir: &Path, chapter_number: u32) -> Result<PathBuf, Ap
     let chapters_dir = book_dir.join("chapters");
     let padded = format!("{:04}", chapter_number);
     if !chapters_dir.exists() {
-        return Err(AppError::directory_not_found(format!(
-            "chapters dir of book"
-        )));
+        return Err(AppError::directory_not_found("chapters dir of book".to_string()));
     }
     for entry in std::fs::read_dir(&chapters_dir)? {
         let entry = entry?;

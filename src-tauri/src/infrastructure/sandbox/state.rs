@@ -86,7 +86,7 @@ impl SandboxState {
     }
 
     pub fn validate_path(&self, path: &PathBuf, is_write: bool) -> Result<bool, crate::shared::error::AppError> {
-        let policy = self.policy.lock().unwrap();
+        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
 
         // Protected Metadata 检查:即使路径在 root 下,也不允许写入受保护元数据
         if is_write && policy.is_protected_metadata_path(path) {
@@ -97,8 +97,28 @@ impl SandboxState {
             return Ok(false);
         }
 
-        let canonical = std::fs::canonicalize(path)
-            .map_err(|e| crate::shared::error::AppError::internal(format!("Failed to canonicalize: {}", e)))?;
+        // 路径规范化：对已存在的路径直接 canonicalize；对不存在的路径（写入场景）
+        // canonicalize 父目录再拼接文件名。原实现对不存在路径直接 canonicalize
+        // 会返回 NotFound 错误，导致所有"写新文件"的校验失败。
+        let canonical = if path.exists() {
+            std::fs::canonicalize(path).map_err(|e| {
+                crate::shared::error::AppError::internal(format!("Failed to canonicalize: {}", e))
+            })?
+        } else {
+            let parent = path.parent().ok_or_else(|| {
+                crate::shared::error::AppError::invalid_input("path has no parent directory")
+            })?;
+            let canonical_parent = std::fs::canonicalize(parent).map_err(|e| {
+                crate::shared::error::AppError::internal(format!(
+                    "Failed to canonicalize parent: {}",
+                    e
+                ))
+            })?;
+            let file_name = path.file_name().ok_or_else(|| {
+                crate::shared::error::AppError::invalid_input("path has no file name")
+            })?;
+            canonical_parent.join(file_name)
+        };
 
         if !canonical.starts_with(&self.root) {
             return Ok(false);
@@ -112,9 +132,15 @@ impl SandboxState {
     }
 
     pub fn validate_command(&self, command: &str) -> Result<bool, crate::shared::error::AppError> {
+        // 拒绝含控制字符（换行/回车/NUL）的命令 —— 防止 "ls\nevil" 这类
+        // 命令注入绕过单行分析。`;` `|` `&` 等元字符由 heuristics 层处理。
+        if command.chars().any(|c| c == '\n' || c == '\r' || c == '\0') {
+            return Ok(false);
+        }
+
         // 0. ExecPolicy 精细化评估（优先于粗粒度策略）
         {
-            let exec_policy = self.exec_policy.lock().unwrap();
+            let exec_policy = self.exec_policy.lock().unwrap_or_else(|e| e.into_inner());
             let eval = exec_policy.evaluate_command(command);
             // 有规则匹配时，以 ExecPolicy 决策为准
             if eval.matched_index.is_some() {
@@ -123,11 +149,23 @@ impl SandboxState {
             // 无匹配时 fall through 到原有逻辑
         }
 
-        let policy = self.policy.lock().unwrap();
+        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
 
-        // 1. 黑名单前缀检查(立即拒绝)
+        // 1. 黑名单 token 前缀检查(立即拒绝)。
+        // 原 starts_with 字符串前缀有误匹配风险：`blocked="rm"` 会匹配 `rmdir foo`。
+        // 改用 token 前缀：blocked 的所有 token 须作为 command 的前缀 token 出现。
+        let cmd_tokens: Vec<&str> = command.split_whitespace().collect();
         for blocked in &policy.blocked_commands {
-            if command.starts_with(blocked) {
+            let blocked_tokens: Vec<&str> = blocked.split_whitespace().collect();
+            if blocked_tokens.is_empty() {
+                continue;
+            }
+            if cmd_tokens.len() >= blocked_tokens.len()
+                && blocked_tokens
+                    .iter()
+                    .zip(cmd_tokens.iter())
+                    .all(|(b, c)| b.eq_ignore_ascii_case(c))
+            {
                 return Ok(false);
             }
         }
@@ -154,7 +192,7 @@ impl SandboxState {
     pub fn validate_url(&self, url: &str) -> Result<bool, crate::shared::error::AppError> {
         // 0. ExecPolicy 网络规则评估
         {
-            let exec_policy = self.exec_policy.lock().unwrap();
+            let exec_policy = self.exec_policy.lock().unwrap_or_else(|e| e.into_inner());
             let (host, protocol) = execpolicy::extract_host_and_protocol(url);
             if !host.is_empty() {
                 let eval = exec_policy.evaluate_network(&host, protocol);
@@ -165,7 +203,7 @@ impl SandboxState {
             // 无匹配时 fall through
         }
 
-        let policy = self.policy.lock().unwrap();
+        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
 
         for blocked in &policy.blocked_domains {
             if url.contains(blocked) {
@@ -177,44 +215,44 @@ impl SandboxState {
     }
 
     pub fn get_policy(&self) -> SandboxPolicy {
-        self.policy.lock().unwrap().clone()
+        self.policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     // ── ExecPolicy 访问方法 ──
 
     /// 获取当前 ExecPolicy 的克隆。
     pub fn get_exec_policy(&self) -> ExecPolicy {
-        self.exec_policy.lock().unwrap().clone()
+        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// 更新 ExecPolicy 并持久化。
     pub fn update_exec_policy(&self, policy: ExecPolicy) {
         self.persist_exec_policy(&policy);
-        *self.exec_policy.lock().unwrap() = policy;
+        *self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()) = policy;
     }
 
     /// 重置 ExecPolicy 为内置默认值并持久化。
     pub fn reset_exec_policy(&self) {
         let default = execpolicy::default_policy();
         self.persist_exec_policy(&default);
-        *self.exec_policy.lock().unwrap() = default;
+        *self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()) = default;
     }
 
     /// 评估命令（返回完整 PolicyDecision，含 AskUser）。
     pub fn evaluate_command(&self, command: &str) -> Evaluation {
-        self.exec_policy.lock().unwrap().evaluate_command(command)
+        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).evaluate_command(command)
     }
 
     /// 评估路径（返回完整 PolicyDecision）。
     pub fn evaluate_path(&self, path: &str) -> Evaluation {
-        self.exec_policy.lock().unwrap().evaluate_path(path)
+        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).evaluate_path(path)
     }
 
     /// 评估网络请求（返回完整 PolicyDecision）。
     pub fn evaluate_network(&self, host: &str, protocol: NetworkProtocol) -> Evaluation {
         self.exec_policy
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .evaluate_network(host, protocol)
     }
 }

@@ -3,20 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::shared::error::AppError;
 
-/// 数据库错误
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DbError {
-    /// 错误信息
-    pub message: String,
-}
-
-impl std::fmt::Display for DbError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Database error: {}", self.message)
-    }
-}
-
-impl std::error::Error for DbError {}
+// NOTE: `DbError` 的权威定义在 `errors.rs`（枚举，覆盖 NotFound / ConnectionError /
+// QueryError 等多种情况）。此处不再重复定义退化的 `struct DbError`，避免类型歧义。
 
 /// JSON 解码辅助函数
 ///
@@ -41,6 +29,7 @@ pub(super) fn json_encode<T: serde::Serialize>(value: &T, column: &str) -> Resul
 
 /// 工作空间
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Workspace {
     /// 工作空间 ID
     pub id: String,
@@ -58,6 +47,7 @@ pub struct Workspace {
 
 /// 创建工作空间请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateWorkspaceRequest {
     /// 工作空间名称
     pub name: String,
@@ -67,6 +57,7 @@ pub struct CreateWorkspaceRequest {
 
 /// 更新工作空间请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateWorkspaceRequest {
     /// 工作空间 ID
     pub id: String,
@@ -78,6 +69,7 @@ pub struct UpdateWorkspaceRequest {
 
 /// Prompt 模板
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Prompt {
     /// Prompt ID
     pub id: String,
@@ -97,6 +89,7 @@ pub struct Prompt {
 
 /// 创建 Prompt 请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreatePromptRequest {
     /// Prompt 名称
     pub name: String,
@@ -110,6 +103,7 @@ pub struct CreatePromptRequest {
 
 /// 更新 Prompt 请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdatePromptRequest {
     /// Prompt ID
     pub id: String,
@@ -125,6 +119,7 @@ pub struct UpdatePromptRequest {
 
 /// 趋势数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Trend {
     /// 趋势 ID
     pub id: String,
@@ -142,6 +137,7 @@ pub struct Trend {
 
 /// 小说
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Novel {
     /// 小说 ID
     pub id: String,
@@ -173,6 +169,7 @@ pub struct Novel {
 
 /// 章节
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Chapter {
     /// 章节 ID
     pub id: String,
@@ -198,6 +195,7 @@ pub struct Chapter {
 
 /// Radar 扫描结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RadarScan {
     /// 扫描 ID
     pub id: String,
@@ -232,6 +230,7 @@ pub struct RadarRecommendation {
 
 /// 平台排行榜
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlatformRankings {
     /// 平台名称
     pub platform: String,
@@ -241,6 +240,7 @@ pub struct PlatformRankings {
 
 /// 排行榜条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RankingEntry {
     /// 作品名称
     pub title: String,
@@ -254,6 +254,7 @@ pub struct RankingEntry {
 
 /// Radar 结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RadarResult {
     /// 推荐列表
     pub recommendations: Vec<RadarRecommendation>,
@@ -263,6 +264,7 @@ pub struct RadarResult {
 
 /// 创建小说请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateNovelRequest {
     /// 工作空间 ID
     pub workspace_id: String,
@@ -282,6 +284,7 @@ pub struct CreateNovelRequest {
 
 /// 更新小说请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateNovelRequest {
     /// 小说标题
     pub title: Option<String>,

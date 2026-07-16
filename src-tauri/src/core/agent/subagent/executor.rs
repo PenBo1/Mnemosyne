@@ -53,7 +53,9 @@ impl SubAgentTask {
 }
 
 pub struct ExecutionResult {
-    pub result: SubAgentResult,
+    // 用 Arc<SubAgentResult> 让缓存命中路径零深拷贝：cache.get() 返回 Arc，
+    // 直接透传到 ExecutionResult，最后在 Tool 边界按需 deref。
+    pub result: Arc<SubAgentResult>,
     pub cached: bool,
     pub duration_ms: u64,
 }
@@ -63,7 +65,7 @@ pub struct SubAgentExecutor<'a> {
     workspace_root: PathBuf,
     cache: Arc<SubAgentCache>,
     token_counter: Arc<TokenCounter>,
-    #[allow(dead_code)]
+    /// 并发上限（用于 `execute_parallel` 的 `buffer_unordered`）。
     max_concurrent: usize,
     /// Hook 引擎（可选，None 时跳过 SubagentStart/SubagentStop hook 派发）。
     hook_engine: OptionalHookDispatcher,
@@ -138,6 +140,15 @@ impl<'a> SubAgentExecutor<'a> {
 
         let result = execute_result?;
 
+        // TODO(token-usage): rig 的 `Prompt` trait 仅返回 `String`，不暴露 token usage。
+        // 当前 record 为 0 是"未知"而非"零消耗"——待 rig 提供 usage API 或改用
+        // `agent.completion(...)` 取 `Usage` 后填充真实值。
+        // 现阶段显式 warn 标注，避免被误读为"本次调用 0 token"。
+        tracing::warn!(
+            role = role_str,
+            duration_ms,
+            "Sub-agent token usage unavailable (rig Prompt trait does not expose Usage); recording 0 as 'unknown'"
+        );
         self.token_counter.record(
             task.role,
             task.task.clone(),
@@ -149,7 +160,7 @@ impl<'a> SubAgentExecutor<'a> {
         self.cache.set(task.role, &task.task, &task.context, result.clone()).await;
 
         Ok(ExecutionResult {
-            result,
+            result: Arc::new(result),
             cached: false,
             duration_ms,
         })
@@ -213,14 +224,25 @@ impl<'a> SubAgentExecutor<'a> {
         }
     }
 
+    /// 并行执行多个 sub-agent task。
+    ///
+    /// 使用 `futures::stream::iter(...).buffer_unordered(max_concurrent)` 控制并发上限，
+    /// 而非顺序 await。结果顺序与完成顺序一致（不保证与输入顺序一致），
+    /// 上层若需保持输入顺序应自行按 `task.role` + index 重排。
+    ///
+    /// 注：`buffer_unordered` 在内部用 `FuturesUnordered`，单 task 失败不影响其他 task。
     pub async fn execute_parallel(
         &self,
         tasks: Vec<SubAgentTask>,
     ) -> Vec<Result<ExecutionResult, AppError>> {
-        let mut results = Vec::with_capacity(tasks.len());
-        for task in tasks {
-            results.push(self.execute(task).await);
-        }
+        use futures_util::stream::{self, StreamExt};
+
+        let max_concurrent = self.max_concurrent.max(1);
+        let results: Vec<Result<ExecutionResult, AppError>> = stream::iter(tasks)
+            .map(|task| self.execute(task))
+            .buffer_unordered(max_concurrent)
+            .collect()
+            .await;
         results
     }
 

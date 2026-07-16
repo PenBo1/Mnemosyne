@@ -61,7 +61,8 @@ impl PlayRunner {
         .await?;
 
         // 渲染开场正文（在 commit 前完成）
-        let state_json = serde_json::to_string_pretty(&mutation).unwrap_or_default();
+        let state_json = serde_json::to_string_pretty(&mutation)
+            .map_err(|e| AppError::internal(format!("Failed to serialize mutation: {}", e)))?;
         let scene_text = PlaySceneRendererAgent::render(
             engine,
             &state_json,
@@ -110,13 +111,14 @@ impl PlayRunner {
         .await?;
 
         // 2. mutate（context 来自当前 DB 快照）
-        let context = self.build_context();
+        let context = self.build_context()?;
         let mutation =
             PlayWorldMutatorAgent::propose_mutation(engine, &action, &context, &self.world.language)
                 .await?;
 
         // 3. render（commit 前完成，失败不污染 DB）
-        let state_json = serde_json::to_string_pretty(&mutation).unwrap_or_default();
+        let state_json = serde_json::to_string_pretty(&mutation)
+            .map_err(|e| AppError::internal(format!("Failed to serialize mutation: {}", e)))?;
         let scene_text = PlaySceneRendererAgent::render(
             engine,
             &state_json,
@@ -167,21 +169,26 @@ impl PlayRunner {
         match self.step(engine, new_input).await {
             Ok(r) => Ok(r),
             Err(e) => {
-                // 回滚以保证一致性
+                // 回滚以保证一致性；回滚失败时返回合并错误
                 tracing::warn!(error = %e, "regenerate_last_turn 失败，回滚 snapshot");
-                let _ = self.db.replace_with_snapshot(&snapshot);
-                Err(e)
+                match self.db.replace_with_snapshot(&snapshot) {
+                    Ok(()) => Err(e),
+                    Err(rollback_err) => Err(AppError::internal(format!(
+                        "regenerate_last_turn failed: {}; rollback also failed: {}",
+                        e.message, rollback_err.message
+                    ))),
+                }
             }
         }
     }
 
     /// 构建当前世界状态上下文（compact JSON）
-    fn build_context(&self) -> String {
+    fn build_context(&self) -> Result<String, AppError> {
         let snap = match self.db.snapshot() {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(error = %e, "PlayRunner 读取 snapshot 失败，使用空上下文");
-                return format!("世界前提：{}\n（状态读取失败）", self.world.premise);
+                return Ok(format!("世界前提：{}\n（状态读取失败）", self.world.premise));
             }
         };
         // 限制事件数量避免上下文膨胀（最近 10 条）
@@ -196,7 +203,8 @@ impl PlayRunner {
             "stateSlots": snap.state_slots,
             "recentEvents": events,
         });
-        serde_json::to_string_pretty(&ctx).unwrap_or_default()
+        serde_json::to_string_pretty(&ctx)
+            .map_err(|e| AppError::internal(format!("Failed to serialize play context: {}", e)))
     }
 
     /// 当前图谱快照（供 IPC 读取）

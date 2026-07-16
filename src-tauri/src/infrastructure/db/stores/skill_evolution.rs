@@ -208,7 +208,7 @@ impl Database {
             USAGE_SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([], map_usage_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按 skill_name 获取使用统计
@@ -301,7 +301,7 @@ impl Database {
         } else {
             stmt.query_map([], map_candidate_row).map_err(db_err)?
         };
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 更新候选状态(审核流程)

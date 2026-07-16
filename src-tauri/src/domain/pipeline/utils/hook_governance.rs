@@ -8,6 +8,8 @@
 // 2. 文本规范化：小写 + 去除非字母数字中文
 // 3. 重叠判定：英文 terms(>=4字符) 重叠 >= 2 或 中文 bigrams 重叠 >= 3
 
+use std::sync::OnceLock;
+
 use crate::domain::pipeline::state::types::HookRecord;
 
 /// 准入决策原因
@@ -77,8 +79,11 @@ pub fn evaluate_hook_admission(
 
     for hook in active_hooks {
         let hook_text = normalize_text(&format!(
-            "{} {} {:?} {}",
-            hook.r#type, hook.expected_payoff, hook.payoff_timing, hook.notes,
+            "{} {} {} {}",
+            hook.r#type,
+            hook.expected_payoff,
+            hook.payoff_timing.map(|t| t.as_str()).unwrap_or(""),
+            hook.notes,
         ));
 
         // 完全相等 → 立即判重
@@ -145,10 +150,9 @@ fn extract_english_terms(text: &str) -> Vec<String> {
     ];
 
     let mut terms = Vec::new();
-    let re = match regex::Regex::new(r"[A-Za-z]{4,}") {
-        Ok(re) => re,
-        Err(_) => return terms,
-    };
+    static ASCII_WORD: OnceLock<regex::Regex> = OnceLock::new();
+    let re = ASCII_WORD
+        .get_or_init(|| regex::Regex::new(r"[A-Za-z]{4,}").expect("valid ascii-word regex"));
     for m in re.find_iter(text) {
         let word = m.as_str().to_lowercase();
         if STOP_WORDS.contains(&word.as_str()) {

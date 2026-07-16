@@ -44,7 +44,7 @@ pub async fn get_prompt(
     validate_id_component(&id, "prompt_id")?;
     tracing::debug!(prompt_id = %id, "get_prompt");
     let prompt = state.db.get_prompt(&id)?
-        .ok_or_else(|| AppError::prompt_not_found())?;
+        .ok_or_else(AppError::prompt_not_found)?;
     Ok(IpcResponse::ok(prompt))
 }
 

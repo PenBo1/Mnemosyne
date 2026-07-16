@@ -1,14 +1,59 @@
-﻿
+
+use regex::Regex;
+use std::sync::OnceLock;
+
 use super::types::{ErrorEvent, Severity, ConstraintLesson, FeedbackRules};
 
-pub struct SecretRedactor { patterns: Vec<&'static str> }
+pub struct SecretRedactor;
+
+impl Default for SecretRedactor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 预编译的 value-redaction 正则集合。
+/// 匹配 `key=value` / `key: value` / `key="value"` / `Bearer token` / `sk-xxx` 等，
+/// 整体替换 value 部分（而非仅替换 key 名）。
+fn value_redaction_regex() -> &'static Vec<Regex> {
+    static REGEXES: OnceLock<Vec<Regex>> = OnceLock::new();
+    REGEXES.get_or_init(|| {
+        vec![
+            // key=value 或 key=value（value 到空白/行尾/引号为止）
+            Regex::new(r#"(?i)(api[_-]?key|secret|password|passwd|token|credential|auth|access[_-]?key)\s*[=:]\s*[^\s,;"'\]]+"#).unwrap(),
+            // key="value" 或 key='value'
+            Regex::new(r#"(?i)(api[_-]?key|secret|password|passwd|token|credential|auth|access[_-]?key)\s*[=:]\s*["'][^"']*["']"#).unwrap(),
+            // Bearer <token>
+            Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]+").unwrap(),
+            // sk-xxx (OpenAI 风格 key)
+            Regex::new(r"sk-[A-Za-z0-9]{20,}").unwrap(),
+        ]
+    })
+}
 
 impl SecretRedactor {
-    pub fn new() -> Self { Self { patterns: vec!["api_key", "secret", "password", "token", "credential"] } }
+    pub fn new() -> Self { Self }
     pub fn redact(&self, text: &str) -> (String, usize) {
         let mut redacted = text.to_string();
         let mut count = 0;
-        for pattern in &self.patterns { if redacted.contains(pattern) { redacted = redacted.replace(pattern, "[REDACTED]"); count += 1; } }
+        for re in value_redaction_regex() {
+            let matches: Vec<(usize, usize)> = re.find_iter(&redacted.clone()).map(|m| (m.start(), m.end())).collect();
+            if matches.is_empty() { continue; }
+            // 从后往前替换避免 offset 偏移
+            for (start, end) in matches.into_iter().rev() {
+                let replacement = if redacted[start..end].to_lowercase().starts_with("bearer") {
+                    "bearer [REDACTED]".to_string()
+                } else if redacted[start..end].contains('=') || redacted[start..end].contains(':') {
+                    // 保留 key= 前缀,只替换 value
+                    let prefix_end = redacted[start..end].find(|c| c == '=' || c == ':').map(|i| start + i + 1).unwrap_or(end);
+                    format!("{} [REDACTED]", &redacted[start..prefix_end])
+                } else {
+                    "[REDACTED]".to_string()
+                };
+                redacted.replace_range(start..end, &replacement);
+                count += 1;
+            }
+        }
         (redacted, count)
     }
 }
@@ -17,6 +62,12 @@ pub struct FeedbackStore {
     events: Vec<ErrorEvent>,
     lessons: Vec<ConstraintLesson>,
     rules: FeedbackRules,
+}
+
+impl Default for FeedbackStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FeedbackStore {
@@ -36,7 +87,7 @@ impl FeedbackStore {
         for (error_type, events) in &groups {
             let warning_count = events.iter().filter(|e| e.severity == Severity::Warning).count();
             let critical_count = events.iter().filter(|e| e.severity == Severity::Critical).count();
-            if self.lessons.iter().any(|l| l.rule.contains(error_type)) { continue; }
+            if self.lessons.iter().any(|l| l.rule == format!("Avoid {}", error_type)) { continue; }
             if critical_count >= self.rules.critical_threshold || warning_count >= self.rules.warning_threshold {
                 let lesson = ConstraintLesson {
                     id: uuid::Uuid::new_v4().to_string(),

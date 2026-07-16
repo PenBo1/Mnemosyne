@@ -82,10 +82,25 @@ impl ApprovalStore {
             .map(|(id, _)| *id)
             .collect();
 
-        expired_ids
+        let removed: Vec<ApprovalToken> = expired_ids
             .into_iter()
             .filter_map(|id| self.mark_expired(id))
-            .collect()
+            .collect();
+
+        // 防止 approved/rejected/expired 集合无限增长
+        // 当超过上限时清空（这些集合仅用于近期 ID 查询，丢失旧记录不影响功能）
+        const MAX_RECORDS: usize = 10000;
+        if self.approved.len() > MAX_RECORDS {
+            self.approved.clear();
+        }
+        if self.rejected.len() > MAX_RECORDS {
+            self.rejected.clear();
+        }
+        if self.expired.len() > MAX_RECORDS {
+            self.expired.clear();
+        }
+
+        removed
     }
 
     pub fn pending_count(&self) -> usize {

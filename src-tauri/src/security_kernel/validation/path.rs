@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use crate::shared::error::AppError;
 
 const MAX_PATH_LENGTH: usize = 4096;
@@ -50,7 +50,9 @@ pub fn validate_path(path: &Path, base: Option<&Path>) -> Result<CanonicalPath, 
         return Err(AppError::invalid_input("Path contains control characters"));
     }
 
-    if path_str.contains("..") {
+    // High 8: 用 Component::ParentDir 精确检测路径遍历,
+    // 避免 contains("..") 误判含 ".." 的合法文件名（如 "..bar.txt"）
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(AppError::path_traversal());
     }
 
@@ -101,7 +103,9 @@ pub fn validate_path_for_creation(path: &Path, base: &Path) -> Result<CanonicalP
         return Err(AppError::invalid_input("Path contains control characters"));
     }
 
-    if path_str.contains("..") {
+    // High 8: 用 Component::ParentDir 精确检测路径遍历,
+    // 避免 contains("..") 误判含 ".." 的合法文件名（如 "..bar.txt"）
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(AppError::path_traversal());
     }
 
@@ -118,12 +122,12 @@ pub fn validate_path_for_creation(path: &Path, base: &Path) -> Result<CanonicalP
     let mut resolved = PathBuf::new();
     for component in normalized.components() {
         match component {
-            std::path::Component::ParentDir { .. } => {
+            Component::ParentDir => {
                 if !resolved.pop() {
                     return Err(AppError::path_traversal());
                 }
             }
-            std::path::Component::CurDir => {}
+            Component::CurDir => {}
             _ => {
                 resolved.push(component);
             }

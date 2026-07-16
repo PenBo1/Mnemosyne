@@ -1,11 +1,15 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::shared::error::AppError;
+
 /// 记忆类型分类
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum MemoryType {
     /// 事实（客观信息）
+    #[default]
     Fact,
     /// 上下文（背景信息）
     Context,
@@ -105,35 +109,35 @@ impl MemorySystem {
     }
 
     /// 归档条目（降低重要性为 0）
-    pub fn archive(&mut self, entry_id: &str) -> Result<(), String> {
+    pub fn archive(&mut self, entry_id: &str) -> Result<(), AppError> {
         let idx = self.entries.iter().position(|e| e.id == entry_id);
         if let Some(i) = idx {
             self.entries[i].importance = 0;
             Ok(())
         } else {
-            Err(format!("Entry {} not found", entry_id))
+            Err(AppError::not_found(format!("Entry {} not found", entry_id)))
         }
     }
 
     /// 删除条目
-    pub fn delete_entry(&mut self, entry_id: &str) -> Result<(), String> {
+    pub fn delete_entry(&mut self, entry_id: &str) -> Result<(), AppError> {
         let idx = self.entries.iter().position(|e| e.id == entry_id);
         if let Some(i) = idx {
             self.entries.remove(i);
             Ok(())
         } else {
-            Err(format!("Entry {} not found", entry_id))
+            Err(AppError::not_found(format!("Entry {} not found", entry_id)))
         }
     }
 
     /// 更新条目内容
-    pub fn update_entry(&mut self, entry_id: &str, content: &str) -> Result<(), String> {
+    pub fn update_entry(&mut self, entry_id: &str, content: &str) -> Result<(), AppError> {
         let idx = self.entries.iter().position(|e| e.id == entry_id);
         if let Some(i) = idx {
             self.entries[i].value = content.to_string();
             Ok(())
         } else {
-            Err(format!("Entry {} not found", entry_id))
+            Err(AppError::not_found(format!("Entry {} not found", entry_id)))
         }
     }
 
@@ -147,9 +151,6 @@ impl MemorySystem {
     }
 }
 
-impl Default for MemoryType {
-    fn default() -> Self { MemoryType::Fact }
-}
 
 // ── P2.2 memory-retrieval 加速层 DTO ──────────────────────────
 //

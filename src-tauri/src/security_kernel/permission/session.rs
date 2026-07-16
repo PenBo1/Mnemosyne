@@ -8,6 +8,10 @@ use super::{Capability, FsOperation, FsScope, GitOperation, NetworkScope, ShellS
 
 pub type WorkspaceId = String;
 
+/// Medium 22: Session 默认 TTL（30 分钟,与 AGENTS.md 规范一致）。
+/// 超时 session 在 check() 中被拒绝,强制重新创建。
+const SESSION_TTL_MINUTES: i64 = 30;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionSession {
     pub workspace: WorkspaceId,
@@ -90,6 +94,15 @@ impl PermissionManager {
         let session = self.sessions.get(workspace).ok_or_else(|| {
             AppError::workspace_not_found()
         })?;
+
+        // Medium 22: Session TTL 检查 —— 超时 session 拒绝,强制调用方重新创建
+        let now = Utc::now();
+        if now > session.opened_at + chrono::Duration::minutes(SESSION_TTL_MINUTES) {
+            return Err(AppError::forbidden(format!(
+                "Permission session for workspace '{}' expired (opened_at: {}, ttl: {}min)",
+                workspace, session.opened_at, SESSION_TTL_MINUTES
+            )));
+        }
 
         let required_capability = op.required_capability();
         if !session.capabilities.contains(&required_capability) {

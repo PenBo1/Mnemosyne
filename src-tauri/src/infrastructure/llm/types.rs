@@ -1,4 +1,4 @@
-﻿
+
 use serde::{Deserialize, Serialize};
 
 /// 模型信息
@@ -117,6 +117,21 @@ pub trait Provider: Send + Sync {
         system: &str,
         messages: &[Message],
     ) -> Result<String, crate::shared::error::AppError>;
+
+    /// 非流式完成(带工具调用支持)
+    ///
+    /// 默认实现返回不支持错误,provider 可按需覆写以支持非流式工具调用。
+    async fn complete_with_tools(
+        &self,
+        _model: &str,
+        _system: &str,
+        _messages: &[Message],
+        _tools: &[ToolSpec],
+    ) -> Result<String, crate::shared::error::AppError> {
+        Err(crate::shared::error::AppError::internal(
+            "complete_with_tools not supported by this provider"
+        ))
+    }
 
     /// 流式完成
     async fn stream(

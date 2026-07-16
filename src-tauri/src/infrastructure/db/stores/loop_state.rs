@@ -101,7 +101,7 @@ impl Database {
             )
         ).map_err(db_err)?;
         let rows = stmt.query_map([novel_id], map_loop_state_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 获取单个 loop state。

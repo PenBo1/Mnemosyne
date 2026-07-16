@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{mpsc::{self, SyncSender, TrySendError}, Arc, RwLock};
 
 use uuid::Uuid;
 
@@ -11,9 +11,21 @@ pub trait EventHandler: Send + Sync {
 
 type HandlerList = Vec<Box<dyn EventHandler>>;
 
+/// C16: 后台派发 channel 的容量。channel 满时 emit 丢弃事件并告警,
+/// 避免审计阻塞业务主流程。
+const DISPATCH_CHANNEL_CAPACITY: usize = 1024;
+
+/// 后台派发任务的事件项（event + entry 一起发送,避免后台 task 再查 store）。
+struct DispatchItem {
+    event: SecurityEvent,
+    entry: AuditEntry,
+}
+
 pub struct AuditEventBus {
     store: AuditStore,
     handlers: RwLock<HandlerList>,
+    // C16: 后台派发 channel sender。None 时 emit 降级为同步派发（用于无 runtime 场景如测试）。
+    dispatch_tx: RwLock<Option<SyncSender<DispatchItem>>>,
 }
 
 impl AuditEventBus {
@@ -21,6 +33,7 @@ impl AuditEventBus {
         Self {
             store: AuditStore::new(),
             handlers: RwLock::new(Vec::new()),
+            dispatch_tx: RwLock::new(None),
         }
     }
 
@@ -28,42 +41,115 @@ impl AuditEventBus {
         Self {
             store,
             handlers: RwLock::new(Vec::new()),
+            dispatch_tx: RwLock::new(None),
         }
+    }
+
+    /// 启动后台派发 task（C16）。必须在 tokio runtime 上下文中调用。
+    /// 启动后 emit 会将事件推入 channel,由后台 spawn_blocking task 调用 handlers,
+    /// 避免 handler 的同步 I/O（如 DbAuditHandler 写 SQLite）阻塞 emit 调用方。
+    /// 无 runtime 时安全跳过,emit 降级为同步派发。
+    pub fn start_dispatch_task(self: &Arc<Self>) {
+        let handle = match tokio::runtime::Handle::try_current() {
+            Ok(h) => h,
+            Err(_) => {
+                tracing::warn!(
+                    "No tokio runtime available, audit events will be dispatched synchronously"
+                );
+                return;
+            }
+        };
+
+        let (tx, rx) = mpsc::sync_channel::<DispatchItem>(DISPATCH_CHANNEL_CAPACITY);
+        *self.dispatch_tx.write().unwrap_or_else(|e| e.into_inner()) = Some(tx);
+
+        let bus = Arc::clone(self);
+        handle.spawn_blocking(move || {
+            // 后台 task:阻塞接收事件,逐个调用 handlers。
+            // 所有 sender drop 后 recv 返回 Err,task 自动退出。
+            while let Ok(item) = rx.recv() {
+                let handlers = bus.handlers.read().unwrap_or_else(|e| e.into_inner());
+                for handler in handlers.iter() {
+                    handler.handle(&item.event, &item.entry);
+                }
+            }
+        });
+        tracing::info!("Audit dispatch background task started");
     }
 
     pub fn emit(&self, event: SecurityEvent) -> Uuid {
         let id = self.store.store(event.clone());
 
-        let entry = self.store.get_by_id(id).expect("Stored entry must exist");
+        // 查不到 entry 时记录错误但不 panic,审计主流程不应中断
+        let entry = match self.store.get_by_id(id) {
+            Some(entry) => entry,
+            None => {
+                tracing::error!(event_id = %id, "Stored audit entry not found after store");
+                return id;
+            }
+        };
 
-        let handlers = self.handlers.read().unwrap();
-        for handler in handlers.iter() {
-            handler.handle(&event, &entry);
+        // C16: 优先通过后台 channel 派发,避免 handler 同步 I/O 阻塞当前线程。
+        // clone Sender 以便尽快释放 dispatch_tx 读锁。
+        let tx = {
+            let guard = self.dispatch_tx.read().unwrap_or_else(|e| e.into_inner());
+            guard.as_ref().cloned()
+        };
+
+        match tx {
+            Some(tx) => match tx.try_send(DispatchItem { event, entry }) {
+                Ok(()) => {
+                    tracing::debug!(event_id = %id, "Audit event dispatched to background task");
+                    return id;
+                }
+                Err(TrySendError::Full(_)) => {
+                    // channel 满:丢弃事件,审计不应阻断业务
+                    tracing::warn!(event_id = %id, "Audit dispatch channel full, event dropped");
+                    return id;
+                }
+                Err(TrySendError::Disconnected(item)) => {
+                    // channel 关闭（后台 task 已退出）:降级同步派发
+                    tracing::warn!(
+                        event_id = %id,
+                        "Audit dispatch channel disconnected, falling back to sync dispatch"
+                    );
+                    let handlers = self.handlers.read().unwrap_or_else(|e| e.into_inner());
+                    for handler in handlers.iter() {
+                        handler.handle(&item.event, &item.entry);
+                    }
+                    return id;
+                }
+            },
+            None => {
+                // 无 channel（未启动 dispatch task 或无 runtime）:同步派发
+                let handlers = self.handlers.read().unwrap_or_else(|e| e.into_inner());
+                for handler in handlers.iter() {
+                    handler.handle(&event, &entry);
+                }
+                tracing::debug!(
+                    event_id = %id,
+                    event_type = event.event_type(),
+                    "Audit event emitted (sync)"
+                );
+                id
+            }
         }
-
-        tracing::debug!(
-            event_id = %id,
-            event_type = event.event_type(),
-            "Audit event emitted"
-        );
-
-        id
     }
 
     pub fn subscribe(&self, handler: Box<dyn EventHandler>) {
-        let mut handlers = self.handlers.write().unwrap();
+        let mut handlers = self.handlers.write().unwrap_or_else(|e| e.into_inner());
         handlers.push(handler);
         tracing::debug!(handler_count = handlers.len(), "Handler subscribed to audit bus");
     }
 
     pub fn unsubscribe_all(&self) {
-        let mut handlers = self.handlers.write().unwrap();
+        let mut handlers = self.handlers.write().unwrap_or_else(|e| e.into_inner());
         handlers.clear();
         tracing::debug!("All handlers unsubscribed from audit bus");
     }
 
     pub fn handler_count(&self) -> usize {
-        self.handlers.read().unwrap().len()
+        self.handlers.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     pub fn query(&self, filter: &AuditFilter) -> Vec<AuditEntry> {
@@ -126,6 +212,11 @@ impl SharedAuditEventBus {
 
     pub fn from(bus: AuditEventBus) -> Self {
         Self(Arc::new(bus))
+    }
+
+    /// 启动后台派发 task（C16）。委托给内部 AuditEventBus。
+    pub fn start_dispatch_task(&self) {
+        self.0.start_dispatch_task();
     }
 
     pub fn emit(&self, event: SecurityEvent) -> Uuid {
@@ -205,16 +296,16 @@ impl MetricsHandler {
     }
 
     pub fn denied_count(&self) -> usize {
-        *self.denied_count.read().unwrap()
+        *self.denied_count.read().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn security_count(&self) -> usize {
-        *self.security_count.read().unwrap()
+        *self.security_count.read().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn reset(&self) {
-        *self.denied_count.write().unwrap() = 0;
-        *self.security_count.write().unwrap() = 0;
+        *self.denied_count.write().unwrap_or_else(|e| e.into_inner()) = 0;
+        *self.security_count.write().unwrap_or_else(|e| e.into_inner()) = 0;
     }
 }
 
@@ -227,10 +318,10 @@ impl Default for MetricsHandler {
 impl EventHandler for MetricsHandler {
     fn handle(&self, event: &SecurityEvent, _entry: &AuditEntry) {
         if event.is_denied() {
-            *self.denied_count.write().unwrap() += 1;
+            *self.denied_count.write().unwrap_or_else(|e| e.into_inner()) += 1;
         }
         if event.is_security_related() {
-            *self.security_count.write().unwrap() += 1;
+            *self.security_count.write().unwrap_or_else(|e| e.into_inner()) += 1;
         }
     }
 }

@@ -140,18 +140,12 @@ pub fn get_secret(
 
 // ═══════════════════════════════════════════════════════════════
 // Tauri 命令
+//
+// 安全模型（AGENTS.md）：密钥绝不经 IPC 返回前端。
+// - secrets_set / secrets_delete / secrets_exists 仅暴露元数据（bool / void）。
+// - secrets_get / secrets_get_all 已删除：前端需要密钥时由 Rust 服务端
+//   通过 get_secret helper 自行解析，不经 IPC 传递。
 // ═══════════════════════════════════════════════════════════════
-
-#[tauri::command]
-pub async fn secrets_get(
-    app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
-    service: String,
-    account: String,
-) -> Result<IpcResponse<Option<String>>, AppError> {
-    let val = get_secret(&app, &state, &service, &account)?;
-    Ok(IpcResponse::ok(val))
-}
 
 #[tauri::command]
 pub async fn secrets_set(
@@ -221,37 +215,20 @@ pub async fn secrets_delete(
     }
 }
 
-/// 批量读 — 单次 IPC roundtrip, 适合冷启动 fan-out。
+/// 检查密钥是否已设置 —— 仅返回 bool，不暴露 secret 内容。
+///
+/// 前端 UI 用此命令展示"密钥已配置"状态，而无需获取密钥本身
+/// （符合 AGENTS.md "密钥不经 IPC 传递" 的安全模型）。
 #[tauri::command]
-pub async fn secrets_get_all(
+pub async fn secrets_exists(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
     service: String,
-    accounts: Vec<String>,
-) -> Result<IpcResponse<Vec<Option<String>>>, AppError> {
-    #[cfg(target_os = "linux")]
-    {
-        let vals = with_store(&app, &state, |m| {
-            accounts
-                .iter()
-                .map(|a| m.get(&key(&service, a)).cloned())
-                .collect::<Vec<_>>()
-        })?;
-        Ok(IpcResponse::ok(vals))
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let vals = accounts
-            .into_iter()
-            .map(|a| {
-                keyring::Entry::new(&service, &a)
-                    .ok()
-                    .and_then(|e| e.get_password().ok())
-            })
-            .collect::<Vec<_>>();
-        Ok(IpcResponse::ok(vals))
-    }
+    account: String,
+) -> Result<IpcResponse<bool>, AppError> {
+    let exists = get_secret(&app, &state, &service, &account)?
+        .is_some();
+    Ok(IpcResponse::ok(exists))
 }
 
 // ── Linux 单测 (文件回退逻辑) ───────────────────────────────────

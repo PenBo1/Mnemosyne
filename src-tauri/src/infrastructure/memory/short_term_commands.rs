@@ -13,7 +13,6 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::core::agent::commands::AgentState;
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::db::stores::short_term_memory::ShortTermMemoryRow;
 use crate::infrastructure::fs::fs_utils::validate_id_component;
@@ -66,7 +65,8 @@ pub async fn short_term_memory_list_by_book(
     limit: Option<i64>,
 ) -> Result<IpcResponse<Vec<ShortTermMemoryRow>>, AppError> {
     validate_id_component(&book_id, "book_id")?;
-    let l = limit.unwrap_or(50);
+    // 上限 500 防止大表全扫返回(与文件头注释约束一致,DB 层另有 clamp 兜底)
+    let l = limit.unwrap_or(50).min(500);
     let rows = state.db.list_short_term_by_book(&book_id, l)?;
     Ok(IpcResponse::ok(rows))
 }
@@ -91,24 +91,8 @@ pub async fn short_term_memory_list_by_range(
 
 /// 主动为 session 重新生成摘要(用户点击"重新生成"时触发)
 ///
-/// 通过 AgentState 获取 AgentEngine 实例,业务逻辑在 AgentEngine.summarize_session 内部。
-#[tauri::command]
-pub async fn short_term_memory_regenerate(
-    state: State<'_, AgentState>,
-    session_id: String,
-    book_id: Option<String>,
-    agent_role: Option<String>,
-) -> Result<IpcResponse<bool>, AppError> {
-    validate_id_component(&session_id, "session_id")?;
-    if let Some(b) = book_id.as_deref() {
-        validate_id_component(b, "book_id")?;
-    }
-    state
-        .engine
-        .summarize_session(&session_id, book_id.as_deref(), agent_role.as_deref())
-        .await?;
-    Ok(IpcResponse::ok(true))
-}
+/// 注意：此命令已移至 application/session/commands.rs::short_term_memory_regenerate
+/// 以避免 infrastructure → core/agent 反向依赖。
 
 /// 短期记忆统计(用于 UI 展示总数 / 按日期分布)
 #[derive(Debug, Serialize)]
@@ -128,7 +112,7 @@ pub async fn short_term_memory_stats(
     // 最近 7 天(包括今天)
     let mut start_date = chrono::Utc::now();
     for _ in 0..6 {
-        start_date = start_date - chrono::Duration::days(1);
+        start_date -= chrono::Duration::days(1);
     }
     let start_str = start_date.format("%Y-%m-%d").to_string();
     let last_7 = state
@@ -136,8 +120,8 @@ pub async fn short_term_memory_stats(
         .list_short_term_by_date_range(&start_str, &today)?;
     let last_7_days_count = last_7.len() as u64;
 
-    // total = 7 天内活跃指标(避免全表 COUNT,这是 hot memory,GC 后会收缩)
-    let total = last_7_days_count;
+    // total = 全表 COUNT(原实现误用 last_7_days_count,语义错误 L24)
+    let total = state.db.count_all_short_term()?;
 
     Ok(IpcResponse::ok(ShortTermMemoryStats {
         total,

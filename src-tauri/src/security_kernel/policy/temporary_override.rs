@@ -101,6 +101,9 @@ impl TemporaryOverride {
     }
 
     pub fn consume_approval(&mut self, op: &Operation) -> bool {
+        // High 12: 再次检查 is_expired(),覆盖 evaluate → executor → consume 之间的时间窗口。
+        // C12 修复后 consume 在 executor 成功后调用,executor 耗时可能导致 override 过期,
+        // 此处返回 false（不消费）,操作已执行无法回滚,但下次调用会被拒绝。
         if !self.enabled || self.is_expired() {
             return false;
         }
@@ -151,7 +154,7 @@ impl TemporaryOverride {
     }
 
     pub fn extend_duration(mut self, additional_minutes: u32) -> Self {
-        self.expires_at = self.expires_at + chrono::Duration::minutes(additional_minutes as i64);
+        self.expires_at += chrono::Duration::minutes(additional_minutes as i64);
         self
     }
 

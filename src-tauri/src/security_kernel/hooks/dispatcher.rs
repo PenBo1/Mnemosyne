@@ -4,7 +4,7 @@
 // - AgentEngine 与 SubAgentExecutor 需要在 SessionStart/UserPromptSubmit/Stop/
 //   SubagentStart/SubagentStop 等节点派发 hook
 // - 通过 trait 抽象，避免 AgentEngine 直接耦合 HookEngine 的具体实现
-// - 提供 async（AgentEngine async 上下文）与 sync（kernel sync 上下文）两种派发方式
+// - 仅提供 async 派发：所有调用方均在 async 上下文，sync 派发已废弃
 //
 // 集成路径：
 // - AgentEngine 持有 Option<Arc<HookEngine>>（通过 HookDispatcher trait 使用）
@@ -26,11 +26,6 @@ pub trait HookDispatcher: Send + Sync {
     /// 异步派发 hook。aborted 时返回 Err（调用方决定是否中止主流程）。
     async fn dispatch_hook(&self, payload: &HookPayload) -> Result<(), AppError>;
 
-    /// 同步派发 hook（用于非 async 上下文）。
-    /// 内部用 tokio::task::block_in_place + Handle::block_on。
-    /// aborted 时返回 Err。
-    fn dispatch_hook_sync(&self, payload: &HookPayload) -> Result<(), AppError>;
-
     /// 快速检查：registry 是否有已注册 hook。
     /// 空时调用方可跳过 payload 构造与派发，避免无谓开销。
     fn has_hooks(&self) -> bool;
@@ -44,18 +39,6 @@ impl HookDispatcher for HookEngine {
             return Ok(());
         }
         self.dispatch(payload).await?;
-        Ok(())
-    }
-
-    fn dispatch_hook_sync(&self, payload: &HookPayload) -> Result<(), AppError> {
-        if self.registry().count() == 0 {
-            return Ok(());
-        }
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.dispatch(payload).await
-            })
-        })?;
         Ok(())
     }
 

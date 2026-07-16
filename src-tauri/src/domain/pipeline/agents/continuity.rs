@@ -14,6 +14,7 @@
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
+use crate::shared::utils::json::{extract_json_block, match_braces};
 
 use super::super::types::{BookConfig, FanficMode};
 
@@ -238,7 +239,7 @@ fn build_dimension_list_with_notes(
     has_parent_canon: bool,
 ) -> String {
     // 确定激活的维度 id 集合
-    let mut active_ids: Vec<u32> = (1..=27).chain([32, 33].into_iter()).collect();
+    let mut active_ids: Vec<u32> = (1..=27).chain([32, 33]).collect();
 
     // 番外维度：parent_canon 存在且非 fanfic → 激活 28-31
     if has_parent_canon && fanfic_mode.is_none() {
@@ -506,8 +507,8 @@ pub fn parse_audit_result(content: &str) -> AuditResult {
     }
 
     // 策略 3: 提取第一个平衡的 JSON 对象
-    if let Some(json_str) = extract_balanced_json(content) {
-        if let Ok(result) = serde_json::from_str::<AuditResult>(&json_str) {
+    if let Some(json_str) = match_braces(content) {
+        if let Ok(result) = serde_json::from_str::<AuditResult>(json_str) {
             return result;
         }
     }
@@ -527,51 +528,8 @@ pub fn parse_audit_result(content: &str) -> AuditResult {
     }
 }
 
-/// 从 ```json ... ``` 代码块中提取 JSON
-fn extract_json_block(content: &str) -> Option<&str> {
-    let start_marker = "```json";
-    let start = content.find(start_marker)?;
-    let json_start = start + start_marker.len();
-    let end = content[json_start..].find("```")?;
-    Some(content[json_start..json_start + end].trim())
-}
-
-/// 提取第一个平衡的 JSON 对象（不贪婪）
-fn extract_balanced_json(content: &str) -> Option<String> {
-    let start = content.find('{')?;
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-    let bytes = content.as_bytes();
-
-    for (i, &b) in bytes.iter().enumerate().skip(start) {
-        let c = b as char;
-        if escape {
-            escape = false;
-            continue;
-        }
-        if c == '\\' && in_string {
-            escape = true;
-            continue;
-        }
-        if c == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        if in_string {
-            continue;
-        }
-        if c == '{' {
-            depth += 1;
-        } else if c == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(content[start..=i].to_string());
-            }
-        }
-    }
-    None
-}
+// extract_json_block / extract_balanced_json 已收口到 crate::shared::utils::json
+// （extract_json_block / match_braces），见上方 use 声明。
 
 /// 正则兜底：提取 passed / summary / issues
 fn extract_fields_fallback(content: &str) -> Option<AuditResult> {

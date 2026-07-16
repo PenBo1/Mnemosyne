@@ -109,7 +109,7 @@ impl Database {
             )
         ).map_err(db_err)?;
         let rows = stmt.query_map([book_id], map_memory_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 模糊搜索（key 或 value 包含 query 子串）
@@ -134,7 +134,7 @@ impl Database {
             params![book_id, &pattern, &pattern, top_k as i64],
             map_memory_row,
         ).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 删除单条记忆（返回是否命中）

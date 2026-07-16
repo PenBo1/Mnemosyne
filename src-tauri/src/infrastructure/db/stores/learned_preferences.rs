@@ -81,8 +81,8 @@ pub fn confidence_for_count(count: u32) -> f64 {
 
 /// 简单的字符串哈希(用于生成 ID 后缀,保证唯一性)
 ///
-/// 使用 FNV-1a 算法(标准库 std::collections::hash_map::DefaultHasher 的简化版本)
-/// 不引入新依赖,只用于 ID 生成(非加密用途)
+/// 使用标准库 DefaultHasher(基于 SipHash-1-3 算法,非加密用途)
+/// 不引入新依赖,只用于 ID 生成
 fn fxhash(s: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -138,7 +138,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按 key 列出偏好(同一 key 可能有多个 value,如 work_hours=09-18 / 20-23)
@@ -153,7 +153,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([key], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 列出高置信度偏好(>= threshold),用于合并到 UserProfile
@@ -171,7 +171,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map(params![t], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 删除指定偏好(用户主动否认)

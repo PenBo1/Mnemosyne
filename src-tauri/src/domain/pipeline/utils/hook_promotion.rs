@@ -114,37 +114,49 @@ fn split_table_row(line: &str) -> Vec<String> {
 
 /// 统计 hook_id 在 activity_cells 中作为 word 出现的总次数。
 ///
-/// 使用 `\bhookId\b` 正则（兼容中英文 hookId 命名：英文用 \b 边界，
-/// 中文 hookId 字面上包含中文字符时退化为子串匹配 + 边界检查）。
+/// - ASCII hook_id：手动 word-boundary 检查（前后字符不是 `[a-zA-Z0-9_-]`）。
+///   不用 regex `\b`：`-` 是非单词字符，`\b` 会让 "mentor-oath" 误匹配
+///   "mentor-oath-longer"。也不用 lookbehind：Rust `regex` crate 不支持
+///   look-around。
+/// - 非 ASCII hook_id（如含中文）：退化为纯子串匹配（regex 不支持中文 `\b`）。
 fn derive_advanced_count(hook_id: &str, activity_cells: &[String]) -> u32 {
     if hook_id.is_empty() {
         return 0;
     }
-    let pattern = build_hook_id_pattern(hook_id);
-    let re = match regex::Regex::new(&pattern) {
-        Ok(re) => re,
-        Err(_) => return 0,
-    };
     let mut count = 0u32;
     for cell in activity_cells {
-        count += re.find_iter(cell).count() as u32;
+        if hook_id.is_ascii() {
+            count += count_ascii_word_occurrences(cell, hook_id);
+        } else {
+            count += cell.matches(hook_id).count() as u32;
+        }
     }
     count
 }
 
-/// 构建 hookId 匹配正则。
-///
-/// - 纯 ASCII hookId：`\bhookId\b`（词边界）
-/// - 含非 ASCII（如中文）：直接字面匹配（regex 不支持中文 \b）
-fn build_hook_id_pattern(hook_id: &str) -> String {
-    let is_ascii = hook_id.is_ascii();
-    if is_ascii {
-        // 转义特殊字符
-        let escaped = regex::escape(hook_id);
-        format!(r"\b{}\b", escaped)
-    } else {
-        regex::escape(hook_id)
+/// 统计 ASCII needle 在 text 中作为"词"出现的次数。
+/// 词边界：前后字符不是 `[a-zA-Z0-9_-]`。
+fn count_ascii_word_occurrences(text: &str, needle: &str) -> u32 {
+    debug_assert!(needle.is_ascii() && !needle.is_empty());
+    let text_bytes = text.as_bytes();
+    let n = needle.len();
+    let mut count = 0u32;
+    let mut search_from = 0;
+    while let Some(rel) = text[search_from..].find(needle) {
+        let abs = search_from + rel;
+        let after = abs + n;
+        let before_ok = abs == 0 || !is_word_char(text_bytes[abs - 1]);
+        let after_ok = after >= text.len() || !is_word_char(text_bytes[after]);
+        if before_ok && after_ok {
+            count += 1;
+        }
+        search_from = after;
     }
+    count
+}
+
+fn is_word_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
 }
 
 // ── 测试 ─────────────────────────────────────────────────────

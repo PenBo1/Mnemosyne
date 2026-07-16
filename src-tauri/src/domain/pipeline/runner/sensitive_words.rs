@@ -57,7 +57,7 @@ pub fn analyze_sensitive_words(content: &str) -> Vec<AuditIssue> {
 
     for (word, category, severity) in SENSITIVE_WORDS {
         // 英文词用小写匹配，中文词直接匹配
-        let count = if word.chars().all(|c| c.is_ascii()) {
+        let count = if word.is_ascii() {
             lower.matches(&word.to_lowercase()).count()
         } else {
             content.matches(*word).count()

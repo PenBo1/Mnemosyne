@@ -10,9 +10,11 @@
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
+use crate::shared::utils::json::extract_json_block;
 
 use super::super::state::types::RuntimeStateDelta;
 use super::super::types::BookConfig;
+use super::super::utils::text_parse::{count_non_whitespace_chars, extract_section};
 
 /// Writer 输出（3-phase 合并结果）
 #[derive(Debug, Clone)]
@@ -78,7 +80,7 @@ pub async fn write_chapter(
     let post_settlement = settle_output.post_settlement;
     let runtime_state_delta = settle_output.runtime_state_delta;
 
-    let word_count = count_chars(&creative.content);
+    let word_count = count_non_whitespace_chars(&creative.content);
 
     Ok(WriterOutput {
         chapter_number,
@@ -622,37 +624,8 @@ fn parse_delta_json(json_str: &str) -> Result<RuntimeStateDelta, AppError> {
 }
 
 // ── 通用工具函数 ─────────────────────────────────────────────
-
-/// 从 === TAG === 格式中提取区块内容
-fn extract_section(content: &str, tag: &str) -> Option<String> {
-    let marker = format!("=== {} ===", tag);
-    let start = content.find(&marker)?;
-    let content_start = start + marker.len();
-
-    // 找下一个 === TAG === 或文本结尾
-    let remaining = &content[content_start..];
-    let end = remaining
-        .find("\n=== ")
-        .map(|pos| content_start + pos)
-        .unwrap_or(content.len());
-
-    Some(content[content_start..end].trim().to_string())
-}
-
-/// 从 ```json ... ``` 代码块中提取 JSON
-fn extract_json_block(content: &str) -> Option<&str> {
-    let start_marker = "```json";
-    let start = content.find(start_marker)?;
-    let json_start = start + start_marker.len();
-    let end = content[json_start..].find("```")?;
-    Some(content[json_start..json_start + end].trim())
-}
-
-/// 统计字数（中文按字符数，英文按空格分词）
-fn count_chars(content: &str) -> u32 {
-    // 简化版：统计非空白字符数
-    content.chars().filter(|c| !c.is_whitespace()).count() as u32
-}
+// extract_section / extract_json_block / count_non_whitespace_chars 已收口到
+// utils::text_parse 与 shared::utils::json，见上方 use 声明。
 
 #[cfg(test)]
 mod tests {

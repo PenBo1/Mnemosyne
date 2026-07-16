@@ -129,7 +129,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([role], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 列出所有 role 的归档,按 archived_at 倒序
@@ -140,7 +140,7 @@ impl Database {
             SELECT_COLUMNS
         )).map_err(db_err)?;
         let rows = stmt.query_map([], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 在 content_summary 中搜索(LIKE %query%),按 role 过滤
@@ -164,7 +164,7 @@ impl Database {
         )).map_err(db_err)?;
         let pattern = format!("%{}%", trimmed);
         let rows = stmt.query_map(params![role, pattern], map_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按 id 查找单条归档(用于 read_archive / delete_archive 前取文件路径)

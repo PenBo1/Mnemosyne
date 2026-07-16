@@ -8,6 +8,7 @@
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
+use crate::shared::utils::json::{extract_json_block, match_braces};
 
 /// 大纲段落候选
 #[derive(Debug, Clone)]
@@ -78,7 +79,7 @@ pub async fn select_outline_sections(
         .iter()
         .map(|c| c.source.as_str())
         .collect();
-    let selected = parse_selected_sources(&response);
+    let selected = parse_selected_sources(&response)?;
     Ok(selected
         .into_iter()
         .filter(|s| allowed.contains(s.as_str()))
@@ -231,79 +232,40 @@ fn render_context_entries(entries: &[ContextEntry]) -> String {
 }
 
 /// 从 LLM 输出解析 selectedSources JSON。
-/// 多策略：纯JSON → ```json代码块 → 平衡大括号提取 → 空数组兜底。
-fn parse_selected_sources(content: &str) -> Vec<String> {
+/// 多策略：纯JSON → ```json代码块 → 平衡大括号提取 → 失败返回错误（不再静默兜底空数组）。
+fn parse_selected_sources(content: &str) -> Result<Vec<String>, AppError> {
     let trimmed = content.trim();
 
     // 策略 1: 整体作为 JSON
     if let Ok(parsed) = serde_json::from_str::<SelectedSourcesJson>(trimmed) {
-        return parsed.selected_sources;
+        return Ok(parsed.selected_sources);
     }
 
-    // 策略 2: 提取 ```json ... ``` 代码块
-    if let Some(json_str) = extract_json_code_block(trimmed) {
+    // 策略 2: 提取 ```json ... ``` 代码块（shared 版内部回退到 match_braces）
+    if let Some(json_str) = extract_json_block(trimmed) {
         if let Ok(parsed) = serde_json::from_str::<SelectedSourcesJson>(json_str) {
-            return parsed.selected_sources;
+            return Ok(parsed.selected_sources);
         }
     }
 
     // 策略 3: 提取第一个平衡的 { ... } 对象
-    if let Some(json_str) = extract_balanced_json(trimmed) {
-        if let Ok(parsed) = serde_json::from_str::<SelectedSourcesJson>(&json_str) {
-            return parsed.selected_sources;
+    if let Some(json_str) = match_braces(trimmed) {
+        if let Ok(parsed) = serde_json::from_str::<SelectedSourcesJson>(json_str) {
+            return Ok(parsed.selected_sources);
         }
     }
 
-    // 策略 4: 兜底空数组
-    Vec::new()
+    // 所有策略失败 → 显式错误（不再静默兜底）
+    Err(AppError::invalid_format(format!(
+        "parse_selected_sources: 无法从 LLM 响应中解析 selectedSources JSON（响应前 200 字符：{}）",
+        trimmed.chars().take(200).collect::<String>()
+    )))
 }
 
 #[derive(serde::Deserialize)]
 struct SelectedSourcesJson {
     #[serde(default, rename = "selectedSources")]
     selected_sources: Vec<String>,
-}
-
-fn extract_json_code_block(content: &str) -> Option<&str> {
-    let start_marker = "```json";
-    let start = content.find(start_marker)?;
-    let json_start = start + start_marker.len();
-    let end = content[json_start..].find("```")?;
-    Some(content[json_start..json_start + end].trim())
-}
-
-fn extract_balanced_json(content: &str) -> Option<String> {
-    let start = content.find('{')?;
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-
-    for (i, c) in content[start..].char_indices() {
-        if escape {
-            escape = false;
-            continue;
-        }
-        if c == '\\' && in_string {
-            escape = true;
-            continue;
-        }
-        if c == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        if in_string {
-            continue;
-        }
-        if c == '{' {
-            depth += 1;
-        } else if c == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(content[start..start + i + c.len_utf8()].to_string());
-            }
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -345,36 +307,36 @@ mod tests {
     #[test]
     fn parses_pure_json() {
         let content = r#"{"selectedSources":["a","b"]}"#;
-        let result = parse_selected_sources(content);
+        let result = parse_selected_sources(content).unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 
     #[test]
     fn parses_json_code_block() {
         let content = "```json\n{\"selectedSources\":[\"a\"]}\n```";
-        let result = parse_selected_sources(content);
+        let result = parse_selected_sources(content).unwrap();
         assert_eq!(result, vec!["a".to_string()]);
     }
 
     #[test]
     fn parses_balanced_json_with_prefix() {
         let content = "前文 {\"selectedSources\":[\"x\"]} 后文";
-        let result = parse_selected_sources(content);
+        let result = parse_selected_sources(content).unwrap();
         assert_eq!(result, vec!["x".to_string()]);
     }
 
     #[test]
-    fn parses_invalid_returns_empty() {
-        // 非 JSON 且不含平衡大括号 → 兜底空数组
+    fn parses_invalid_returns_err() {
+        // 非 JSON 且不含平衡大括号 → 显式错误（不再静默兜底空数组）
         let result = parse_selected_sources("not json");
-        assert!(result.is_empty());
+        assert!(result.is_err());
     }
 
     #[test]
     fn parses_empty_array_field() {
         // selectedSources 为空数组 → 返回空 Vec
         let content = r#"{"selectedSources":[]}"#;
-        let result = parse_selected_sources(content);
+        let result = parse_selected_sources(content).unwrap();
         assert!(result.is_empty());
     }
 
@@ -382,32 +344,32 @@ mod tests {
     fn parses_missing_field_defaults_empty() {
         // 缺少 selectedSources 字段 → serde default 给空 Vec
         let content = r#"{"other":"value"}"#;
-        let result = parse_selected_sources(content);
+        let result = parse_selected_sources(content).unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn extract_json_code_block_finds_block() {
+    fn extract_json_block_finds_code_block() {
         let content = "prefix\n```json\n{\"a\":1}\n```\nsuffix";
-        assert_eq!(extract_json_code_block(content), Some("{\"a\":1}"));
+        assert_eq!(extract_json_block(content), Some("{\"a\":1}"));
     }
 
     #[test]
-    fn extract_json_code_block_returns_none_without_marker() {
-        assert_eq!(extract_json_code_block("no code block here"), None);
+    fn extract_json_block_returns_none_without_marker() {
+        assert_eq!(extract_json_block("no code block here"), None);
     }
 
     #[test]
-    fn extract_balanced_json_handles_nested() {
+    fn match_braces_handles_nested() {
         // 嵌套大括号 + 字符串内的 } 不应提前闭合
         let content = r#"prefix {"a":{"b":"}"},"c":1} suffix"#;
-        let result = extract_balanced_json(content);
-        assert_eq!(result.as_deref(), Some(r#"{"a":{"b":"}"},"c":1}"#));
+        let result = match_braces(content);
+        assert_eq!(result, Some(r#"{"a":{"b":"}"},"c":1}"#));
     }
 
     #[test]
-    fn extract_balanced_json_returns_none_without_brace() {
-        assert_eq!(extract_balanced_json("no braces here"), None);
+    fn match_braces_returns_none_without_brace() {
+        assert_eq!(match_braces("no braces here"), None);
     }
 
     #[test]

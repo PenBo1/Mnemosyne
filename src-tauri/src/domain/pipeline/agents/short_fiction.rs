@@ -284,8 +284,7 @@ pub async fn generate_package(
 
 fn build_outline_system_prompt(language: Language) -> String {
     if language == Language::En {
-        vec![
-            "你是短篇网文的主编。你的工作是把一条创作方向变成一份完整的短篇故事方案，最终成稿用英文撰写。",
+        ["你是短篇网文的主编。你的工作是把一条创作方向变成一份完整的短篇故事方案，最终成稿用英文撰写。",
             "只能基于本方向与用户提供的参考文本创作；永远不要声称读过、引用过、继承过未提供的素材。",
             "内容为王：标题、开篇、压在主角身上的压力、证据/关系/身份筹码、升级链、反转链、回报落地，都必须强到足以支撑一次性整篇成稿。",
             "不要过度结构化，不要输出 JSON/YAML。写人类可读的 Markdown，但章节方案必须密到让写手能一次性写出整篇故事。",
@@ -294,11 +293,9 @@ fn build_outline_system_prompt(language: Language) -> String {
             "- NEVER 声称读过、引用过或继承过用户未提供的素材。",
             "- NEVER 输出 JSON/YAML 或用过度结构化清单替代故事方案。",
             "- NEVER 把短篇写成「小说起手前 5 章」；必须有完整开端—升级—反转—回报闭环。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     } else {
-        vec![
-            "你是短篇网文的主编。你的工作是把一条创作方向变成一份完整的短篇故事方案。方案与最终正文均用简体中文撰写。",
+        ["你是短篇网文的主编。你的工作是把一条创作方向变成一份完整的短篇故事方案。方案与最终正文均用简体中文撰写。",
             "只能基于本方向与用户提供的参考文本创作；永远不要声称读过、引用过、继承过未提供的素材。",
             "内容为王：标题、开篇、压在主角身上的压力、证据/关系/身份筹码、升级链、反转链、回报落地，都必须强到足以支撑一次性整篇成稿。",
             "不要过度结构化，不要输出 JSON/YAML。写人类可读的 Markdown，但章节方案必须密到让写手能一次性写出整篇故事。",
@@ -307,8 +304,7 @@ fn build_outline_system_prompt(language: Language) -> String {
             "- NEVER 声称读过、引用过或继承过用户未提供的素材。",
             "- NEVER 输出 JSON/YAML 或用过度结构化清单替代故事方案。",
             "- NEVER 把短篇写成「小说起手前 5 章」；必须有完整开端—升级—反转—回报闭环。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     }
 }
 
@@ -379,8 +375,7 @@ fn build_outline_user_prompt(input: &ShortFictionOutlineInput) -> String {
 
 fn build_outline_review_system_prompt(language: Language) -> String {
     if language == Language::En {
-        vec![
-            "你是短篇故事方案审稿人。你不打分，也不查重。",
+        ["你是短篇故事方案审稿人。你不打分，也不查重。",
             "你的工作是判断这份故事方案能否支撑一次性整篇成稿：题材引擎是否清晰、人物动机是否成立、压力链是否升级、对手反扑是否可信、结局回报是否足够大。",
             "像真实读者和真实编辑那样审稿，不要做清单机器。",
             "输出 Markdown。点名会让成稿塌掉的缺陷，以及值得保留的优点。",
@@ -388,11 +383,9 @@ fn build_outline_review_system_prompt(language: Language) -> String {
             "- NEVER 打分或查重；那是别的环节的事。",
             "- NEVER 把审稿变成清单勾选；必须像真人读者一样判断。",
             "- NEVER 仅凭字数或长度否定方案；先判断内容是否完整、戏剧是否到位。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     } else {
-        vec![
-            "你是短篇故事方案审稿人。你不打分，也不查重。审稿意见用简体中文撰写。",
+        ["你是短篇故事方案审稿人。你不打分，也不查重。审稿意见用简体中文撰写。",
             "你的工作是判断这份故事方案能否支撑一次性整篇成稿：题材引擎是否清晰、人物动机是否成立、压力链是否升级、对手反扑是否可信、结局回报是否足够大。",
             "像真实读者和真实编辑那样审稿，不要做清单机器。",
             "输出 Markdown（简体中文）。点名会让成稿塌掉的缺陷，以及值得保留的优点。",
@@ -400,8 +393,7 @@ fn build_outline_review_system_prompt(language: Language) -> String {
             "- NEVER 打分或查重；那是别的环节的事。",
             "- NEVER 把审稿变成清单勾选；必须像真人读者一样判断。",
             "- NEVER 仅凭字数或长度否定方案；先判断内容是否完整、戏剧是否到位。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     }
 }
 
@@ -508,8 +500,7 @@ fn build_outline_revision_followup(input: &ShortFictionOutlineRevisionInput) -> 
 
 fn build_writer_system_prompt(language: Language) -> String {
     if language == Language::En {
-        vec![
-            "你是英文短篇 BatchWriter。按故事方案，在一次 API 调用内写出整篇短篇正文。",
+        ["你是英文短篇 BatchWriter。按故事方案，在一次 API 调用内写出整篇短篇正文。",
             "写自然、地道的英文散文。句长要有变化；短促有力的句子与较长流畅的句子交替，叙事声音全篇保持一致。",
             "这不是长篇连载续写，也不是章节梗概。每一章都要有戏剧在场上发生：人物行动、对白或反应、情境转变、章末让人继续读的理由。",
             "戏剧强度要拉满，网文风格：现实压力可以放大到读者仍愿相信的极限，但绝不能荒诞到打破沉浸。",
@@ -520,11 +511,9 @@ fn build_writer_system_prompt(language: Language) -> String {
             "- NEVER 写成梗概或章节大纲；每章必须有真实场景在场上发生。",
             "- NEVER 输出指定块之外的作者注、字数说明或审稿意见。",
             "- NEVER 中途拐到另一个故事；必须承接方案的压力链、证据链、反转链与情感回报。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     } else {
-        vec![
-            "你是简体中文短篇 BatchWriter。按故事方案，在一次 API 调用内写出整篇短篇正文。",
+        ["你是简体中文短篇 BatchWriter。按故事方案，在一次 API 调用内写出整篇短篇正文。",
             "这不是长篇连载续写，也不是章节梗概。每一章都要有戏剧在场上发生：人物行动、对白或反应、情境转变、章末让人继续读的理由。",
             "戏剧强度要拉满，网文风格：现实压力可以放大到读者仍愿相信的极限，但绝不能荒诞到打破沉浸。",
             "故事标题与章节标题要像平台内容，而不是文学摘要。散文节奏要适配手机阅读——短段落，但绝不写成电报式片段。",
@@ -534,8 +523,7 @@ fn build_writer_system_prompt(language: Language) -> String {
             "- NEVER 写成梗概或章节大纲；每章必须有真实场景在场上发生。",
             "- NEVER 输出指定块之外的作者注、字数说明或审稿意见。",
             "- NEVER 中途拐到另一个故事；必须承接方案的压力链、证据链、反转链与情感回报。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     }
 }
 
@@ -694,8 +682,7 @@ fn build_draft_continuation_user_prompt(
 
 fn build_draft_review_system_prompt(language: Language) -> String {
     if language == Language::En {
-        vec![
-            "你是短篇草稿审稿人。",
+        ["你是短篇草稿审稿人。",
             "你只判断内容能否卖得动、读得顺、能不能持续拉着读者往前；不要把审稿变成确定性打分。",
             "关注：标题、章节标题、开篇、人物动机、时间线、关系、证据与获取、压力升级、对手反扑、下半篇是否疲软、结局回报是否落地。",
             "输出 Markdown。把会让读者明显弃读的问题与可接受的小瑕疵分开。",
@@ -703,11 +690,9 @@ fn build_draft_review_system_prompt(language: Language) -> String {
             "- NEVER 把审稿变成确定性打分；那是别的环节的事。",
             "- NEVER 仅凭字数微偏否定章节；先判断内容是否完整、戏剧是否到位、回报是否落地。",
             "- NEVER 把小瑕疵与致命问题混在一起；必须分开列出。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     } else {
-        vec![
-            "你是短篇草稿审稿人。审稿意见用简体中文撰写。",
+        ["你是短篇草稿审稿人。审稿意见用简体中文撰写。",
             "你只判断内容能否卖得动、读得顺、能不能持续拉着读者往前；不要把审稿变成确定性打分。",
             "关注：标题、章节标题、开篇、人物动机、时间线、关系、证据与获取、压力升级、对手反扑、下半篇是否疲软、结局回报是否落地。",
             "输出 Markdown（简体中文）。把会让读者明显弃读的问题与可接受的小瑕疵分开。",
@@ -715,16 +700,14 @@ fn build_draft_review_system_prompt(language: Language) -> String {
             "- NEVER 把审稿变成确定性打分；那是别的环节的事。",
             "- NEVER 仅凭字数微偏否定章节；先判断内容是否完整、戏剧是否到位、回报是否落地。",
             "- NEVER 把小瑕疵与致命问题混在一起；必须分开列出。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     }
 }
 
 fn build_draft_review_user_prompt(input: &ShortFictionDraftReviewInput) -> String {
     let draft_md = render_draft_markdown(&input.draft, input.language);
     if input.language == Language::En {
-        vec![
-            "## 创作方向",
+        ["## 创作方向",
             &input.direction,
             "",
             "## 原始故事方案",
@@ -735,12 +718,10 @@ fn build_draft_review_user_prompt(input: &ShortFictionDraftReviewInput) -> Strin
             "",
             "## 审稿说明",
             "像真人那样说话：哪里拉着读者走、哪里打破沉浸、哪里读起来像梗概、下半篇哪里疲软、哪个标题或章节标题没人会点？",
-            "绝不要仅凭章节略短或略长就否定；先判断内容是否完整、戏剧是否到位、回报是否落地。",
-        ]
+            "绝不要仅凭章节略短或略长就否定；先判断内容是否完整、戏剧是否到位、回报是否落地。"]
         .join("\n")
     } else {
-        vec![
-            "## 创作方向",
+        ["## 创作方向",
             &input.direction,
             "",
             "## 原始故事方案",
@@ -751,8 +732,7 @@ fn build_draft_review_user_prompt(input: &ShortFictionDraftReviewInput) -> Strin
             "",
             "## 审稿说明",
             "像真人那样说话：哪里拉着读者走、哪里打破沉浸、哪里读起来像梗概、下半篇哪里疲软、哪个标题或章节标题没人会点？审稿意见用简体中文撰写。",
-            "绝不要仅凭章节略短或略长就否定；先判断内容是否完整、戏剧是否到位、回报是否落地。",
-        ]
+            "绝不要仅凭章节略短或略长就否定；先判断内容是否完整、戏剧是否到位、回报是否落地。"]
         .join("\n")
     }
 }
@@ -823,27 +803,23 @@ fn build_draft_revision_followup(input: &ShortFictionDraftRevisionInput) -> Stri
 
 fn build_package_system_prompt(language: Language) -> String {
     if language == Language::En {
-        vec![
-            "你是短篇包装编辑。基于终稿产出简介、卖点和封面图提示词。",
+        ["你是短篇包装编辑。基于终稿产出简介、卖点和封面图提示词。",
             "永远不要编造与终稿不同的主标题。所有包装必须围绕终稿实际标题与剧情。",
             "把封面提示词想象成手机端竖屏书封：3:4 竖屏、大标题区、强角色情绪、一两个一眼可辨的道具、高对比配色——不要电影海报风。",
             "<safety>",
             "- NEVER 编造与终稿不同的主标题；包装必须围绕终稿实际标题与剧情。",
             "- NEVER 把封面提示词写成电影海报风或宽屏横版；必须是 3:4 竖屏手机书封。",
             "- NEVER 在简介里剧透完整剧情走向；只抓冲突、压力与回报。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     } else {
-        vec![
-            "你是短篇包装编辑。基于终稿产出简介、卖点和封面图提示词。简介与卖点用简体中文撰写。",
+        ["你是短篇包装编辑。基于终稿产出简介、卖点和封面图提示词。简介与卖点用简体中文撰写。",
             "永远不要编造与终稿不同的主标题。所有包装必须围绕终稿实际标题与剧情。",
             "把封面提示词想象成手机端竖屏书封：3:4 竖屏、大标题区、强角色情绪、一两个一眼可辨的道具、高对比配色——不要电影海报风。",
             "<safety>",
             "- NEVER 编造与终稿不同的主标题；包装必须围绕终稿实际标题与剧情。",
             "- NEVER 把封面提示词写成电影海报风或宽屏横版；必须是 3:4 竖屏手机书封。",
             "- NEVER 在简介里剧透完整剧情走向；只抓冲突、压力与回报。",
-            "</safety>",
-        ].join("\n")
+            "</safety>"].join("\n")
     }
 }
 
@@ -898,8 +874,7 @@ fn build_package_user_prompt(input: &ShortFictionPackageInput) -> String {
 
 fn build_craft_prompt(language: Language) -> String {
     if language == Language::En {
-        vec![
-            "## 写作技艺提醒",
+        ["## 写作技艺提醒",
             "- 盐溶于汤：价值观与野心通过行动体现，绝不通过口号。",
             "- 展示而非告知：让行为、证据、具体细节和舞台调度让读者感受到角色状态。",
             "- 慎用比喻：不要把 \"like / as if / as though\" 当作默认修辞——每场至多一处比喻；优先用精准动词和具体行动，而非比喻。",
@@ -909,11 +884,9 @@ fn build_craft_prompt(language: Language) -> String {
             "- 回报需要铺垫：每个反转、报应、和解、复仇或身份揭示都必须依托证据链与因果链。",
             "- 配角也要有动机：即使是压迫者，也是出于利益、误判或恐惧——绝不当无脑剧情工具。",
             "- 日常细节要变成饵：每个细节都要承载证据、情感、人物塑造或后续反转。",
-            "- 移动优先：短段落、高信息密度，不要空泛抒情或装饰性填充。",
-        ].join("\n")
+            "- 移动优先：短段落、高信息密度，不要空泛抒情或装饰性填充。"].join("\n")
     } else {
-        vec![
-            "## 写作技艺提醒",
+        ["## 写作技艺提醒",
             "- 盐溶于汤：价值观与野心通过行动体现，绝不通过口号。",
             "- 展示而非告知：让行为、证据、具体细节和舞台调度让读者感受到角色状态。",
             "- 慎用比喻：不要把 \"像 / 仿佛 / 如同\" 当作默认修辞——每场至多一处比喻；优先用精准动词和具体行动，而非比喻。",
@@ -922,8 +895,7 @@ fn build_craft_prompt(language: Language) -> String {
             "- 回报需要铺垫：每个反转、报应、和解、复仇或身份揭示都必须依托证据链与因果链。",
             "- 配角也要有动机：即使是压迫者，也是出于利益、误判或恐惧——绝不当无脑剧情工具。",
             "- 日常细节要变成饵：每个细节都要承载证据、情感、人物塑造或后续反转。",
-            "- 移动优先：短段落、高信息密度，不要空泛抒情或装饰性填充。",
-        ].join("\n")
+            "- 移动优先：短段落、高信息密度，不要空泛抒情或装饰性填充。"].join("\n")
     }
 }
 
@@ -1173,7 +1145,7 @@ pub fn count_chapter_length(content: &str, language: Language) -> u32 {
 /// 公式：max(12288, ceil(chapters * chars_per_chapter * 2.2) + 4096)
 pub fn estimate_short_fiction_max_tokens(chapter_count: u32, chars_per_chapter: u32) -> u64 {
     let product = (chapter_count as u64) * (chars_per_chapter as u64) * 22;
-    let estimated = (product + 9) / 10 + 4096;
+    let estimated = product.div_ceil(10) + 4096;
     std::cmp::max(12288, estimated)
 }
 
@@ -1196,7 +1168,7 @@ fn extract_last_nonempty_tagged_block(content: &str, tag: &str) -> Option<String
         .into_iter()
         .map(|b| b.trim().to_string())
         .filter(|b| !b.is_empty())
-        .last()
+        .next_back()
 }
 
 /// 提取所有 `=== TAG ===` 标签块。

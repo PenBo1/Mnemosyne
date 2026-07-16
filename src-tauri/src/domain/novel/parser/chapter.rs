@@ -102,7 +102,7 @@ fn extract_br_paragraphs(html: &str, paragraph_tag: &str) -> Vec<String> {
         Err(_) => return Vec::new(),
     };
     re.split(html)
-        .map(|s| strip_tags(s))
+        .map(strip_tags)
         .map(|s| decode_html_entities(&s))
         .collect()
 }

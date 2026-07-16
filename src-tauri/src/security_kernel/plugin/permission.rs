@@ -265,7 +265,7 @@ impl NetworkPermission {
 
     pub fn from_hosts(hosts: Vec<String>, allow_localhost: bool) -> Self {
         let endpoints = hosts.into_iter()
-            .map(|h| NetworkEndpoint::https(h))
+            .map(NetworkEndpoint::https)
             .collect();
         Self { endpoints, allow_localhost }
     }

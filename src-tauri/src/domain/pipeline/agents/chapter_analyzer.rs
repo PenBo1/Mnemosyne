@@ -11,6 +11,7 @@ use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
 
 use super::super::types::BookConfig;
+use super::super::utils::text_parse::extract_section;
 
 /// ChapterAnalyzer 输出（11 个 === TAG === 区块）
 #[derive(Debug, Clone, Default)]
@@ -254,21 +255,6 @@ fn parse_output(content: &str) -> AnalyzerOutput {
         updated_emotional_arcs: extract_section(content, "UPDATED_EMOTIONAL_ARCS").unwrap_or_default(),
         updated_character_matrix: extract_section(content, "UPDATED_CHARACTER_MATRIX").unwrap_or_default(),
     }
-}
-
-/// 从 === TAG === 标记中提取区块内容
-fn extract_section(content: &str, tag: &str) -> Option<String> {
-    let marker = format!("=== {} ===", tag);
-    let start = content.find(&marker)?;
-    let content_start = start + marker.len();
-
-    let remaining = &content[content_start..];
-    let end = remaining
-        .find("\n=== ")
-        .map(|pos| content_start + pos)
-        .unwrap_or(content.len());
-
-    Some(content[content_start..end].trim().to_string())
 }
 
 #[cfg(test)]

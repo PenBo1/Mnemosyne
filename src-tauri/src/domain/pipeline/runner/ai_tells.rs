@@ -42,8 +42,8 @@ pub fn analyze_ai_tells(content: &str, language: Language) -> Vec<AuditIssue> {
         .filter(|p| !p.is_empty())
         .collect();
 
-    // dim 20: 段落长度均匀度（需 ≥3 段）
-    if paragraphs.len() >= 3 {
+    // dim 20: 段落长度均匀度（需 ≥5 段；短文本 <5 段跳过避免噪声）
+    if paragraphs.len() >= 5 {
         let lengths: Vec<f32> = paragraphs.iter().map(|p| p.chars().count() as f32).collect();
         let mean = lengths.iter().sum::<f32>() / lengths.len() as f32;
         if mean > 0.0 {
@@ -257,8 +257,8 @@ mod tests {
 
     #[test]
     fn detects_uniform_paragraphs() {
-        // 三个长度几乎相同的段落
-        let content = "一二三四五六七八九十一。\n\n一二三四五六七八九十二。\n\n一二三四五六七八九十三。";
+        // 五个长度几乎相同的段落（满足 dim 20 的 ≥5 段阈值）
+        let content = "一二三四五六七八九十一。\n\n一二三四五六七八九十二。\n\n一二三四五六七八九十三。\n\n一二三四五六七八九十四。\n\n一二三四五六七八九十五。";
         let issues = analyze_ai_tells(content, Language::Zh);
         assert!(
             issues.iter().any(|i| i.category == "段落等长"),

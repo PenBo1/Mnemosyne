@@ -61,10 +61,19 @@ pub fn set_log_level(state: State<'_, DbState>, level: String) -> Result<IpcResp
 
     let config_path = state.data_dir.config_path();
 
-    let mut json: serde_json::Value = if let Ok(data) = std::fs::read_to_string(&config_path) {
-        serde_json::from_str(&data).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
+    // 区分"文件不存在（首次运行，用 {} 兜底）"与"文件存在但解析失败（损坏，报错）"。
+    // 原实现用 unwrap_or(json!({})) 静默吞掉解析错误，导致配置损坏后用户无感知。
+    let mut json: serde_json::Value = match std::fs::read_to_string(&config_path) {
+        Ok(data) => serde_json::from_str(&data).map_err(|e| {
+            AppError::invalid_format(format!(
+                "Config file is corrupt at {}: {} \
+                 (fix or delete the file manually)",
+                config_path.display(),
+                e
+            ))
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(e) => return Err(AppError::internal(format!("Failed to read config: {}", e))),
     };
 
     if json.get("system").is_none() {
@@ -102,10 +111,17 @@ pub fn get_git_enabled(state: State<'_, DbState>) -> Result<IpcResponse<bool>, A
 #[tauri::command]
 pub fn set_git_enabled(state: State<'_, DbState>, enabled: bool) -> Result<IpcResponse<()>, AppError> {
     let config_path = state.data_dir.config_path();
-    let mut json: serde_json::Value = if let Ok(data) = std::fs::read_to_string(&config_path) {
-        serde_json::from_str(&data).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
+    // 同 set_log_level：解析失败时显式报错而非静默回退
+    let mut json: serde_json::Value = match std::fs::read_to_string(&config_path) {
+        Ok(data) => serde_json::from_str(&data).map_err(|e| {
+            AppError::invalid_format(format!(
+                "Config file is corrupt at {}: {}",
+                config_path.display(),
+                e
+            ))
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(e) => return Err(AppError::internal(format!("Failed to read config: {}", e))),
     };
     if json.get("system").is_none() {
         json["system"] = serde_json::json!({});

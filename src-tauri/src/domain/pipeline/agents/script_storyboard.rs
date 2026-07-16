@@ -568,8 +568,7 @@ fn build_script_user_prompt(input: &ScriptCreationInput, language: Language) -> 
         });
 
     if language == Language::En {
-        vec![
-            "## Creation Spec",
+        ["## Creation Spec",
             &spec,
             "",
             "## Full Source Material",
@@ -580,12 +579,10 @@ fn build_script_user_prompt(input: &ScriptCreationInput, language: Language) -> 
             "",
             "## Script",
             "",
-            r#"Follow the target format. Vertical short drama: "Episode N / scene slug / characters / action / dialogue / end-of-episode hook". Standard screenplay: "scene heading / action / character / dialogue"."#,
-        ]
+            r#"Follow the target format. Vertical short drama: "Episode N / scene slug / characters / action / dialogue / end-of-episode hook". Standard screenplay: "scene heading / action / character / dialogue"."#]
         .join("\n")
     } else {
-        vec![
-            "## 创作规格",
+        ["## 创作规格",
             &spec,
             "",
             "## 完整原作素材",
@@ -596,8 +593,7 @@ fn build_script_user_prompt(input: &ScriptCreationInput, language: Language) -> 
             "",
             "## 剧本",
             "",
-            r#"按目标格式输出（简体中文）。竖屏短剧：「第N集 / 场次 / 人物 / 动作 / 对白 / 集尾钩子」。标准剧本：「场景标题 / 动作 / 角色 / 对白」"#,
-        ]
+            r#"按目标格式输出（简体中文）。竖屏短剧：「第N集 / 场次 / 人物 / 动作 / 对白 / 集尾钩子」。标准剧本：「场景标题 / 动作 / 角色 / 对白」"#]
         .join("\n")
     }
 }
@@ -899,21 +895,26 @@ fn summarize_source_for_spec(source_text: &Option<String>, language: Language) -
 /// 归一化标题文本。
 fn normalize_heading_text(text: &str) -> String {
     let trimmed = text.trim();
-    // 去首尾 ** 包裹
-    let de_bolded = if trimmed.starts_with("**") && trimmed.ends_with("**") && trimmed.len() > 4 {
-        &trimmed[2..trimmed.len() - 2]
-    } else {
-        trimmed
+    // 去首尾 ** 包裹（使用 strip_prefix/strip_suffix 避免 byte slicing panic；
+    // 仅当去包裹后仍有内容时才剥离，避免把 "***" 之类剥成空串）
+    let de_bolded: &str = match trimmed
+        .strip_prefix("**")
+        .and_then(|s| s.strip_suffix("**"))
+    {
+        Some(inner) if !inner.is_empty() => inner,
+        _ => trimmed,
     };
     // 去 markdown 标记字符 ` * _
     let de_marked: String = de_bolded
         .chars()
         .filter(|&c| c != '`' && c != '*' && c != '_')
         .collect();
-    // 合并空白并小写
-    let collapsed = regex::Regex::new(r"\s+")
-        .map(|re| re.replace_all(&de_marked, " ").to_string())
-        .unwrap_or(de_marked);
+    // 合并空白并小写（缓存正则避免重复编译）
+    static WS_PLUS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let collapsed = WS_PLUS
+        .get_or_init(|| regex::Regex::new(r"\s+").expect("valid ws+ regex"))
+        .replace_all(&de_marked, " ")
+        .to_string();
     collapsed.trim().to_lowercase()
 }
 

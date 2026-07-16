@@ -7,6 +7,8 @@
 //   - run_post_write_checks_with_config: 完整校验（content-only + 配置依赖）
 //   - detect_cross_chapter_repetition: 跨章重复检测（独立入口）
 
+use std::sync::OnceLock;
+
 use crate::domain::pipeline::agents::continuity::{AuditIssue, IssueSeverity, RepairScope};
 use crate::domain::pipeline::types::Language;
 use crate::shared::error::AppError;
@@ -52,6 +54,44 @@ const EN_AI_TELL_WORDS: &[&str] = &[
     "vibrant", "embark", "comprehensive", "nuanced",
 ];
 
+// ── 正则缓存（OnceLock，避免每章/每次调用重新编译）─────────
+
+/// 缓存 META_NARRATION_PATTERNS 编译后的 Vec<Regex>
+static META_NARRATION_REGEXES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+fn meta_narration_regexes() -> &'static [regex::Regex] {
+    META_NARRATION_REGEXES.get_or_init(|| {
+        META_NARRATION_PATTERNS
+            .iter()
+            .map(|p| regex::Regex::new(p).expect("valid meta-narration regex"))
+            .collect()
+    })
+}
+
+/// 缓存 COLLECTIVE_SHOCK_PATTERNS 编译后的 Vec<Regex>
+static COLLECTIVE_SHOCK_REGEXES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+fn collective_shock_regexes() -> &'static [regex::Regex] {
+    COLLECTIVE_SHOCK_REGEXES.get_or_init(|| {
+        COLLECTIVE_SHOCK_PATTERNS
+            .iter()
+            .map(|p| regex::Regex::new(p).expect("valid collective-shock regex"))
+            .collect()
+    })
+}
+
+/// 缓存 EN_AI_TELL_WORDS 编译后的 Vec<Regex>（含 word boundary）
+static EN_AI_TELL_REGEXES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+fn en_ai_tell_regexes() -> &'static [regex::Regex] {
+    EN_AI_TELL_REGEXES.get_or_init(|| {
+        EN_AI_TELL_WORDS
+            .iter()
+            .map(|w| {
+                regex::Regex::new(&format!(r"(?i)\b{}\b", w))
+                    .expect("valid word-boundary regex")
+            })
+            .collect()
+    })
+}
+
 // ── normalize / assert ───────────────────────────────────────
 
 /// 归一化 post-write 表面文本：剥离 meta 备注行 + 替换破折号（仅 zh）。
@@ -63,8 +103,11 @@ pub fn normalize_post_write_surface(content: &str, language: Language) -> String
     let normalized = if matches!(language, Language::En) {
         stripped
     } else {
-        // 替换 2+ 连续破折号为逗号
-        let re = regex::Regex::new(r"——+").expect("valid em-dash regex");
+        // 替换 2+ 连续破折号为逗号（缓存正则避免重复编译）
+        static EM_DASH: OnceLock<regex::Regex> = OnceLock::new();
+        let re = EM_DASH.get_or_init(|| {
+            regex::Regex::new(r"——+").expect("valid em-dash regex")
+        });
         re.replace_all(&stripped, "，").to_string()
     };
     normalized.trim_end().to_string()
@@ -119,7 +162,10 @@ fn validate_post_write_chinese(content: &str) -> Vec<AuditIssue> {
     let mut issues = Vec::new();
 
     // 1. "不是…而是…" 句式（Critical）
-    let bu_shi_re = regex::Regex::new(r"不是[^，。！？\n]{0,30}[，,]?\s*而是").expect("valid regex");
+    static BU_SHI: OnceLock<regex::Regex> = OnceLock::new();
+    let bu_shi_re = BU_SHI.get_or_init(|| {
+        regex::Regex::new(r"不是[^，。！？\n]{0,30}[，,]?\s*而是").expect("valid regex")
+    });
     if bu_shi_re.is_match(content) {
         issues.push(AuditIssue {
             severity: IssueSeverity::Critical,
@@ -172,8 +218,7 @@ fn validate_post_write_chinese(content: &str) -> Vec<AuditIssue> {
     }
 
     // 4. 元叙事检查（编剧旁白）
-    for pattern_str in META_NARRATION_PATTERNS {
-        let re = regex::Regex::new(pattern_str).expect("valid meta-narration regex");
+    for re in meta_narration_regexes() {
         if let Some(m) = re.find(content) {
             issues.push(AuditIssue {
                 severity: IssueSeverity::Warning,
@@ -200,7 +245,10 @@ fn validate_post_write_chinese(content: &str) -> Vec<AuditIssue> {
     }
 
     // 6. 章节号指称（Critical）
-    let chapter_ref_re = regex::Regex::new(r"(?:第\s*\d+\s*章|[Cc]hapter\s+\d+)").expect("valid regex");
+    static CHAPTER_REF: OnceLock<regex::Regex> = OnceLock::new();
+    let chapter_ref_re = CHAPTER_REF.get_or_init(|| {
+        regex::Regex::new(r"(?:第\s*\d+\s*章|[Cc]hapter\s+\d+)").expect("valid regex")
+    });
     let chapter_refs: Vec<String> = chapter_ref_re
         .find_iter(content)
         .map(|m| m.as_str().to_string())
@@ -237,8 +285,7 @@ fn validate_post_write_chinese(content: &str) -> Vec<AuditIssue> {
     }
 
     // 8. 全场震惊类集体反应（Warning）
-    for pattern_str in COLLECTIVE_SHOCK_PATTERNS {
-        let re = regex::Regex::new(pattern_str).expect("valid collective-shock regex");
+    for re in collective_shock_regexes() {
         if let Some(m) = re.find(content) {
             issues.push(AuditIssue {
                 severity: IssueSeverity::Warning,
@@ -302,9 +349,10 @@ fn validate_post_write_english(content: &str) -> Vec<AuditIssue> {
     let mut issues = Vec::new();
 
     // 1. AI-tell word density（1 per 3000 chars）
-    let limit = (content.chars().count() + 2999) / 3000;
-    for &word in EN_AI_TELL_WORDS {
-        let re = regex::Regex::new(&format!(r"(?i)\b{}\b", word)).expect("valid word-boundary regex");
+    let limit = content.chars().count().div_ceil(3000);
+    let words = EN_AI_TELL_WORDS;
+    let regexes = en_ai_tell_regexes();
+    for (word, re) in words.iter().zip(regexes.iter()) {
         let count = re.find_iter(content).count();
         if count > limit {
             issues.push(AuditIssue {
@@ -348,6 +396,7 @@ pub enum NarrativePerson {
 /// Post-write 配置依赖检查的输入配置。
 ///
 /// 聚焦 4 项配置依赖检查所需的字段。
+#[derive(Default)]
 pub struct PostWriteCheckConfig<'a> {
     /// 高疲劳词列表（单章每词 ≤ 1 次）
     pub fatigue_words: &'a [String],
@@ -361,17 +410,6 @@ pub struct PostWriteCheckConfig<'a> {
     pub recent_chapters_content: Option<&'a str>,
 }
 
-impl<'a> Default for PostWriteCheckConfig<'a> {
-    fn default() -> Self {
-        Self {
-            fatigue_words: &[],
-            prohibitions: &[],
-            narrative_person: None,
-            protagonist_name: None,
-            recent_chapters_content: None,
-        }
-    }
-}
 
 /// 运行完整 post-write 校验：content-only 检查 + 配置依赖检查。
 pub fn run_post_write_checks_with_config(
@@ -556,14 +594,19 @@ fn check_narrative_person_drift(content: &str, protagonist_name: Option<&str>) -
 /// 匹配以「他/她」开头，后接 内感动词 的句子。
 /// 返回截断后的句子（≤40 字符）。
 fn detect_first_person_inner_state_slip(content: &str) -> Option<String> {
-    let inner_state_re = regex::Regex::new(
-        r"^[他她][^。！？!?]{0,18}(?:觉得|感到|意识到|明白|想起|脑子里|心里|太阳穴)",
-    )
-    .expect("valid inner-state regex");
+    static INNER_STATE: OnceLock<regex::Regex> = OnceLock::new();
+    let inner_state_re = INNER_STATE.get_or_init(|| {
+        regex::Regex::new(
+            r"^[他她][^。！？!?]{0,18}(?:觉得|感到|意识到|明白|想起|脑子里|心里|太阳穴)",
+        )
+        .expect("valid inner-state regex")
+    });
 
     // 按句号/感叹号/问号/换行 分句
-    let sentence_split_re =
-        regex::Regex::new(r"[。！？!?]").expect("valid sentence-split regex");
+    static SENTENCE_SPLIT: OnceLock<regex::Regex> = OnceLock::new();
+    let sentence_split_re = SENTENCE_SPLIT.get_or_init(|| {
+        regex::Regex::new(r"[。！？!?]").expect("valid sentence-split regex")
+    });
     for line in content.lines() {
         for sentence in sentence_split_re.split(line) {
             let trimmed = sentence.trim();
@@ -810,7 +853,10 @@ fn is_dialogue_paragraph(paragraph: &str) -> bool {
 }
 
 fn extract_paragraphs(content: &str) -> Vec<String> {
-    let re = regex::Regex::new(r"\n\s*\n").expect("valid paragraph-split regex");
+    static PARAGRAPH_SPLIT: OnceLock<regex::Regex> = OnceLock::new();
+    let re = PARAGRAPH_SPLIT.get_or_init(|| {
+        regex::Regex::new(r"\n\s*\n").expect("valid paragraph-split regex")
+    });
     re.split(content)
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())

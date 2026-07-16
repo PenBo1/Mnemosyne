@@ -3,8 +3,23 @@
 // 本地(Ollama OpenAI 兼容端点 / LM Studio)与云端(OpenAI / 其他兼容服务)
 // 走同一套协议,仅 base_url / api_key / model 不同。
 
+use std::sync::OnceLock;
+
 use super::types::EmbeddingConfig;
 use crate::shared::error::AppError;
+
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// 复用全局 reqwest::Client(连接池共享,避免每次请求重建)
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .unwrap_or_default()
+    })
+}
 
 /// 调用 /v1/embeddings 对单段文本生成向量。
 pub async fn embed(text: &str, config: &EmbeddingConfig) -> Result<Vec<f32>, AppError> {
@@ -37,7 +52,7 @@ pub async fn embed_batch(
         "input": texts,
     });
 
-    let client = reqwest::Client::new();
+    let client = http_client();
     let mut req = client.post(&url).json(&body);
     if !config.api_key.trim().is_empty() {
         req = req.header("Authorization", format!("Bearer {}", config.api_key));

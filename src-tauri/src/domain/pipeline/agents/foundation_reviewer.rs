@@ -171,11 +171,14 @@ fn parse_review_result(content: &str) -> FoundationReviewResult {
     let overall_section = extract_overall_section(content);
     let overall_feedback = extract_overall_feedback(&overall_section);
 
-    // 计算总分（平均分）
+    // 计算总分（平均分）— 使用四舍五入避免整数除法截断
+    // 例如 (79 + 80 + 80) / 3 = 79.67，截断得 79（应通过未通过），四舍五入得 80（通过）
     let total_score = if dimensions.is_empty() {
         0
     } else {
-        dimensions.iter().map(|d| d.score).sum::<u32>() / dimensions.len() as u32
+        let sum: u32 = dimensions.iter().map(|d| d.score).sum();
+        let len = dimensions.len() as u32;
+        ((sum as f64 / len as f64) + 0.5).floor() as u32
     };
 
     // 通过条件：总分 >= 80 且所有维度 >= 60 且 5 个维度齐全

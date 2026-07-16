@@ -83,16 +83,26 @@ pub async fn detection_scan(
     // 3. 调用检测 API
     let result = detect_ai_content(&provider, &api_url, &api_key, &input.content).await?;
 
-    // 4. 记录历史
-    record_entry(
-        &data_dir,
-        &input.book_id,
-        input.chapter_number,
-        "detect",
-        result.score,
-        &result.provider,
-        &result.detected_at,
-    )?;
+    // 4. 记录历史(文件 I/O 卸载到阻塞线程池)
+    let data_dir_for_record = data_dir.inner().clone();
+    let book_id_for_record = input.book_id.clone();
+    let chapter_number = input.chapter_number;
+    let score = result.score;
+    let provider_str = result.provider.clone();
+    let detected_at = result.detected_at.clone();
+    tokio::task::spawn_blocking(move || {
+        record_entry(
+            &data_dir_for_record,
+            &book_id_for_record,
+            chapter_number,
+            "detect",
+            score,
+            &provider_str,
+            &detected_at,
+        )
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     tracing::info!(
         book_id = %input.book_id,
@@ -110,7 +120,10 @@ pub async fn detection_stats(
     book_id: String,
 ) -> Result<IpcResponse<DetectionStats>, AppError> {
     validate_book_id(&book_id)?;
-    let history = load_history(&data_dir, &book_id)?;
+    let data_dir = data_dir.inner().clone();
+    let history = tokio::task::spawn_blocking(move || load_history(&data_dir, &book_id))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     let stats = analyze_detection_insights(&history);
     Ok(IpcResponse::ok(stats))
 }
@@ -121,6 +134,9 @@ pub async fn detection_history(
     book_id: String,
 ) -> Result<IpcResponse<Vec<DetectionHistoryEntry>>, AppError> {
     validate_book_id(&book_id)?;
-    let history = load_history(&data_dir, &book_id)?;
+    let data_dir = data_dir.inner().clone();
+    let history = tokio::task::spawn_blocking(move || load_history(&data_dir, &book_id))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(history))
 }

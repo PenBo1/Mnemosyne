@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::interaction::edit_controller::{
-    self, EditRequest, ExecutedEditTransaction, PlannedEditTransaction,
+    self, EditRequest, ExecutedEditTransaction,
 };
 use crate::domain::interaction::types::{
     AutomationMode, ExecutionState, ExecutionStatus, InteractionEvent, InteractionIntent,
@@ -172,7 +172,12 @@ async fn dispatch_intent(
     match intent {
         // ── 列表 / 切换 ──
         InteractionIntent::ListBooks => {
-            let books = list_books_inner(&data_dir.books_dir())?;
+            let books = {
+                let books_dir = data_dir.books_dir();
+                tokio::task::spawn_blocking(move || list_books_inner(&books_dir))
+                    .await
+                    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
+            };
             let response = if books.is_empty() {
                 "当前项目下没有作品。".to_string()
             } else {
@@ -190,7 +195,12 @@ async fn dispatch_intent(
                 .as_deref()
                 .ok_or_else(|| AppError::invalid_input("select_book 需要提供 book_id"))?;
             validate_id(book_id, "book_id").map_err(AppError::invalid_input)?;
-            let books = list_books_inner(&data_dir.books_dir())?;
+            let books = {
+                let books_dir = data_dir.books_dir();
+                tokio::task::spawn_blocking(move || list_books_inner(&books_dir))
+                    .await
+                    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
+            };
             if !books.iter().any(|b| b.id == book_id) {
                 return Err(AppError::not_found(format!(
                     "当前项目中找不到作品「{}」",
@@ -254,7 +264,7 @@ async fn dispatch_intent(
                 .get("targetText")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .or_else(|| {
+                .or({
                     if request.input.is_empty() {
                         None
                     } else {
@@ -279,7 +289,7 @@ async fn dispatch_intent(
                 find,
                 replace,
             };
-            let executed = execute_edit_request(req, data_dir)?;
+            let executed = execute_edit_request(req, data_dir).await?;
             session.bind_active_book(book_id.clone());
             Ok(format!(
                 "已修补 {} 第 {} 章正文（涉及 {} 个文件，需 review）。",
@@ -300,7 +310,7 @@ async fn dispatch_intent(
                 .get("fullText")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .or_else(|| {
+                .or({
                     if request.input.is_empty() {
                         None
                     } else {
@@ -316,7 +326,7 @@ async fn dispatch_intent(
                 chapter_number,
                 new_content,
             };
-            let executed = execute_edit_request(req, data_dir)?;
+            let executed = execute_edit_request(req, data_dir).await?;
             session.bind_active_book(book_id.clone());
             Ok(format!(
                 "已替换 {} 第 {} 章正文（涉及 {} 个文件，需 review）。",
@@ -346,7 +356,7 @@ async fn dispatch_intent(
                 old_name,
                 new_name: new_name.clone(),
             };
-            let executed = execute_edit_request(req, data_dir)?;
+            let executed = execute_edit_request(req, data_dir).await?;
             session.bind_active_book(book_id.clone());
             Ok(format!(
                 "已在 {} 中改名（涉及 {} 个文件）。",
@@ -369,7 +379,7 @@ async fn dispatch_intent(
                 .get("content")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .or_else(|| {
+                .or({
                     if request.input.is_empty() {
                         None
                     } else {
@@ -383,7 +393,7 @@ async fn dispatch_intent(
                 file_name: file_name.clone(),
                 new_content,
             };
-            execute_edit_request(req, data_dir)?;
+            execute_edit_request(req, data_dir).await?;
             session.bind_active_book(book_id.clone());
             Ok(format!("已更新 {} 的 {}。", book_id, file_name))
         }
@@ -405,7 +415,7 @@ async fn dispatch_intent(
                 book_id: book_id.clone(),
                 new_focus,
             };
-            execute_edit_request(req, data_dir)?;
+            execute_edit_request(req, data_dir).await?;
             session.bind_active_book(book_id.clone());
             Ok(format!("已更新 {} 的当前焦点。", book_id))
         }
@@ -430,7 +440,7 @@ async fn dispatch_intent(
                 file_name: "author_intent.md".to_string(),
                 new_content,
             };
-            execute_edit_request(req, data_dir)?;
+            execute_edit_request(req, data_dir).await?;
             session.bind_active_book(book_id.clone());
             Ok(format!("已更新 {} 的作者意图。", book_id))
         }
@@ -529,12 +539,17 @@ fn resolve_book_id(
 }
 
 /// 内部：执行 EditRequest（plan + execute）
-fn execute_edit_request(
+async fn execute_edit_request(
     req: EditRequest,
     data_dir: &DataDir,
 ) -> Result<ExecutedEditTransaction, AppError> {
-    let planned: PlannedEditTransaction = edit_controller::plan_edit_transaction(req)?;
-    edit_controller::execute_edit_transaction(planned, data_dir)
+    let data_dir = data_dir.clone();
+    tokio::task::spawn_blocking(move || -> Result<ExecutedEditTransaction, AppError> {
+        let planned = edit_controller::plan_edit_transaction(req)?;
+        edit_controller::execute_edit_transaction(planned, &data_dir)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))?
 }
 
 /// 构造 PipelineRunner（从 DataDir 读取 books_dir）
@@ -663,11 +678,17 @@ fn list_books_inner(books_dir: &PathBuf) -> Result<Vec<BookSummary>, AppError> {
 
         let config_content = match std::fs::read_to_string(&config_path) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to read book.json, skipping book");
+                continue;
+            }
         };
         let book: crate::domain::pipeline::types::BookConfig = match serde_json::from_str(&config_content) {
             Ok(b) => b,
-            Err(_) => continue,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to parse book.json, skipping book");
+                continue;
+            }
         };
 
         let chapter_count = load_chapter_count(&book_dir);
@@ -695,11 +716,17 @@ fn load_chapter_count(book_dir: &std::path::Path) -> u32 {
     let index_path = book_dir.join("chapters.json");
     let content = match std::fs::read_to_string(&index_path) {
         Ok(c) => c,
-        Err(_) => return 0,
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to read chapters.json, treating as 0 chapters");
+            return 0;
+        }
     };
     let index: Vec<crate::domain::pipeline::types::ChapterMeta> = match serde_json::from_str(&content) {
         Ok(v) => v,
-        Err(_) => return 0,
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to parse chapters.json, treating as 0 chapters");
+            return 0;
+        }
     };
     index.len() as u32
 }

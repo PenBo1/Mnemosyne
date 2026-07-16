@@ -131,7 +131,7 @@ impl Database {
         let rows = stmt
             .query_map(param_refs.as_slice(), map_metric_row)
             .map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 按时间桶聚合 metric（用于时间序列可视化）。
@@ -200,7 +200,7 @@ impl Database {
                 })
             })
             .map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// GC:删除 timestamp 早于 cutoff_ms 的 metric 数据点。

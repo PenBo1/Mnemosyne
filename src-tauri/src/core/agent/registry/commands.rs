@@ -46,7 +46,7 @@ pub async fn agent_list_by_category(
     state: State<'_, AgentRegistryState>,
 ) -> Result<IpcResponse<Vec<AgentDescriptor>>, AppError> {
     let cat = AgentCategory::from_str(&category)
-        .map_err(|e| AppError::bad_request(e))?;
+        .map_err(AppError::bad_request)?;
     let agents = state.0.list_by_category(cat);
     Ok(IpcResponse::ok(agents))
 }

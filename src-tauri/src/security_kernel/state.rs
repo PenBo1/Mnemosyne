@@ -20,6 +20,9 @@ impl SecurityKernelState {
     pub fn with_db(db: Database) -> Self {
         let kernel = SecurityKernel::new();
         kernel.audit_bus().subscribe(Box::new(DbAuditHandler::new(db)));
+        // C16: 订阅 DbAuditHandler 后启动后台派发 task,
+        // 避免 emit 同步调用 DbAuditHandler 的 SQLite 写入阻塞 tokio worker。
+        kernel.audit_bus().start_dispatch_task();
         Self {
             kernel: Arc::new(kernel),
         }
@@ -32,7 +35,7 @@ impl SecurityKernelState {
     }
 
     pub fn kernel(&self) -> &SecurityKernel {
-        &*self.kernel
+        &self.kernel
     }
 
     pub fn into_inner(self) -> Arc<SecurityKernel> {
@@ -50,6 +53,6 @@ impl std::ops::Deref for SecurityKernelState {
     type Target = SecurityKernel;
 
     fn deref(&self) -> &Self::Target {
-        &*self.kernel
+        &self.kernel
     }
 }

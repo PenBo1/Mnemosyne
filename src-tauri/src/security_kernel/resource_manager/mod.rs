@@ -49,7 +49,7 @@ impl ResourceManager {
     }
 
     pub fn get_or_create_usage(&mut self, workspace: WorkspaceId) -> &mut ResourceUsage {
-        self.usage.entry(workspace).or_insert_with(ResourceUsage::new)
+        self.usage.entry(workspace).or_default()
     }
 
     pub fn check_quota(&self, workspace: &WorkspaceId) -> Result<(), AppError> {

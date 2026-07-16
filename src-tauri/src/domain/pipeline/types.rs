@@ -131,16 +131,13 @@ pub fn resolve_revision_gate(
 /// 语言
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Language {
+    #[default]
     Zh,
     En,
 }
 
-impl Default for Language {
-    fn default() -> Self {
-        Language::Zh
-    }
-}
 
 /// 章节状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

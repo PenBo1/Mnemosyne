@@ -5,8 +5,10 @@ use std::str::FromStr;
 /// 版本修订模式
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum RevisionMode {
     /// 小修订（纠错、润色）
+    #[default]
     Minor,
     /// 大修订（结构调整）
     Major,
@@ -84,9 +86,6 @@ pub struct CreateVersionRequest {
     pub revision_reason: String,
 }
 
-impl Default for RevisionMode {
-    fn default() -> Self { RevisionMode::Minor }
-}
 
 // ── Diff 类型（章节版本比对） ───────────────────────────────
 

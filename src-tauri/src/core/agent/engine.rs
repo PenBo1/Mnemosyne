@@ -2,12 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
 use futures_util::StreamExt;
 use rig::agent::{Agent, MultiTurnStreamItem, StreamingError};
 use rig::client::CompletionClient;
 use rig::completion::{GetTokenUsage, Prompt, Usage};
 use rig::streaming::{StreamingPrompt, StreamedAssistantContent, StreamedUserContent};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
+use tokio::time::sleep;
 
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 1000;
@@ -56,6 +58,15 @@ pub struct AgentEngine {
     /// 从 SecurityKernel.hook_engine() 注入，用于在 send_message 前后派发
     /// SessionStart / UserPromptSubmit / Stop 等生命周期 hook。
     hook_engine: OptionalHookDispatcher,
+    /// 每个会话的取消令牌（watch channel）。
+    ///
+    /// `send_message` 启动时插入，`stop` 发送 `true` 触发取消。
+    /// `run_agent_stream` 在关键 await 点用 `select!` 监听 `changed()`，
+    /// 取消时立即返回 `AppError::cancelled()`，停止后续 tool 调用与流式消费。
+    ///
+    /// 使用 `tokio::sync::watch::<bool>` 而非 `tokio_util::sync::CancellationToken`，
+    /// 因为后者需新增 `tokio-util` 依赖；watch 满足最小取消语义且已在依赖树中。
+    cancellation_tokens: Arc<DashMap<String, Arc<watch::Sender<bool>>>>,
 }
 
 /// 一次 agent 流式调用的聚合结果,用于持久化到 messages 表。
@@ -64,6 +75,30 @@ struct StreamOutcome {
     usage: Usage,
     tool_calls: Vec<serde_json::Value>,
     tool_results: Vec<serde_json::Value>,
+}
+
+/// RAII guard：确保 `send_message` 在任何返回路径（成功 / Err `?` 传播 / panic）
+/// 都从 `cancellation_tokens` 移除本会话条目，防止 map 无限增长。
+///
+/// 正常路径在函数末尾将 `cleaned_up` 置 true，Drop 变为 no-op。
+/// 异常路径（含 `?` 提前返回）由 Drop 兜底清理。
+struct CancelTokenGuard<'a> {
+    engine: &'a AgentEngine,
+    session_id: String,
+    cleaned_up: bool,
+}
+
+impl Drop for CancelTokenGuard<'_> {
+    fn drop(&mut self) {
+        if self.cleaned_up {
+            return;
+        }
+        self.engine.cancellation_tokens.remove(&self.session_id);
+        tracing::warn!(
+            session_id = %self.session_id,
+            "Cancellation token cleaned up via Drop guard (fallback path)"
+        );
+    }
 }
 
 impl AgentEngine {
@@ -84,6 +119,7 @@ impl AgentEngine {
             subagent_cache: cache,
             token_counter,
             hook_engine,
+            cancellation_tokens: Arc::new(DashMap::new()),
         }
     }
 
@@ -161,7 +197,8 @@ impl AgentEngine {
             prompts::MAIN_ROLE,
             merged_instructions.as_deref(),
             Some(user_profile_store.get()),
-        );
+        )
+        .await;
         let user_message = build_user_message(&request);
 
         // ── UserPromptSubmit hook ──
@@ -178,6 +215,26 @@ impl AgentEngine {
         // 当前 Rust 侧无 compact 逻辑（前端通过 extractive 摘要处理），暂不触发。
 
         let started = Instant::now();
+        // 只 clone 一次 self 并包装为 Arc，供各 provider 分支复用（避免重复深拷贝）。
+        // 注：build_agent 需要 `Arc<AgentEngine>` 用于 SubAgentTool / PipelineDelegateTool
+        // 等需要回调 engine 的工具；此处统一构造，各分支 Arc::clone 复用。
+        let engine_arc = Arc::new(self.clone());
+
+        // 注册取消令牌：watch::<bool>，初值 false（未取消）。
+        // `stop(session_id)` 会发送 true，`run_agent_stream` 在 select! 中监听。
+        let (cancel_tx, mut cancel_rx) = watch::channel(false);
+        self.cancellation_tokens
+            .insert(request.session_id.clone(), Arc::new(cancel_tx));
+
+        // RAII guard：确保 `send_message` 在任何返回路径（成功 / Err `?` 传播 / panic）
+        // 都从 `cancellation_tokens` 移除本会话条目，防止 map 无限增长。
+        // 正常路径在函数末尾将 `cleaned_up` 置 true，Drop 变为 no-op。
+        let mut cancel_guard = CancelTokenGuard {
+            engine: self,
+            session_id: request.session_id.clone(),
+            cleaned_up: false,
+        };
+
         let outcome = match provider.to_lowercase().as_str() {
             "openai" => {
                 let client = rig::providers::openai::Client::builder()
@@ -185,8 +242,8 @@ impl AgentEngine {
                     .base_url(&base_url)
                     .build()
                     .map_err(|e| AppError::stream_error(e.to_string()))?;
-                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::new(self.clone()));
-                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx).await?
+                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::clone(&engine_arc));
+                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx, &mut cancel_rx).await?
             }
             "anthropic" => {
                 let client = rig::providers::anthropic::Client::builder()
@@ -194,8 +251,8 @@ impl AgentEngine {
                     .base_url(&base_url)
                     .build()
                     .map_err(|e| AppError::stream_error(e.to_string()))?;
-                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::new(self.clone()));
-                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx).await?
+                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::clone(&engine_arc));
+                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx, &mut cancel_rx).await?
             }
             "ollama" => {
                 let client = rig::providers::ollama::Client::builder()
@@ -203,8 +260,8 @@ impl AgentEngine {
                     .base_url(&base_url)
                     .build()
                     .map_err(|e| AppError::stream_error(e.to_string()))?;
-                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::new(self.clone()));
-                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx).await?
+                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::clone(&engine_arc));
+                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx, &mut cancel_rx).await?
             }
             "deepseek" | "agnes" | "openrouter" => {
                 let client = rig::providers::openai::Client::builder()
@@ -213,8 +270,8 @@ impl AgentEngine {
                     .build()
                     .map_err(|e| AppError::stream_error(e.to_string()))?
                     .completions_api();
-                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::new(self.clone()));
-                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx).await?
+                let agent = build_agent(client.agent(&model), &system_prompt, workspace_root, approval, &effort_params, self.data_dir.clone(), Arc::clone(&engine_arc));
+                run_agent_stream(agent, &user_message, effort_params.max_tool_steps, &tx, &mut cancel_rx).await?
             }
             _ => return Err(AppError::provider_not_found(&provider)),
         };
@@ -224,12 +281,19 @@ impl AgentEngine {
         let output_tokens = outcome.usage.output_tokens as u32;
 
         // 通知前端流结束(携带真实 token 用量)
-        let _ = tx
+        // 前端 channel 关闭时发送失败属正常情况（用户关闭窗口），用 debug 记录便于排查
+        if let Err(_) = tx
             .send(ChatEvent::Finish {
                 input_tokens,
                 output_tokens,
             })
-            .await;
+            .await
+        {
+            tracing::debug!(
+                session_id = %request.session_id,
+                "Failed to send Finish event to frontend (channel closed)"
+            );
+        }
 
         // 持久化到 messages 表,供仪表盘聚合统计
         self.persist_messages(
@@ -249,6 +313,11 @@ impl AgentEngine {
         if let Err(e) = try_dispatch(&self.hook_engine, &stop).await {
             tracing::warn!(error = %e, "Stop hook dispatch failed (ignored)");
         }
+
+        // 标记 guard 为 no-op，避免 Drop 重复 remove（条目已不需要——会话已结束）
+        cancel_guard.cleaned_up = true;
+        // 显式移除取消令牌（与 guard Drop 等价，但这里语义更清晰：会话正常结束）
+        self.cancellation_tokens.remove(&request.session_id);
 
         Ok(())
     }
@@ -301,7 +370,28 @@ impl AgentEngine {
         }
     }
 
-    pub async fn stop(&self, _session_id: &str) -> Result<(), AppError> {
+    /// 停止指定会话的 agent 流。
+    ///
+    /// 通过 `cancellation_tokens` 查找会话的 watch sender，发送 `true` 触发取消。
+    /// `run_agent_stream` 在 `select!` 中监听 `cancel_rx.changed()`，取消时立即返回
+    /// `AppError::cancelled()`，停止后续 tool 调用与流式消费。
+    ///
+    /// 若 session 不存在（已结束 / 未启动），返回 Ok（no-op）。
+    pub async fn stop(&self, session_id: &str) -> Result<(), AppError> {
+        let Some(token) = self.cancellation_tokens.get(session_id).map(|r| Arc::clone(&r)) else {
+            tracing::debug!(
+                session_id,
+                "stop: no active cancellation token for session (already ended?)"
+            );
+            return Ok(());
+        };
+        if token.send(true).is_err() {
+            // receiver 已 drop（run_agent_stream 已退出）——非错误，仅 debug
+            tracing::debug!(
+                session_id,
+                "stop: cancellation receiver already dropped"
+            );
+        }
         Ok(())
     }
 
@@ -461,8 +551,10 @@ impl AgentEngine {
         session_id: &str,
     ) -> Result<usize, AppError> {
         // 1. 拉取最近 10 条用户消息
+        // 注：先 `rev().take(10)` 取最近 10 条（按时间倒序），
+        // 然后 `reverse()` 原地翻转为正序，避免在 transcript 阶段再次 `rev()`。
         let messages = self.db.list_messages(session_id)?;
-        let user_msgs: Vec<_> = messages
+        let mut user_msgs: Vec<_> = messages
             .iter()
             .filter(|m| m.role == "user")
             .rev()
@@ -472,10 +564,10 @@ impl AgentEngine {
             tracing::debug!(session_id, "skip preference analysis: no user messages");
             return Ok(0);
         }
+        user_msgs.reverse(); // 倒序 → 正序，单次原地翻转
 
         let transcript = user_msgs
             .iter()
-            .rev()
             .map(|m| m.content.clone())
             .collect::<Vec<_>>()
             .join("\n---\n");
@@ -818,7 +910,10 @@ where
     // (Low Effort 不允许 spawn sub-agent,避免长任务链开销)
     if effort_params.allow_subagent {
         agent_builder
-            .tool(SubAgentTool { workspace_root })
+            .tool(SubAgentTool {
+                engine: engine.clone(),
+                workspace_root,
+            })
             // 重操作书籍工具：pipeline 委托 + 真相文件 + 实体重命名 + 章节编辑 + 导入 + 封面
             .tool(PipelineDelegateTool {
                 engine: engine.clone(),
@@ -859,39 +954,66 @@ where
 ///
 /// max_tool_steps 由 EffortLevel 决定(Low=5, Medium=20, High=50, Ultra=100)。
 /// 
-/// 带重试机制：针对 503 等临时性服务端错误，使用指数退避进行最多 3 次重试。
+/// 带重试机制：针对 503 等临时性服务端错误，使用指数退避进行重试。
+/// 总尝试次数为 `MAX_RETRIES`（含首次），即最多 `MAX_RETRIES - 1` 次重试。
+/// 重试前向 frontend emit `Retry` 事件分隔前次不完整输出。
+///
+/// 取消语义：`cancel_rx` 在每个 stream `next().await` 处被 `select!` 监听。
+/// 收到取消信号时立即返回 `AppError::task_cancelled()`，停止后续 tool 调用与流式消费。
 async fn run_agent_stream<M>(
     agent: Agent<M>,
     user_message: &str,
     max_tool_steps: usize,
     tx: &mpsc::Sender<ChatEvent>,
+    cancel_rx: &mut watch::Receiver<bool>,
 ) -> Result<StreamOutcome, AppError>
 where
     M: rig::completion::CompletionModel + 'static,
     <M as rig::completion::CompletionModel>::StreamingResponse: GetTokenUsage + Clone + Unpin,
 {
     let mut last_error: Option<String> = None;
-    
-    for attempt in 0..=MAX_RETRIES {
+
+    // 0..MAX_RETRIES：总尝试次数 = MAX_RETRIES（含首次），避免 0..=MAX_RETRIES 的 off-by-one。
+    // 例：MAX_RETRIES=3 → attempts 0,1,2 = 3 次（首次 + 2 次重试）。
+    for attempt in 0..MAX_RETRIES {
+        // 取消检查：进入下一次尝试前若已取消，立即返回
+        if *cancel_rx.borrow() {
+            return Err(AppError::task_cancelled());
+        }
+
         if attempt > 0 {
             let delay_ms = RETRY_BASE_DELAY_MS * (1 << (attempt - 1));
             tracing::warn!(
                 attempt,
+                max_attempts = MAX_RETRIES,
                 delay_ms,
                 "LLM stream returned retryable error, retrying with exponential backoff"
             );
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            // 向 frontend emit Retry 事件，让 UI 能分隔前次不完整输出与重试输出
+            let _ = tx
+                .send(ChatEvent::Retry {
+                    attempt,
+                    max_attempts: MAX_RETRIES,
+                })
+                .await;
+            // 退避期间也监听取消信号
+            tokio::select! {
+                _ = sleep(Duration::from_millis(delay_ms)) => {}
+                _ = cancel_rx.changed() => {
+                    return Err(AppError::task_cancelled());
+                }
+            }
         }
-        
+
         let stream = agent
             .stream_prompt(user_message.to_string())
             .multi_turn(max_tool_steps)
             .await;
-        
-        match consume_stream_with_retry_detection(stream, tx).await {
+
+        match consume_stream_with_retry_detection(stream, tx, cancel_rx).await {
             Ok(outcome) => return Ok(outcome),
             Err(e) => {
-                if is_retryable_error(&e.message) && attempt < MAX_RETRIES {
+                if is_retryable_error(&e.message) && attempt + 1 < MAX_RETRIES {
                     last_error = Some(e.message.clone());
                     continue;
                 }
@@ -899,16 +1021,20 @@ where
             }
         }
     }
-    
+
     Err(AppError::stream_error(
         last_error.unwrap_or_else(|| "Max retries exceeded".to_string())
     ))
 }
 
 /// 消费流并检测可重试错误
+///
+/// 在每个 `stream.next().await` 处用 `select!` 监听 `cancel_rx.changed()`，
+/// 取消时立即返回 `AppError::task_cancelled()`（已收集的部分文本被丢弃）。
 async fn consume_stream_with_retry_detection<S, R>(
     mut stream: S,
     tx: &mpsc::Sender<ChatEvent>,
+    cancel_rx: &mut watch::Receiver<bool>,
 ) -> Result<StreamOutcome, AppError>
 where
     S: futures_util::stream::Stream<Item = Result<MultiTurnStreamItem<R>, StreamingError>> + Unpin,
@@ -919,32 +1045,53 @@ where
     let mut tool_calls: Vec<serde_json::Value> = Vec::new();
     let mut tool_results: Vec<serde_json::Value> = Vec::new();
 
-    while let Some(item) = stream.next().await {
+    loop {
+        // 取消点：在每次拉取 stream item 前用 select! 监听 cancel 信号
+        let next_item = tokio::select! {
+            item = stream.next() => item,
+            _ = cancel_rx.changed() => {
+                return Err(AppError::task_cancelled());
+            }
+        };
+
+        let Some(item) = next_item else { break };
+
         match item {
             Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => match content {
                 StreamedAssistantContent::Text(t) => {
                     let delta = t.text.to_string();
-                    let _ = tx
+                    if let Err(_) = tx
                         .send(ChatEvent::TextDelta {
                             content: delta.clone(),
                         })
-                        .await;
+                        .await
+                    {
+                        tracing::debug!(
+                            "Failed to send TextDelta to frontend (channel closed)"
+                        );
+                    }
                     text.push_str(&delta);
                 }
                 StreamedAssistantContent::ToolCall {
                     tool_call, ..
                 } => {
-                    let _ = tx
+                    if let Err(_) = tx
                         .send(ChatEvent::ToolCallStart {
                             id: tool_call.id.clone(),
                             name: tool_call.function.name.clone(),
                         })
-                        .await;
-                    let _ = tx
+                        .await
+                    {
+                        tracing::debug!("Failed to send ToolCallStart (channel closed)");
+                    }
+                    if let Err(_) = tx
                         .send(ChatEvent::ToolCallEnd {
                             id: tool_call.id.clone(),
                         })
-                        .await;
+                        .await
+                    {
+                        tracing::debug!("Failed to send ToolCallEnd (channel closed)");
+                    }
                     tool_calls.push(serde_json::json!({
                         "id": tool_call.id,
                         "name": tool_call.function.name,

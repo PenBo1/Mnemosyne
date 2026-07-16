@@ -29,13 +29,51 @@ const SAFE_COMMANDS: &[&str] = &[
 /// 判断命令是否为已知安全命令(只读、无副作用)。
 ///
 /// 输入应为已 trim 的命令字符串(可含参数)。
-/// 匹配策略:前缀匹配 SAFE_COMMANDS 列表。
+///
+/// 匹配策略：token 前缀匹配（pattern 的所有 token 须作为 command 的前缀
+/// token 序列出现，大小写不敏感）。
+///
+/// 安全约束：命令含 shell 元字符（`;` `|` `&` `$` 反引号 `>` `<` 换行 等）时
+/// 直接返回 false —— 这些字符启用命令链/管道/重定向/替换，使"前缀安全"
+/// 判定失效（例如 `git status; rm -rf /` 不应被 `git status` 前缀判为安全）。
+///
+/// 原实现用 `starts_with` 字符串前缀，存在两类问题：
+/// 1. `git status` 误匹配 `git statuses`（不同命令，token 不同）
+/// 2. `git status` 误匹配 `git status; rm -rf /`（命令注入绕过）
 pub fn is_known_safe_command(command: &str) -> bool {
     let cmd = command.trim();
     if cmd.is_empty() {
         return false;
     }
-    SAFE_COMMANDS.iter().any(|safe| cmd.starts_with(safe))
+    if contains_shell_metacharacters(cmd) {
+        return false;
+    }
+    let cmd_tokens: Vec<&str> = cmd.split_whitespace().collect();
+    if cmd_tokens.is_empty() {
+        return false;
+    }
+    SAFE_COMMANDS.iter().any(|safe| {
+        let safe_tokens: Vec<&str> = safe.split_whitespace().collect();
+        if safe_tokens.is_empty() {
+            return false;
+        }
+        if cmd_tokens.len() < safe_tokens.len() {
+            return false;
+        }
+        safe_tokens
+            .iter()
+            .zip(cmd_tokens.iter())
+            .all(|(s, c)| s.eq_ignore_ascii_case(c))
+    })
+}
+
+/// 检测命令是否含 shell 元字符 —— 这些字符启用命令链/管道/重定向/替换，
+/// 使单命令安全判定失效。
+///
+/// 对 `is_known_safe_command`（拒绝）和 `validate_command` 的黑名单匹配
+/// 均需先过此关，防止 `ls\n evil` / `git status; rm` 这类注入绕过。
+pub fn contains_shell_metacharacters(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, ';' | '|' | '&' | '$' | '`' | '>' | '<' | '\n' | '\r' | '\0'))
 }
 
 /// 检测命令中的危险模式。
@@ -162,5 +200,24 @@ mod tests {
         assert!(command_might_be_dangerous("cat README.md").is_none());
         assert!(command_might_be_dangerous("git status").is_none());
         assert!(command_might_be_dangerous("grep -r 'pattern' .").is_none());
+    }
+
+    #[test]
+    fn safe_command_with_shell_metacharacter_rejected() {
+        // 命令注入：含 `;` `|` `$` 换行等元字符时，is_known_safe_command 必须拒绝
+        assert!(!is_known_safe_command("git status; rm -rf /"));
+        assert!(!is_known_safe_command("ls | grep secret"));
+        assert!(!is_known_safe_command("cat file && cat /etc/passwd"));
+        assert!(!is_known_safe_command("echo $(whoami)"));
+        assert!(!is_known_safe_command("ls\nrm -rf /"));
+        assert!(!is_known_safe_command("git status > /etc/passwd"));
+    }
+
+    #[test]
+    fn safe_command_token_boundary_not_prefix_string() {
+        // token 边界：`git status` 不应匹配 `git statuses`（不同 token）
+        assert!(!is_known_safe_command("git statuses"));
+        // 但仍匹配 `git status --short`（前缀 token 序列相同）
+        assert!(is_known_safe_command("git status --short"));
     }
 }

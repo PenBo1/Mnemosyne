@@ -127,7 +127,22 @@ fn read_json_or_default<T: serde::de::DeserializeOwned + Default>(
 
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), AppError> {
     let content = serde_json::to_string_pretty(value)?;
-    std::fs::write(path, content)
-        .map_err(|_| AppError::file_write_error(path.display().to_string()))?;
+    // 原子化：先写 .tmp 再 rename，避免崩溃导致 JSON 损坏
+    let tmp_path = path.with_extension("json.tmp");
+    if let Err(e) = std::fs::write(&tmp_path, &content) {
+        return Err(AppError::file_write_error(format!(
+            "{}: {}",
+            tmp_path.display(),
+            e
+        )));
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(AppError::file_write_error(format!(
+            "{}: {}",
+            path.display(),
+            e
+        )));
+    }
     Ok(())
 }

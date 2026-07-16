@@ -31,6 +31,24 @@ pub fn validate_runtime_state(snapshot: &RuntimeStateSnapshot) -> Vec<Validation
         }
     }
 
+    // hook_id 引用完整性：depends_on 引用的 hook_id 必须存在于已知集合
+    for hook in &snapshot.hooks.hooks {
+        if let Some(deps) = &hook.depends_on {
+            for dep_id in deps {
+                if !seen_hooks.contains(dep_id) {
+                    issues.push(ValidationIssue {
+                        code: "dangling_hook_dependency".into(),
+                        message: format!(
+                            "hook '{}' depends on missing hook '{}'",
+                            hook.hook_id, dep_id
+                        ),
+                        path: format!("hooks.{}.depends_on", hook.hook_id),
+                    });
+                }
+            }
+        }
+    }
+
     // 重复 summary chapter
     let mut seen_summaries = std::collections::HashSet::new();
     for row in &snapshot.chapter_summaries.rows {

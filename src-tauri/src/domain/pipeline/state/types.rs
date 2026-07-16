@@ -56,6 +56,21 @@ pub enum HookPayoffTiming {
     Endgame,
 }
 
+impl HookPayoffTiming {
+    /// 返回 kebab-case 字符串表示（与 serde 序列化一致）。
+    ///
+    /// 用于替代 `{:?}` Debug 格式化，避免 `Some(MidArc)` 这样的输出污染文本比较。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HookPayoffTiming::Immediate => "immediate",
+            HookPayoffTiming::NearTerm => "near-term",
+            HookPayoffTiming::MidArc => "mid-arc",
+            HookPayoffTiming::SlowBurn => "slow-burn",
+            HookPayoffTiming::Endgame => "endgame",
+        }
+    }
+}
+
 /// 钩子记录
 /// Phase 7 promotion 字段为 optional，兼容 pre-Phase-7 markdown 解析。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,20 +151,13 @@ pub struct CurrentStateFact {
 
 /// 当前状态集合
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CurrentStateState {
     pub chapter: u32,
     #[serde(default)]
     pub facts: Vec<CurrentStateFact>,
 }
 
-impl Default for CurrentStateState {
-    fn default() -> Self {
-        Self {
-            chapter: 0,
-            facts: Vec::new(),
-        }
-    }
-}
 
 /// 当前状态补丁
 /// settler 输出的增量补丁，应用到 currentState。

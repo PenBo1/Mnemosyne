@@ -65,6 +65,9 @@ pub fn parse(input: &str) -> Result<ExecPolicy, AppError> {
         }
     }
 
+    // 解析完成后排序（按 priority 降序），使 evaluator 可直接顺序遍历，
+    // 避免每次评估重新 sort（L18）
+    policy.normalize();
     Ok(policy)
 }
 
@@ -348,8 +351,12 @@ allow network "api.openai.com" https
         assert_eq!(policy.command_rules.len(), 2);
         assert_eq!(policy.path_rules.len(), 1);
         assert_eq!(policy.network_rules.len(), 1);
-        // rm -rf 有更高 priority
-        assert_eq!(policy.command_rules[1].priority, 100);
+        // parse() 末尾调用 normalize() 按 priority 降序排序，
+        // rm -rf（priority 100）应排在 git status（默认 0）之前。
+        assert_eq!(policy.command_rules[0].priority, 100);
+        assert_eq!(policy.command_rules[0].pattern, "rm -rf");
+        assert_eq!(policy.command_rules[1].priority, 0);
+        assert_eq!(policy.command_rules[1].pattern, "git status");
     }
 
     #[test]

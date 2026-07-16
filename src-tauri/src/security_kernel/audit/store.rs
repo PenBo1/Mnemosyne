@@ -37,7 +37,7 @@ impl AuditStore {
         let entry = AuditEntry::new(event);
         let id = entry.id;
 
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write().unwrap_or_else(|e| e.into_inner());
 
         if entries.len() >= self.max_entries {
             entries.pop_front();
@@ -48,17 +48,17 @@ impl AuditStore {
     }
 
     pub fn query(&self, filter: &AuditFilter) -> Vec<AuditEntry> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         entries.iter().filter(|e| filter.matches(e)).cloned().collect()
     }
 
     pub fn get_by_id(&self, id: Uuid) -> Option<AuditEntry> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         entries.iter().find(|e| e.id == id).cloned()
     }
 
     pub fn get_latest(&self, count: usize) -> Vec<AuditEntry> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         entries.iter().rev().take(count).cloned().collect()
     }
 
@@ -83,21 +83,21 @@ impl AuditStore {
     }
 
     pub fn count(&self) -> usize {
-        self.entries.read().unwrap().len()
+        self.entries.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     pub fn count_for_workspace(&self, workspace: WorkspaceId) -> usize {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         entries.iter().filter(|e| e.event.workspace() == Some(&workspace)).count()
     }
 
     pub fn count_by_type(&self, event_type: &str) -> usize {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         entries.iter().filter(|e| e.event.event_type() == event_type).count()
     }
 
     pub fn cleanup_expired(&self) -> usize {
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let cutoff = now - self.max_age;
 
@@ -107,14 +107,14 @@ impl AuditStore {
     }
 
     pub fn clear_workspace(&self, workspace: WorkspaceId) -> usize {
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write().unwrap_or_else(|e| e.into_inner());
         let before = entries.len();
         entries.retain(|e| e.event.workspace() != Some(&workspace));
         before - entries.len()
     }
 
     pub fn clear_all(&self) {
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write().unwrap_or_else(|e| e.into_inner());
         entries.clear();
     }
 }

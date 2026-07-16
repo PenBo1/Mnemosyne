@@ -135,8 +135,7 @@ impl WorkspacePolicy {
 impl Default for GlobalPolicy {
     fn default() -> Self {
         let mut blocked = HashSet::new();
-        blocked.insert("fs:delete:system".to_string());
-        blocked.insert("fs:write:system".to_string());
+        // 危险 shell 命令(command-level,匹配任何 scope)
         blocked.insert("shell:rm".to_string());
         blocked.insert("shell:del".to_string());
         blocked.insert("shell:format".to_string());
@@ -146,8 +145,9 @@ impl Default for GlobalPolicy {
 
         let mut always_approve = HashSet::new();
         always_approve.insert("fs:write:workspace".to_string());
-        always_approve.insert("shell:git:commit".to_string());
-        always_approve.insert("shell:git:push".to_string());
+        // git commit/push 在任何 scope 下都需审批(command-level key)
+        always_approve.insert("shell:commit".to_string());
+        always_approve.insert("shell:push".to_string());
 
         let mut always_deny = HashSet::new();
         always_deny.insert("fs:delete:cache".to_string());
@@ -162,7 +162,7 @@ impl Default for GlobalPolicy {
             dangerous_workspace_policy: WorkspacePolicy::for_dangerous(),
             blocked_operations: blocked,
             always_require_approval: always_approve,
-            always_deny: always_deny,
+            always_deny,
         }
     }
 }
@@ -189,12 +189,32 @@ impl GlobalPolicy {
 
     pub fn is_blocked(&self, op: &Operation) -> bool {
         let op_key = operation_key(op);
-        self.blocked_operations.contains(&op_key) || self.always_deny.contains(&op_key)
+        if self.blocked_operations.contains(&op_key) || self.always_deny.contains(&op_key) {
+            return true;
+        }
+        // 对 Shell 操作额外检查 command-level key(不含 scope,匹配任何 scope 下的危险命令)
+        if let crate::security_kernel::permission::Operation::Shell { command, .. } = op {
+            let cmd_key = format!("shell:{}", command);
+            if self.blocked_operations.contains(&cmd_key) || self.always_deny.contains(&cmd_key) {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn requires_approval(&self, op: &Operation) -> bool {
         let op_key = operation_key(op);
-        self.always_require_approval.contains(&op_key)
+        if self.always_require_approval.contains(&op_key) {
+            return true;
+        }
+        // 对 Shell 操作额外检查 command-level key
+        if let crate::security_kernel::permission::Operation::Shell { command, .. } = op {
+            let cmd_key = format!("shell:{}", command);
+            if self.always_require_approval.contains(&cmd_key) {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn evaluate_fs_operation(

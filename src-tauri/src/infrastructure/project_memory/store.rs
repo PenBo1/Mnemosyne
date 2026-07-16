@@ -22,6 +22,11 @@ use crate::shared::error::AppError;
 /// 超过时让用户主动清理(导出 + 截断),不自动截断(避免静默丢数据)。
 const MAX_FILE_SIZE: usize = 256 * 1024;
 
+/// in-memory cache 最多保留多少个 workspace 的内容。
+/// 超出后清空整个 cache（下次 read 会重新从磁盘加载）。
+/// workspace 数量本身由用户控制，此上限仅防御异常调用场景。
+const MAX_CACHED_WORKSPACES: usize = 32;
+
 #[derive(Clone)]
 pub struct ProjectMemoryStore {
     data_dir: DataDir,
@@ -57,9 +62,7 @@ impl ProjectMemoryStore {
         let path = self.data_dir.workspace_memory_path(workspace_id);
         if !path.exists() {
             // 文件不存在:缓存空字符串,下次读直接命中
-            if let Ok(mut cache) = self.cache.write() {
-                cache.insert(workspace_id.to_string(), String::new());
-            }
+            self.cache_insert(workspace_id, String::new());
             return Ok(String::new());
         }
 
@@ -70,9 +73,7 @@ impl ProjectMemoryStore {
             ))
         })?;
 
-        if let Ok(mut cache) = self.cache.write() {
-            cache.insert(workspace_id.to_string(), content.clone());
-        }
+        self.cache_insert(workspace_id, content.clone());
         Ok(content)
     }
 
@@ -106,9 +107,7 @@ impl ProjectMemoryStore {
             ))
         })?;
 
-        if let Ok(mut cache) = self.cache.write() {
-            cache.insert(workspace_id.to_string(), content.to_string());
-        }
+        self.cache_insert(workspace_id, content.to_string());
         tracing::info!(
             workspace_id,
             bytes = content.len(),
@@ -172,6 +171,25 @@ impl ProjectMemoryStore {
     /// 返回文件大小上限(供前端显示"已使用 X / Y KB")
     pub fn max_size(&self) -> usize {
         MAX_FILE_SIZE
+    }
+
+    /// 检查 workspace 的 project_memory.md 是否存在(供 stats 命令使用)。
+    ///
+    /// 与 `read` 不同:read 返回空串可能意味着"文件不存在"或"文件存在但内容为空",
+    /// 此方法明确区分两种状态(避免空文件被误判为不存在)。
+    pub fn exists(&self, workspace_id: &str) -> bool {
+        self.data_dir.workspace_memory_path(workspace_id).exists()
+    }
+
+    /// 写入 cache 前的防御性检查：超过上限时清空整个 cache。
+    /// workspace 数量本身由用户控制（通常 < 10），此清理仅防御异常调用。
+    fn cache_insert(&self, workspace_id: &str, content: String) {
+        if let Ok(mut cache) = self.cache.write() {
+            if cache.len() >= MAX_CACHED_WORKSPACES && !cache.contains_key(workspace_id) {
+                cache.clear();
+            }
+            cache.insert(workspace_id.to_string(), content);
+        }
     }
 }
 

@@ -10,6 +10,7 @@
 // - 每日上限：跨所有书的章节总数
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,6 +25,9 @@ use crate::domain::pipeline::types::{BookConfig, BookStatus};
 use crate::shared::error::AppError;
 
 // ── 配置 ─────────────────────────────────────────────────────
+
+/// oneshot 任务句柄上限：超过则拒绝新触发（避免无界增长）
+const MAX_ONESHOT_TASKS: usize = 32;
 
 /// 质量门控配置
 #[derive(Debug, Clone)]
@@ -129,6 +133,17 @@ struct ScheduledTask {
     handle: JoinHandle<()>,
 }
 
+/// in_flight 标志守卫：Drop 时原子重置为 false，确保 panic 也不卡死
+struct FlagGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for FlagGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
+}
+
 /// 书籍运行时状态（连续失败 / 暂停 / 失败维度）
 struct BookRuntimeState {
     consecutive_failures: u32,
@@ -153,12 +168,16 @@ pub struct Scheduler {
     pipeline_config: PipelineConfig,
     /// 后台任务句柄
     tasks: Mutex<Vec<ScheduledTask>>,
-    /// 是否正在运行
-    running: RwLock<bool>,
+    /// 一次性触发任务句柄（trigger_write_cycle / trigger_radar_scan）
+    /// 在 stop() 时一并 abort，防止 panic 后 flag 卡死或任务悬挂
+    oneshot_tasks: Mutex<Vec<JoinHandle<()>>>,
+    /// 是否正在运行（AtomicBool：无需 async 锁，与 in_flight 标志一致）
+    running: AtomicBool,
     /// 写作循环是否在执行中（防止重叠）
-    write_cycle_in_flight: Mutex<bool>,
+    /// AtomicBool：可在 Drop guard 中同步重置，panic 也不会卡死
+    write_cycle_in_flight: AtomicBool,
     /// 雷达扫描是否在执行中
-    radar_scan_in_flight: Mutex<bool>,
+    radar_scan_in_flight: AtomicBool,
     /// 每本书的运行时状态
     book_states: DashMap<String, Mutex<BookRuntimeState>>,
     /// 已暂停的书
@@ -177,9 +196,10 @@ impl Scheduler {
             config,
             pipeline_config,
             tasks: Mutex::new(Vec::new()),
-            running: RwLock::new(false),
-            write_cycle_in_flight: Mutex::new(false),
-            radar_scan_in_flight: Mutex::new(false),
+            oneshot_tasks: Mutex::new(Vec::new()),
+            running: AtomicBool::new(false),
+            write_cycle_in_flight: AtomicBool::new(false),
+            radar_scan_in_flight: AtomicBool::new(false),
             book_states: DashMap::new(),
             paused_books: RwLock::new(HashSet::new()),
             daily_chapter_count: Mutex::new(HashMap::new()),
@@ -196,12 +216,10 @@ impl Scheduler {
     /// 启动调度器：立即跑一次写作循环，然后按 cron 间隔定时触发。
     /// 需要 `self_ref`（Arc<Scheduler>）以便后台任务持有引用。
     pub async fn start(self: &Arc<Self>, engine: Arc<AgentEngine>) -> Result<(), AppError> {
-        let mut running = self.running.write().await;
-        if *running {
+        // CAS：若已运行则直接返回
+        if self.running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             return Ok(());
         }
-        *running = true;
-        drop(running);
 
         tracing::info!(
             write_cron = %self.config.write_cron,
@@ -246,25 +264,34 @@ impl Scheduler {
         Ok(())
     }
 
-    /// 停止调度器：取消所有后台任务。
+    /// 停止调度器：取消所有后台任务与一次性触发任务。
     pub async fn stop(&self) {
-        let mut running = self.running.write().await;
-        if !*running {
+        // CAS：若未运行则直接返回
+        if !self.running.swap(false, Ordering::SeqCst) {
             return;
         }
-        *running = false;
-        drop(running);
 
+        // 取消定时循环任务
         let mut tasks = self.tasks.lock().await;
         for task in tasks.drain(..) {
             task.handle.abort();
             tracing::info!(task = %task.name, "Scheduler: 任务已停止");
         }
+        drop(tasks);
+
+        // 取消一次性触发任务并重置 in_flight 标志
+        let mut oneshot = self.oneshot_tasks.lock().await;
+        for handle in oneshot.drain(..) {
+            handle.abort();
+        }
+        drop(oneshot);
+        self.write_cycle_in_flight.store(false, Ordering::SeqCst);
+        self.radar_scan_in_flight.store(false, Ordering::SeqCst);
     }
 
     /// 是否正在运行
     pub async fn is_running(&self) -> bool {
-        *self.running.read().await
+        self.running.load(Ordering::SeqCst)
     }
 
     /// 恢复已暂停的书籍
@@ -285,40 +312,57 @@ impl Scheduler {
     /// 手动触发一次写作循环（用于 IPC 命令）。
     /// 需要 `self_ref`（Arc<Scheduler>）以便后台任务持有引用。
     pub async fn trigger_write_cycle(self: &Arc<Self>, engine: Arc<AgentEngine>) {
-        // 防止重叠
-        let mut in_flight = self.write_cycle_in_flight.lock().await;
-        if *in_flight {
+        // 防止重叠：CAS 原子设置，避免 lock+await
+        if self.write_cycle_in_flight.swap(true, Ordering::SeqCst) {
             tracing::warn!("Scheduler: 写作循环仍在执行，跳过本次触发");
             return;
         }
-        *in_flight = true;
-        drop(in_flight);
 
         // 在后台执行，不阻塞调用方
+        // FlagGuard 确保 panic 时也会重置 in_flight 标志
         let scheduler = self.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
+            let _guard = FlagGuard {
+                flag: &scheduler.write_cycle_in_flight,
+            };
             scheduler.clone().run_write_cycle(engine).await;
-            let mut flag = scheduler.write_cycle_in_flight.lock().await;
-            *flag = false;
         });
+        let mut oneshot = self.oneshot_tasks.lock().await;
+        oneshot.retain(|h| !h.is_finished());
+        if oneshot.len() >= MAX_ONESHOT_TASKS {
+            tracing::warn!(
+                count = oneshot.len(),
+                "Scheduler: oneshot 任务数已达上限，丢弃本次触发"
+            );
+            return;
+        }
+        oneshot.push(handle);
     }
 
     /// 手动触发一次雷达扫描。
     pub async fn trigger_radar_scan(self: &Arc<Self>, engine: Arc<AgentEngine>) {
-        let mut in_flight = self.radar_scan_in_flight.lock().await;
-        if *in_flight {
+        if self.radar_scan_in_flight.swap(true, Ordering::SeqCst) {
             tracing::warn!("Scheduler: 雷达扫描仍在执行，跳过本次触发");
             return;
         }
-        *in_flight = true;
-        drop(in_flight);
 
         let scheduler = self.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
+            let _guard = FlagGuard {
+                flag: &scheduler.radar_scan_in_flight,
+            };
             scheduler.run_radar_scan(engine).await;
-            let mut flag = scheduler.radar_scan_in_flight.lock().await;
-            *flag = false;
         });
+        let mut oneshot = self.oneshot_tasks.lock().await;
+        oneshot.retain(|h| !h.is_finished());
+        if oneshot.len() >= MAX_ONESHOT_TASKS {
+            tracing::warn!(
+                count = oneshot.len(),
+                "Scheduler: oneshot 任务数已达上限，丢弃本次触发"
+            );
+            return;
+        }
+        oneshot.push(handle);
     }
 
     // ── 内部：写作循环 ───────────────────────────────────────
@@ -377,41 +421,49 @@ impl Scheduler {
         }
 
         let paused = self.paused_books.read().await;
-        let mut result = Vec::new();
+        let paused_set = paused.clone();
+        drop(paused);
 
-        for entry in std::fs::read_dir(&books_dir)? {
-            let entry = entry?;
-            if !entry.file_type()?.is_dir() {
-                continue;
-            }
-            let book_id = entry.file_name().to_string_lossy().to_string();
-            // 跳过临时目录
-            if book_id.starts_with('.') {
-                continue;
-            }
-            if paused.contains(&book_id) {
-                continue;
-            }
+        // 整个目录遍历 + 文件读取卸载到阻塞线程池
+        let result = tokio::task::spawn_blocking(move || -> Result<Vec<(String, BookConfig)>, AppError> {
+            let mut result = Vec::new();
+            for entry in std::fs::read_dir(&books_dir)? {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let book_id = entry.file_name().to_string_lossy().to_string();
+                // 跳过临时目录
+                if book_id.starts_with('.') {
+                    continue;
+                }
+                if paused_set.contains(&book_id) {
+                    continue;
+                }
 
-            let book_dir = entry.path();
-            let config_path = book_dir.join("book.json");
-            if !config_path.exists() {
-                continue;
-            }
+                let book_dir = entry.path();
+                let config_path = book_dir.join("book.json");
+                if !config_path.exists() {
+                    continue;
+                }
 
-            let config_content = match std::fs::read_to_string(&config_path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            let book: BookConfig = match serde_json::from_str(&config_content) {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
+                let config_content = match std::fs::read_to_string(&config_path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                let book: BookConfig = match serde_json::from_str(&config_content) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
 
-            if matches!(book.status, BookStatus::Active | BookStatus::Outlining) {
-                result.push((book_id, book));
+                if matches!(book.status, BookStatus::Active | BookStatus::Outlining) {
+                    result.push((book_id, book));
+                }
             }
-        }
+            Ok(result)
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
         Ok(result)
     }
@@ -419,7 +471,7 @@ impl Scheduler {
     /// 处理单本书：写 chaptersPerCycle 章，带重试 + 冷却
     async fn process_book(&self, engine: Arc<AgentEngine>, book_id: String, book_config: BookConfig) {
         for i in 0..self.config.chapters_per_cycle {
-            if !*self.running.read().await {
+            if !self.running.load(Ordering::SeqCst) {
                 return;
             }
             if self.is_daily_cap_reached().await {
@@ -436,9 +488,9 @@ impl Scheduler {
 
             let success = self.write_one_chapter(engine.clone(), &book_id, &book_config).await;
             if !success {
-                // 失败重试（在重试限制内）
+                // 失败重试（在重试限制内：failures < max_audit_retries 才允许重试）
                 let failures = self.get_consecutive_failures(&book_id).await;
-                if failures <= self.config.quality_gates.max_audit_retries && self.config.retry_delay_ms > 0 {
+                if failures < self.config.quality_gates.max_audit_retries && self.config.retry_delay_ms > 0 {
                     tracing::warn!(
                         book_id = %book_id,
                         delay_ms = self.config.retry_delay_ms,
@@ -675,7 +727,7 @@ fn spawn_interval_task(
         interval.tick().await; // 跳过首次立即触发
         loop {
             interval.tick().await;
-            if !*scheduler.running.read().await {
+            if !scheduler.running.load(Ordering::SeqCst) {
                 break;
             }
             match kind {

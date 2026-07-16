@@ -98,7 +98,7 @@ fn is_blocked_host_name(host: &str) -> bool {
     )
 }
 
-fn validate_url(url: &str, _allow_private: bool) -> Result<reqwest::Url, AppError> {
+fn validate_url(url: &str) -> Result<reqwest::Url, AppError> {
     let parsed = reqwest::Url::parse(url).map_err(|e| {
         AppError::invalid_input(format!("invalid url: {}", e))
     })?;
@@ -151,6 +151,12 @@ async fn classify_and_collect_safe_ips(
 
 // ── IPC commands ───────────────────────────────────────────
 
+/// 构造 lm_ping 的 OperationContext。
+///
+/// lm_ping 是诊断工具(探测本地/远程模型服务是否可达),无 workspace/session 上下文。
+/// 此处用 nil UUID 占位,sandbox 安全审计会记录"未知 workspace"标记,
+/// 但不会阻塞(因为 lm_ping 的 Operation::Network 已由 policy 层放行 provider scope)。
+/// 若未来需要按 workspace 限频,应通过 IPC 参数显式传入 workspace_id/session_id。
 fn create_operation_context() -> OperationContext {
     OperationContext {
         workspace: WorkspaceId(uuid::Uuid::nil()),
@@ -171,7 +177,7 @@ pub async fn lm_ping(
         return Err(AppError::invalid_input("empty base url"));
     }
     let probe = format!("{}/models", trimmed);
-    let parsed = validate_url(&probe, true)?;
+    let parsed = validate_url(&probe)?;
     let host = parsed
         .host_str()
         .ok_or_else(|| AppError::invalid_input("missing host"))?
@@ -187,28 +193,24 @@ pub async fn lm_ping(
     };
 
     let kernel = kernel_state.kernel();
-    
-    let status = kernel.execute("lm_ping", &op, &ctx, || {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let mut builder = reqwest::Client::builder()
-                    .timeout(Duration::from_secs(5))
-                    .redirect(reqwest::redirect::Policy::none());
-                let addrs: Vec<SocketAddr> = safe_ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
-                builder = builder.resolve_to_addrs(&host, &addrs);
-                let client = builder
-                    .build()
-                    .map_err(|e| AppError::internal(format!("failed to build ping client: {}", e)))?;
-                let status = client
-                    .get(parsed)
-                    .send()
-                    .await
-                    .map(|r| r.status().as_u16())
-                    .map_err(|e| AppError::internal(format!("ping failed: {}", e)))?;
-                Ok(status)
-            })
-        })
-    })?;
+
+    let status = kernel.execute_async("lm_ping", &op, &ctx, || async {
+        let mut builder = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none());
+        let addrs: Vec<SocketAddr> = safe_ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
+        builder = builder.resolve_to_addrs(&host, &addrs);
+        let client = builder
+            .build()
+            .map_err(|e| AppError::internal(format!("failed to build ping client: {}", e)))?;
+        let status = client
+            .get(parsed)
+            .send()
+            .await
+            .map(|r| r.status().as_u16())
+            .map_err(|e| AppError::internal(format!("ping failed: {}", e)))?;
+        Ok(status)
+    }).await?;
 
     Ok(IpcResponse::ok(status))
 }
@@ -281,16 +283,16 @@ mod tests {
 
     #[test]
     fn validate_url_blocks_userinfo_and_metadata_hostnames() {
-        assert!(validate_url("http://user:pass@example.com/", true).is_err());
-        assert!(validate_url("http://metadata.google.internal/", true).is_err());
-        assert!(validate_url("http://metadata/", true).is_err());
-        assert!(validate_url("http://metadata.azure.com/", true).is_err());
+        assert!(validate_url("http://user:pass@example.com/").is_err());
+        assert!(validate_url("http://metadata.google.internal/").is_err());
+        assert!(validate_url("http://metadata/").is_err());
+        assert!(validate_url("http://metadata.azure.com/").is_err());
     }
 
     #[test]
     fn validate_url_rejects_non_http_schemes() {
-        assert!(validate_url("ftp://example.com/", true).is_err());
-        assert!(validate_url("file:///etc/passwd", true).is_err());
-        assert!(validate_url("javascript:alert(1)", true).is_err());
+        assert!(validate_url("ftp://example.com/").is_err());
+        assert!(validate_url("file:///etc/passwd").is_err());
+        assert!(validate_url("javascript:alert(1)").is_err());
     }
 }

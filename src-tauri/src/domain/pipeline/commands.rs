@@ -20,6 +20,7 @@ use crate::domain::pipeline::agents::reviser::ReviseMode;
 use crate::domain::pipeline::runner::{PipelineConfig, PipelineRunner};
 use crate::domain::pipeline::state::manager::StateManager;
 use crate::domain::pipeline::types::{BookConfig, ChapterMeta, ChapterStatus};
+use crate::domain::pipeline::utils::text_parse::count_zh_chars;
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::infrastructure::validation::validate_id;
 use crate::shared::error::{AppError, IpcResponse};
@@ -289,10 +290,15 @@ pub async fn pipeline_list_chapters(
     if !index_path.exists() {
         return Ok(IpcResponse::ok(Vec::new()));
     }
-    let content = std::fs::read_to_string(&index_path)
-        .map_err(|e| AppError::internal(format!("读取 chapters.json 失败: {}", e)))?;
-    let index: Vec<ChapterMeta> = serde_json::from_str(&content)
-        .map_err(|e| AppError::invalid_input(format!("chapters.json 解析失败: {}", e)))?;
+    // 文件 I/O 卸载到阻塞线程池，避免阻塞 tokio worker
+    let index = tokio::task::spawn_blocking(move || -> Result<Vec<ChapterMeta>, AppError> {
+        let content = std::fs::read_to_string(&index_path)
+            .map_err(|e| AppError::internal(format!("读取 chapters.json 失败: {}", e)))?;
+        serde_json::from_str(&content)
+            .map_err(|e| AppError::invalid_input(format!("chapters.json 解析失败: {}", e)))
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     Ok(IpcResponse::ok(index))
 }
@@ -322,40 +328,38 @@ pub async fn pipeline_get_chapter(
     let chapters_dir = book_dir.join("chapters");
     let padded = format!("{:04}", chapter_number);
 
-    // 查找章节文件
-    let mut chapter_path: Option<PathBuf> = None;
-    if chapters_dir.exists() {
-        for entry in std::fs::read_dir(&chapters_dir)? {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(&padded) && name.ends_with(".md") {
-                chapter_path = Some(entry.path());
-                break;
+    // 所有文件 I/O（目录扫描 + 章节读取 + 索引读取）卸载到阻塞线程池
+    let chapter = tokio::task::spawn_blocking(move || -> Result<ChapterContent, AppError> {
+        let mut chapter_path: Option<PathBuf> = None;
+        if chapters_dir.exists() {
+            for entry in std::fs::read_dir(&chapters_dir)? {
+                let entry = entry?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(&padded) && name.ends_with(".md") {
+                    chapter_path = Some(entry.path());
+                    break;
+                }
             }
         }
-    }
+        let path = chapter_path.ok_or_else(|| {
+            AppError::file_not_found(format!("chapter {} of book {}", chapter_number, book_id))
+        })?;
+        let raw = std::fs::read_to_string(&path)?;
+        let (title, content) = parse_chapter_file(&raw);
+        let status = load_chapter_status(&book_dir, chapter_number)?;
+        let word_count = count_zh_chars(&content);
+        Ok(ChapterContent {
+            chapter_number,
+            title,
+            content,
+            word_count,
+            status,
+        })
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
-    let path = chapter_path.ok_or_else(|| {
-        AppError::file_not_found(format!("chapter {} of book {}", chapter_number, book_id))
-    })?;
-
-    let raw = std::fs::read_to_string(&path)?;
-    // 解析首行标题 + 正文
-    let (title, content) = parse_chapter_file(&raw);
-
-    // 从索引读取状态
-    let status = load_chapter_status(&book_dir, chapter_number);
-
-    // 字数统计（粗略：中文字符计数）
-    let word_count = count_zh_chars(&content);
-
-    Ok(IpcResponse::ok(ChapterContent {
-        chapter_number,
-        title,
-        content,
-        word_count,
-        status,
-    }))
+    Ok(IpcResponse::ok(chapter))
 }
 
 /// 解析章节文件：首行 # 标题，其余为正文
@@ -372,33 +376,23 @@ fn parse_chapter_file(raw: &str) -> (String, String) {
 }
 
 /// 从 chapters.json 读取指定章节的状态
-fn load_chapter_status(book_dir: &std::path::Path, chapter_number: u32) -> ChapterStatus {
+///
+/// 文件不存在（NotFound）→ 返回 Drafted（新章节默认状态）；
+/// 文件存在但解析失败 → 向上传播错误（避免静默掩盖索引损坏）。
+fn load_chapter_status(book_dir: &std::path::Path, chapter_number: u32) -> Result<ChapterStatus, AppError> {
     let index_path = book_dir.join("chapters.json");
     let content = match std::fs::read_to_string(&index_path) {
         Ok(c) => c,
-        Err(_) => return ChapterStatus::Drafted,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(ChapterStatus::Drafted),
+        Err(e) => return Err(AppError::file_read_error(format!("{}: {}", index_path.display(), e))),
     };
-    let index: Vec<ChapterMeta> = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return ChapterStatus::Drafted,
-    };
-    index
+    let index: Vec<ChapterMeta> = serde_json::from_str(&content)
+        .map_err(|e| AppError::invalid_format(format!("chapters.json parse: {}", e)))?;
+    Ok(index
         .iter()
         .find(|c| c.number == chapter_number)
         .map(|c| c.status)
-        .unwrap_or(ChapterStatus::Drafted)
-}
-
-/// 中文字符计数（与 governance::length::count_zh_chars 一致）
-fn count_zh_chars(content: &str) -> u32 {
-    content
-        .chars()
-        .filter(|&c| {
-            ('\u{4E00}'..='\u{9FFF}').contains(&c)
-                || ('\u{3400}'..='\u{4DBF}').contains(&c)
-                || ('\u{F900}'..='\u{FAFF}').contains(&c)
-        })
-        .count() as u32
+        .unwrap_or(ChapterStatus::Drafted))
 }
 
 // ── 压缩旧卷摘要 ─────────────────────────────────────────────
@@ -453,49 +447,55 @@ pub async fn pipeline_list_books(
         return Ok(IpcResponse::ok(Vec::new()));
     }
 
-    let mut summaries = Vec::new();
-    for entry in std::fs::read_dir(&books_dir)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
+    // 整个目录遍历 + 每本书的文件读取都卸载到阻塞线程池
+    let mut summaries = tokio::task::spawn_blocking(move || -> Result<Vec<BookSummary>, AppError> {
+        let mut summaries = Vec::new();
+        for entry in std::fs::read_dir(&books_dir)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let book_id = entry.file_name().to_string_lossy().to_string();
+            // 跳过 staging 临时目录
+            if book_id.starts_with('.') || book_id.starts_with(".tmp") {
+                continue;
+            }
+
+            let book_dir = entry.path();
+            let config_path = book_dir.join("book.json");
+            if !config_path.exists() {
+                continue;
+            }
+
+            let config_content = match std::fs::read_to_string(&config_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let book: BookConfig = match serde_json::from_str(&config_content) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            // 读取章节计数
+            let chapter_count = load_chapter_count(&book_dir);
+
+            summaries.push(BookSummary {
+                id: book.id.clone(),
+                title: book.title,
+                genre: book.genre,
+                status: format!("{:?}", book.status).to_lowercase(),
+                target_chapters: book.target_chapters,
+                chapter_word_count: book.chapter_word_count,
+                language: format!("{:?}", book.language.unwrap_or_default()).to_lowercase(),
+                chapter_count,
+                created_at: book.created_at,
+                updated_at: book.updated_at,
+            });
         }
-        let book_id = entry.file_name().to_string_lossy().to_string();
-        // 跳过 staging 临时目录
-        if book_id.starts_with('.') || book_id.starts_with(".tmp") {
-            continue;
-        }
-
-        let book_dir = entry.path();
-        let config_path = book_dir.join("book.json");
-        if !config_path.exists() {
-            continue;
-        }
-
-        let config_content = match std::fs::read_to_string(&config_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        let book: BookConfig = match serde_json::from_str(&config_content) {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-
-        // 读取章节计数
-        let chapter_count = load_chapter_count(&book_dir);
-
-        summaries.push(BookSummary {
-            id: book.id.clone(),
-            title: book.title,
-            genre: book.genre,
-            status: format!("{:?}", book.status).to_lowercase(),
-            target_chapters: book.target_chapters,
-            chapter_word_count: book.chapter_word_count,
-            language: format!("{:?}", book.language.unwrap_or_default()).to_lowercase(),
-            chapter_count,
-            created_at: book.created_at,
-            updated_at: book.updated_at,
-        });
-    }
+        Ok(summaries)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     // 按更新时间倒序
     summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -595,8 +595,13 @@ pub async fn pipeline_read_truth_file(
     if !path.exists() {
         return Ok(IpcResponse::ok(String::new()));
     }
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| AppError::internal(format!("读取真相文件失败: {}", e)))?;
+    // 文件 I/O 卸载到阻塞线程池
+    let content = tokio::task::spawn_blocking(move || {
+        std::fs::read_to_string(&path)
+            .map_err(|e| AppError::internal(format!("读取真相文件失败: {}", e)))
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     Ok(IpcResponse::ok(content))
 }
@@ -722,13 +727,16 @@ pub async fn pipeline_scheduler_is_book_paused(
     Ok(IpcResponse::ok(paused))
 }
 
-/// 订阅调度器事件（占位：事件分发通过 Tauri event 系统）。
+/// 订阅调度器事件（未实现：事件分发通过 Tauri event 系统）。
 #[tauri::command]
 pub async fn pipeline_scheduler_subscribe(
     _scheduler_state: State<'_, SchedulerState>,
 ) -> Result<IpcResponse<Vec<SchedulerEvent>>, AppError> {
-    // 事件订阅通过 Tauri 的 app_handle.emit 实现，这里返回空列表占位
-    Ok(IpcResponse::ok(Vec::new()))
+    // 事件订阅应通过 Tauri 的 app_handle.emit 实现，当前未落地。
+    // 不再静默返回空列表，显式报 not_implemented 避免调用方误以为成功。
+    Err(AppError::not_implemented(
+        "pipeline_scheduler_subscribe 尚未实现，事件分发请通过 Tauri event 系统",
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -939,11 +947,8 @@ pub async fn pipeline_interactive_film_run(
 /// 校验 StoryGraph（4 error 级 + 9 issue 级）。
 #[tauri::command]
 pub async fn pipeline_story_graph_validate(
-    graph_json: String,
+    graph: crate::domain::pipeline::interactive_film::graph_schema::StoryGraph,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
-    let graph: crate::domain::pipeline::interactive_film::graph_schema::StoryGraph =
-        serde_json::from_str(&graph_json)
-            .map_err(|e| AppError::invalid_input(format!("StoryGraph 解析失败: {}", e)))?;
     let errors = crate::domain::pipeline::interactive_film::validation::review_story_graph(&graph);
     Ok(IpcResponse::ok(serde_json::to_value(&errors).map_err(|e| AppError::internal(e.to_string()))?))
 }
@@ -951,11 +956,8 @@ pub async fn pipeline_story_graph_validate(
 /// 枚举 StoryGraph 的所有可玩路径（DFS + 状态去重）。
 #[tauri::command]
 pub async fn pipeline_story_graph_paths(
-    graph_json: String,
+    graph: crate::domain::pipeline::interactive_film::graph_schema::StoryGraph,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
-    let graph: crate::domain::pipeline::interactive_film::graph_schema::StoryGraph =
-        serde_json::from_str(&graph_json)
-            .map_err(|e| AppError::invalid_input(format!("StoryGraph 解析失败: {}", e)))?;
     let result = crate::domain::pipeline::interactive_film::paths::enumerate_runtime_paths(&graph);
     Ok(IpcResponse::ok(serde_json::to_value(&result).map_err(|e| AppError::internal(e.to_string()))?))
 }
@@ -963,15 +965,9 @@ pub async fn pipeline_story_graph_paths(
 /// 应用 StoryGraphDelta（upsert/remove 语义）。
 #[tauri::command]
 pub async fn pipeline_story_graph_apply_delta(
-    graph_json: String,
-    delta_json: String,
+    mut graph: crate::domain::pipeline::interactive_film::graph_schema::StoryGraph,
+    delta: crate::domain::pipeline::interactive_film::delta::StoryGraphDelta,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
-    let mut graph: crate::domain::pipeline::interactive_film::graph_schema::StoryGraph =
-        serde_json::from_str(&graph_json)
-            .map_err(|e| AppError::invalid_input(format!("StoryGraph 解析失败: {}", e)))?;
-    let delta: crate::domain::pipeline::interactive_film::delta::StoryGraphDelta =
-        serde_json::from_str(&delta_json)
-            .map_err(|e| AppError::invalid_input(format!("StoryGraphDelta 解析失败: {}", e)))?;
     crate::domain::pipeline::interactive_film::delta::apply_story_graph_delta(&mut graph, &delta)?;
     Ok(IpcResponse::ok(serde_json::to_value(&graph).map_err(|e| AppError::internal(e.to_string()))?))
 }

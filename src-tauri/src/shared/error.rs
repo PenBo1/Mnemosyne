@@ -91,22 +91,13 @@ impl std::error::Error for AppError {}
 
 impl From<std::io::Error> for AppError {
     fn from(err: std::io::Error) -> Self {
-        tracing::error!(error = %err, "IO error");
         Self::new(status::FILE_READ_ERROR, "IO_ERROR", err.to_string())
     }
 }
 
 impl From<serde_json::Error> for AppError {
     fn from(err: serde_json::Error) -> Self {
-        tracing::error!(error = %err, "JSON error");
         Self::new(status::INVALID_FORMAT, "JSON_ERROR", err.to_string())
-    }
-}
-
-impl From<tauri::Error> for AppError {
-    fn from(err: tauri::Error) -> Self {
-        tracing::error!(error = %err, "Tauri error");
-        Self::new(status::INTERNAL_ERROR, "TAURI_ERROR", err.to_string())
     }
 }
 

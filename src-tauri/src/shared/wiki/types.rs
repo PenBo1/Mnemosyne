@@ -5,6 +5,7 @@ use std::str::FromStr;
 /// Wiki 文档分类
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum WikiCategory {
     /// 角色（人物）
     Character,
@@ -13,6 +14,7 @@ pub enum WikiCategory {
     /// 事件（剧情节点）
     Event,
     /// 概念（抽象元素）
+    #[default]
     Concept,
     /// 物品（道具）
     Object,
@@ -63,8 +65,10 @@ impl FromStr for WikiCategory {
 /// Wiki 文档来源类型
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum WikiSourceType {
     /// 作者定义（手动创建）
+    #[default]
     AuthorDefined,
     /// 从文本提取（自动分析）
     ExtractedFromText,
@@ -98,10 +102,4 @@ impl FromStr for WikiSourceType {
     }
 }
 
-impl Default for WikiCategory {
-    fn default() -> Self { WikiCategory::Concept }
-}
 
-impl Default for WikiSourceType {
-    fn default() -> Self { WikiSourceType::AuthorDefined }
-}

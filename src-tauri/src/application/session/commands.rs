@@ -3,6 +3,7 @@ use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::stores::session::{CreateSessionRequest, Session, Message, MessageMeta};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::fs::fs_utils::validate_id_component;
+use crate::core::agent::commands::AgentState;
 use serde::Deserialize;
 use tauri::State;
 
@@ -148,4 +149,26 @@ pub async fn message_create(
 
     tracing::debug!(message_id = %message.id, "Message created");
     Ok(IpcResponse::ok(message))
+}
+
+/// 主动为 session 重新生成短期记忆摘要(用户点击"重新生成"时触发)
+///
+/// 通过 AgentState 获取 AgentEngine 实例,业务逻辑在 AgentEngine.summarize_session 内部。
+/// 放在 application 层以避免 infrastructure → core/agent 反向依赖。
+#[tauri::command]
+pub async fn short_term_memory_regenerate(
+    state: State<'_, AgentState>,
+    session_id: String,
+    book_id: Option<String>,
+    agent_role: Option<String>,
+) -> Result<IpcResponse<bool>, AppError> {
+    validate_id_component(&session_id, "session_id")?;
+    if let Some(b) = book_id.as_deref() {
+        validate_id_component(b, "book_id")?;
+    }
+    state
+        .engine
+        .summarize_session(&session_id, book_id.as_deref(), agent_role.as_deref())
+        .await?;
+    Ok(IpcResponse::ok(true))
 }

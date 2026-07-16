@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
 use tokio::sync::RwLock;
@@ -45,6 +45,12 @@ pub struct RoleStats {
     pub avg_duration_ms: f64,
 }
 
+impl Default for RoleStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RoleStats {
     pub fn new() -> Self {
         Self {
@@ -61,14 +67,15 @@ impl RoleStats {
 }
 
 pub struct TokenCounter {
-    records: Arc<RwLock<Vec<UsageRecord>>>,
+    // 用 VecDeque 让头部淘汰为 O(1)；Vec::remove(0) 是 O(n) 会随记录数线性退化。
+    records: Arc<RwLock<VecDeque<UsageRecord>>>,
     max_records: usize,
 }
 
 impl TokenCounter {
     pub fn new(max_records: usize) -> Self {
         Self {
-            records: Arc::new(RwLock::new(Vec::new())),
+            records: Arc::new(RwLock::new(VecDeque::new())),
             max_records,
         }
     }
@@ -92,10 +99,10 @@ impl TokenCounter {
         let mut records = self.records.write().await;
 
         if records.len() >= self.max_records {
-            records.remove(0);
+            records.pop_front();
         }
 
-        records.push(record);
+        records.push_back(record);
     }
 
     pub async fn total_usage(&self) -> TokenUsage {
@@ -126,7 +133,9 @@ impl TokenCounter {
         let mut durations: HashMap<SubAgentRole, (u64, u64)> = HashMap::new();
 
         for record in records.iter() {
-            let stats = stats_map.get_mut(&record.role).unwrap();
+            // 用 entry().or_default() 兜底未知 role（如未来新增 Default/Custom 等），
+            // 避免 stats_map 只预填三种 role 时其它 role 触发 panic。
+            let stats = stats_map.entry(record.role).or_default();
             stats.total_input_tokens += record.usage.input_tokens as u64;
             stats.total_output_tokens += record.usage.output_tokens as u64;
             stats.total_calls += 1;

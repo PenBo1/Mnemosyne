@@ -118,7 +118,7 @@ impl Database {
             )
         ).map_err(db_err)?;
         let rows = stmt.query_map([], map_loop_pattern_row).map_err(db_err)?;
-        rows.map(|r| Ok(r.map_err(db_err)?)).collect()
+        rows.map(|r| r.map_err(db_err)).collect()
     }
 
     /// 获取单个 loop pattern。

@@ -7,6 +7,7 @@
 // 而非参考值算法；测试按百分比区间校准。
 
 use super::super::types::Language;
+use super::super::utils::text_parse::count_zh_chars;
 
 // ── 计数模式与长度规格 ───────────────────────────────────────
 
@@ -71,20 +72,6 @@ pub fn count_chapter_length(content: &str, mode: CountingMode) -> u32 {
         CountingMode::ZhChars => count_zh_chars(content),
         CountingMode::EnWords => count_en_words(content),
     }
-}
-
-/// 统计中文字符数：CJK 统一表意文字（U+4E00–U+9FFF）
-/// + CJK 扩展 A（U+3400–U+4DBF）+ CJK 兼容表意文字（U+F900–U+FAFF）。
-/// 不计 ASCII、标点、空白。
-fn count_zh_chars(content: &str) -> u32 {
-    content
-        .chars()
-        .filter(|&c| {
-            ('\u{4E00}'..='\u{9FFF}').contains(&c)
-                || ('\u{3400}'..='\u{4DBF}').contains(&c)
-                || ('\u{F900}'..='\u{FAFF}').contains(&c)
-        })
-        .count() as u32
 }
 
 /// 统计英文单词数：按空白切分，计非空 token。

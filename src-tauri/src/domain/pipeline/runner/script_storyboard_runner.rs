@@ -9,6 +9,7 @@
 // 互动影游的 story-graph 生成未实现，仅落盘其他产物。
 
 use std::path::{Path, PathBuf};
+
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
 use super::super::agents::script_storyboard::{
@@ -16,6 +17,7 @@ use super::super::agents::script_storyboard::{
     StoryboardCreationInput,
 };
 use super::super::types::Language;
+use super::super::utils::fs_safety::{safe_segment, slugify};
 
 // ── StoryboardImageAsset 类型 ───────────────────────────────
 
@@ -454,8 +456,8 @@ struct RunStatusJson {
 /// 解析项目 ID。
 fn resolve_project_id(project_id: &Option<String>, title: &str) -> String {
     match project_id {
-        Some(id) if !id.trim().is_empty() => safe_segment(id),
-        _ => safe_segment(&slugify(title)),
+        Some(id) if !id.trim().is_empty() => safe_segment(id, "script"),
+        _ => safe_segment(&slugify(title, "script"), "script"),
     }
 }
 
@@ -560,53 +562,6 @@ fn format_numbered_prompts(prompts: &[String]) -> String {
         .join("\n")
 }
 
-/// slugify。
-fn slugify(value: &str) -> String {
-    let lower: String = value.to_lowercase();
-    let mut slug = String::new();
-    let mut prev_dash = false;
-    for c in lower.chars() {
-        if c == '\'' || c == '"' {
-            continue;
-        }
-        if c.is_alphanumeric() {
-            slug.push(c);
-            prev_dash = false;
-        } else if !prev_dash {
-            slug.push('-');
-            prev_dash = true;
-        }
-    }
-    let trimmed = slug.trim_matches('-');
-    let truncated: String = trimmed.chars().take(60).collect();
-    if truncated.is_empty() {
-        format!("script-{}", chrono::Utc::now().timestamp_millis())
-    } else {
-        truncated
-    }
-}
-
-/// 文件系统安全段。
-fn safe_segment(value: &str) -> String {
-    let after_dangerous: String = value
-        .chars()
-        .map(|c| match c {
-            '\\' | '/' | ':' | '\0' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
-            _ => c,
-        })
-        .collect();
-    let after_ws = regex::Regex::new(r"\s+")
-        .map(|re| re.replace_all(&after_dangerous, "-").to_string())
-        .unwrap_or(after_dangerous);
-    let trimmed = after_ws.trim_matches('-');
-    let truncated: String = trimmed.chars().take(80).collect();
-    if truncated.is_empty() || truncated == "." || truncated == ".." {
-        format!("script-{}", chrono::Utc::now().timestamp_millis())
-    } else {
-        truncated
-    }
-}
-
 /// POSIX 路径。
 fn to_posix_str(path: &str) -> String {
     path.replace('\\', "/")
@@ -672,51 +627,6 @@ fn write_text(path: &Path, content: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── slugify ──
-
-    #[test]
-    fn slugify_lowercases_and_dashes() {
-        assert_eq!(slugify("Hello World!"), "hello-world");
-    }
-
-    #[test]
-    fn slugify_preserves_cjk() {
-        assert_eq!(slugify("暗流 涌动"), "暗流-涌动");
-    }
-
-    #[test]
-    fn slugify_truncates_to_60() {
-        let long = "a".repeat(100);
-        let result = slugify(&long);
-        assert_eq!(result.len(), 60);
-    }
-
-    #[test]
-    fn slugify_empty_returns_fallback() {
-        let result = slugify("!!!");
-        assert!(result.starts_with("script-"), "expected fallback, got: {}", result);
-    }
-
-    // ── safe_segment ──
-
-    #[test]
-    fn safe_segment_replaces_dangerous_chars() {
-        assert_eq!(safe_segment("a/b:c"), "a-b-c");
-    }
-
-    #[test]
-    fn safe_segment_truncates_to_80() {
-        let long = "a".repeat(100);
-        let result = safe_segment(&long);
-        assert_eq!(result.len(), 80);
-    }
-
-    #[test]
-    fn safe_segment_rejects_dot() {
-        let result = safe_segment(".");
-        assert!(result.starts_with("script-"));
-    }
 
     // ── normalize_output_dir ──
 

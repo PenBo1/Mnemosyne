@@ -1,4 +1,4 @@
-﻿
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -16,7 +16,15 @@ impl AgnesProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         let url = base_url.unwrap_or_else(|| "https://apihub.agnes-ai.com/v1".to_string());
         tracing::debug!(base_url = %url, "AgnesProvider created");
-        Self { client: Client::new(), api_key, base_url: url }
+        Self {
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(30))
+                .timeout(std::time::Duration::from_secs(600))
+                .build()
+                .expect("failed to build reqwest client for AgnesProvider"),
+            api_key,
+            base_url: url,
+        }
     }
 }
 
@@ -43,11 +51,17 @@ impl Provider for AgnesProvider {
                 tracing::error!(error = %e, "Agnes request failed");
                 AppError::stream_error(e.to_string())
             })?;
+        let status = resp.status();
         let json: serde_json::Value = resp.json().await
             .map_err(|e| {
                 tracing::error!(error = %e, "Agnes response parse failed");
                 AppError::invalid_format(e.to_string())
             })?;
+        if !status.is_success() {
+            let msg = json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str())
+                .unwrap_or("Unknown error");
+            return Err(AppError::internal(format!("API {}: {}", status, msg)));
+        }
         json["choices"][0]["message"]["content"].as_str().map(|s| s.to_string())
             .ok_or_else(|| {
                 tracing::error!("No content in Agnes response");
@@ -68,12 +82,13 @@ impl Provider for AgnesProvider {
         tracing::info!(status = %resp.status(), "Agnes stream response received");
 
         let byte_stream = resp.bytes_stream();
-        let event_stream = byte_stream.filter_map(|chunk| async {
-            match chunk {
+        let buffer = super::sse_buffer::SseLineBuffer::new();
+        let event_stream = byte_stream.scan(buffer, |buf, chunk| {
+            let events: Vec<StreamEvent> = match chunk {
                 Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
+                    let lines = buf.push(bytes.as_ref());
                     let mut events = Vec::new();
-                    for line in text.lines() {
+                    for line in lines {
                         let line = line.trim();
                         if line.is_empty() || !line.starts_with("data: ") { continue; }
                         let data = &line[6..];
@@ -119,10 +134,11 @@ impl Provider for AgnesProvider {
                             }
                         }
                     }
-                    if events.is_empty() { None } else { Some(futures_util::stream::iter(events)) }
+                    events
                 }
-                Err(e) => Some(futures_util::stream::iter(vec![StreamEvent::Error(e.to_string())])),
-            }
+                Err(e) => vec![StreamEvent::Error(e.to_string())],
+            };
+            futures_util::future::ready(Some(futures_util::stream::iter(events)))
         }).flatten();
         Ok(Box::pin(event_stream))
     }

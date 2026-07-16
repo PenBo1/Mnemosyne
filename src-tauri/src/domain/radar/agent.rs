@@ -72,11 +72,9 @@ pub async fn scan(engine: &AgentEngine, sources: Option<Vec<Box<dyn RadarSource>
     let sources = sources.unwrap_or_else(default_sources);
 
     // 1. 并行抓取所有数据源
-    let mut rankings = Vec::with_capacity(sources.len());
-    for source in &sources {
-        let result = source.fetch().await;
+    let rankings = futures_util::future::join_all(sources.iter().map(|s| s.fetch())).await;
+    for (source, result) in sources.iter().zip(&rankings) {
         tracing::debug!(source = source.name(), entries = result.entries.len(), "Radar source fetched");
-        rankings.push(result);
     }
 
     // 2. 格式化排行榜为 prompt 文本
@@ -87,7 +85,7 @@ pub async fn scan(engine: &AgentEngine, sources: Option<Vec<Box<dyn RadarSource>
     let response = engine.prompt_once(&system_prompt, USER_MESSAGE).await?;
     tracing::info!(
         response_len = response.len(),
-        response_preview = &response[..response.len().min(200)],
+        response_preview = safe_char_slice(&response, 200),
         "Radar LLM response received"
     );
 
@@ -104,16 +102,22 @@ pub async fn scan(engine: &AgentEngine, sources: Option<Vec<Box<dyn RadarSource>
     Ok(ScanOutcome { result, raw_rankings: rankings })
 }
 
+/// 安全切片:按字符边界截取前 max_chars 个字符(避免 UTF-8 字节切片 panic)。
+fn safe_char_slice(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
 /// 从 LLM 输出中提取 JSON 并解析为 RadarResult。
 /// 容错:用括号匹配提取首个 `{...}` JSON 块。
 fn parse_result(content: &str) -> Result<RadarResult, AppError> {
     let json_str = extract_json_block(content).ok_or_else(|| {
         let preview = if content.is_empty() {
             "(empty response)"
-        } else if content.len() > 300 {
-            &content[..300]
         } else {
-            content
+            safe_char_slice(content, 300)
         };
         AppError::invalid_input(format!(
             "Radar output format error: no JSON found. LLM response (preview): {}",

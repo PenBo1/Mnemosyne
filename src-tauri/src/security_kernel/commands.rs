@@ -115,7 +115,7 @@ pub struct ApprovalStatsDto {
 pub async fn approval_list_pending(
     state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<Vec<ApprovalTokenDto>>, AppError> {
-    let approval = state.approval_manager().lock().unwrap();
+    let approval = state.approval_manager().lock().unwrap_or_else(|e| e.into_inner());
     let tokens = approval.get_pending_tokens();
     let dtos = tokens.iter().map(ApprovalTokenDto::from).collect();
     Ok(IpcResponse::ok(dtos))
@@ -126,7 +126,7 @@ pub async fn approval_list_pending(
 pub async fn approval_stats(
     state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<ApprovalStatsDto>, AppError> {
-    let approval = state.approval_manager().lock().unwrap();
+    let approval = state.approval_manager().lock().unwrap_or_else(|e| e.into_inner());
     let stats = approval.stats();
     Ok(IpcResponse::ok(ApprovalStatsDto {
         pending: stats.pending,
@@ -167,7 +167,7 @@ pub async fn approval_reject(
 pub async fn approval_cleanup_expired(
     state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<usize>, AppError> {
-    let approval = state.approval_manager().lock().unwrap();
+    let approval = state.approval_manager().lock().unwrap_or_else(|e| e.into_inner());
     let cleaned = approval.cleanup_expired();
     Ok(IpcResponse::ok(cleaned.len()))
 }

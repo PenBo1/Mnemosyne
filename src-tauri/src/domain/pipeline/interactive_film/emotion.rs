@@ -4,6 +4,8 @@
 // - analyze_text_emotion：在文本中搜索情感词，否定词守卫翻转极性，累加得分
 // - analyze_emotional_arc：沿路径收集 scene_desc + dialogue text，逐节点计算情感分数
 
+use std::sync::OnceLock;
+
 use super::graph_schema::StoryGraph;
 use super::paths::RuntimePath;
 
@@ -37,6 +39,28 @@ const EMOTION_LEXICON: &[EmotionWord] = &[
     EmotionWord { word: "失望", valence: -0.6 },
 ];
 
+/// 预编译情感词典条目：缓存 word_chars 避免每次调用重复 char 收集
+struct CachedEmotionWord {
+    word_chars: Vec<char>,
+    valence: f64,
+}
+
+/// 全局缓存的预编译情感词典（OnceLock 保证只初始化一次）
+static CACHED_LEXICON: OnceLock<Vec<CachedEmotionWord>> = OnceLock::new();
+
+/// 获取预编译情感词典（首次调用时初始化，后续直接返回引用）
+fn cached_lexicon() -> &'static [CachedEmotionWord] {
+    CACHED_LEXICON.get_or_init(|| {
+        EMOTION_LEXICON
+            .iter()
+            .map(|entry| CachedEmotionWord {
+                word_chars: entry.word.chars().collect(),
+                valence: entry.valence,
+            })
+            .collect()
+    })
+}
+
 /// 否定词守卫：词前一个字符若为这些则翻转极性
 const NEGATION_PREFIXES: &[char] = &['不', '没', '无', '别', '未'];
 
@@ -52,9 +76,10 @@ fn is_negation(ch: char) -> bool {
 /// 累加所有匹配词的 valence，返回总分。
 pub fn analyze_text_emotion(text: &str) -> f64 {
     let chars: Vec<char> = text.chars().collect();
+    let lexicon = cached_lexicon();
     let mut total: f64 = 0.0;
-    for entry in EMOTION_LEXICON {
-        let word_chars: Vec<char> = entry.word.chars().collect();
+    for entry in lexicon {
+        let word_chars: &[char] = &entry.word_chars;
         let word_len = word_chars.len();
         if word_len == 0 || word_len > chars.len() {
             continue;

@@ -110,8 +110,14 @@ fn apply_hook_ops(hooks_state: &HooksState, delta: &RuntimeStateDelta) -> HooksS
             updated.last_advanced_chapter =
                 updated.last_advanced_chapter.max(delta.chapter);
             hooks_by_id.insert(hook_id.clone(), updated);
+        } else {
+            // 不存在则告警（可能索引损坏或并发清理），不再静默跳过
+            tracing::warn!(
+                hook_id = %hook_id,
+                chapter = delta.chapter,
+                "apply_hook_ops: resolve 指向不存在的 hookId，已跳过"
+            );
         }
-        // 不存在则跳过（可能已被清理）
     }
 
     // defer
@@ -122,6 +128,12 @@ fn apply_hook_ops(hooks_state: &HooksState, delta: &RuntimeStateDelta) -> HooksS
             updated.last_advanced_chapter =
                 updated.last_advanced_chapter.max(delta.chapter);
             hooks_by_id.insert(hook_id.clone(), updated);
+        } else {
+            tracing::warn!(
+                hook_id = %hook_id,
+                chapter = delta.chapter,
+                "apply_hook_ops: defer 指向不存在的 hookId，已跳过"
+            );
         }
     }
 

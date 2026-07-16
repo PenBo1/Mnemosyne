@@ -68,7 +68,7 @@ pub async fn consolidate(
     // Phase 7 hotfix 2：归档前的 hook 晋升重跑。独立于摘要压缩执行，
     // 即使是尚无已完成卷的新书，也会在 seed 的 advanced_count 越过阈值时
     // 翻转 promoted 标志。
-    let promoted_hook_count = rerun_advanced_count_promotion(&story_dir, &summaries_raw);
+    let promoted_hook_count = rerun_advanced_count_promotion(&story_dir, &summaries_raw)?;
 
     // 任一为空则提前返回
     if summaries_raw.is_empty() || outline_raw.is_empty() {
@@ -194,11 +194,12 @@ pub async fn consolidate(
 ///
 /// - `story_dir`：`<book>/story` 目录
 /// - `summaries_raw`：已读取的 chapter_summaries.md 内容（避免重复读盘）
-fn rerun_advanced_count_promotion(story_dir: &std::path::Path, summaries_raw: &str) -> u32 {
+fn rerun_advanced_count_promotion(story_dir: &std::path::Path, summaries_raw: &str) -> Result<u32, AppError> {
     let ledger_path = story_dir.join("pending_hooks.md");
     let raw = match std::fs::read_to_string(&ledger_path) {
         Ok(s) if !s.trim().is_empty() => s,
-        _ => return 0,
+        // 文件缺失或空 → 无需晋升，返回 0
+        _ => return Ok(0),
     };
 
     // 语言检测：含 CJK 字符视为 zh，否则 en
@@ -210,19 +211,18 @@ fn rerun_advanced_count_promotion(story_dir: &std::path::Path, summaries_raw: &s
 
     let hooks = parse_pending_hooks_markdown(&raw, language);
     if hooks.is_empty() {
-        return 0;
+        return Ok(0);
     }
 
     let result = rerun_promotion_pass(&hooks, summaries_raw);
     if !result.updated {
-        return 0;
+        return Ok(0);
     }
 
     let rendered = render_hooks_markdown(&result.hooks, language);
-    if std::fs::write(&ledger_path, rendered).is_err() {
-        return 0;
-    }
-    result.flipped_count
+    std::fs::write(&ledger_path, rendered)
+        .map_err(|e| AppError::file_write_error(format!("{}: {}", ledger_path.display(), e)))?;
+    Ok(result.flipped_count)
 }
 
 /// Compress a single volume via one LLM pass; return the narrative paragraph.
@@ -322,7 +322,7 @@ fn extract_volume_header(header: &str) -> Option<(String, u32, u32)> {
     let (range_byte_pos, start_ch, end_ch) = find_range(header)?;
     let before_range = &header[..range_byte_pos];
     // 优先按开括号切分：`第一卷 起源（第1-30章）` → `第一卷 起源`
-    let name = if let Some(bpos) = before_range.rfind(|c| c == '（' || c == '(') {
+    let name = if let Some(bpos) = before_range.rfind(['（', '(']) {
         before_range[..bpos].trim().to_string()
     } else {
         // 无括号时剥离尾部范围前缀词（第 / Chapters / Ch. 等）

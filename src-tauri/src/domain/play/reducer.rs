@@ -63,15 +63,13 @@ fn validate_mutation(
 ) -> Result<(), AppError> {
     // 收集本次 upsert 的实体 id（增量），与 DB 已有实体合并
     let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for row in conn
+    for id in (conn
         .prepare("SELECT id FROM entities")
         .map_err(db_err)?
         .query_map([], |r| r.get::<_, String>(0))
-        .map_err(db_err)?
+        .map_err(db_err)?).flatten()
     {
-        if let Ok(id) = row {
-            known.insert(id);
-        }
+        known.insert(id);
     }
     for e in &mutation.entities_upsert {
         known.insert(e.id.clone());
@@ -153,15 +151,13 @@ fn normalize_holding_edges(
     }
     // 收集 DB + 本次 upsert 中物理实体的 id
     let mut physical_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for row in conn
+    for id in (conn
         .prepare("SELECT id FROM entities WHERE physical = 1")
         .map_err(db_err)?
         .query_map([], |r| r.get::<_, String>(0))
-        .map_err(db_err)?
+        .map_err(db_err)?).flatten()
     {
-        if let Ok(id) = row {
-            physical_ids.insert(id);
-        }
+        physical_ids.insert(id);
     }
     for e in &mutation.entities_upsert {
         if e.physical.unwrap_or(false) {

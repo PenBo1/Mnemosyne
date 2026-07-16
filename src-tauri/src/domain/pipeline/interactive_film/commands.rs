@@ -41,10 +41,8 @@ pub async fn film_generate_graph(
 /// 导出为单文件可玩 HTML。
 #[tauri::command]
 pub async fn film_export_html(
-    graph_json: String,
+    graph: StoryGraph,
 ) -> Result<IpcResponse<String>, AppError> {
-    let graph: StoryGraph = serde_json::from_str(&graph_json)
-        .map_err(|e| AppError::invalid_input(format!("StoryGraph 解析失败: {}", e)))?;
     let html = build_playable_html(&graph)?;
     Ok(IpcResponse::ok(html))
 }
@@ -52,10 +50,8 @@ pub async fn film_export_html(
 /// 导出为 Ink 脚本。
 #[tauri::command]
 pub async fn film_export_ink(
-    graph_json: String,
+    graph: StoryGraph,
 ) -> Result<IpcResponse<String>, AppError> {
-    let graph: StoryGraph = serde_json::from_str(&graph_json)
-        .map_err(|e| AppError::invalid_input(format!("StoryGraph 解析失败: {}", e)))?;
     let ink = export_ink(&graph)?;
     Ok(IpcResponse::ok(ink))
 }
@@ -63,13 +59,9 @@ pub async fn film_export_ink(
 /// 应用 StoryGraphDelta 到图，返回更新后的图。
 #[tauri::command]
 pub async fn film_apply_delta(
-    graph_json: String,
-    delta_json: String,
+    mut graph: StoryGraph,
+    delta: StoryGraphDelta,
 ) -> Result<IpcResponse<StoryGraph>, AppError> {
-    let mut graph: StoryGraph = serde_json::from_str(&graph_json)
-        .map_err(|e| AppError::invalid_input(format!("StoryGraph 解析失败: {}", e)))?;
-    let delta: StoryGraphDelta = serde_json::from_str(&delta_json)
-        .map_err(|e| AppError::invalid_input(format!("StoryGraphDelta 解析失败: {}", e)))?;
     apply_graph_delta(&mut graph, &delta)?;
     Ok(IpcResponse::ok(graph))
 }

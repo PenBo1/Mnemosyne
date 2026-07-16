@@ -35,6 +35,7 @@ use crate::domain::pipeline::agents::consolidator;
 use crate::domain::pipeline::agents::reviser::ReviseMode;
 use crate::domain::pipeline::runner::{PipelineConfig, PipelineRunner};
 use crate::infrastructure::fs::data_dir::DataDir;
+use crate::infrastructure::fs::fs_utils::MAX_READ_SIZE;
 use crate::infrastructure::validation::validate_id;
 use crate::shared::error::AppError;
 
@@ -190,7 +191,7 @@ impl Tool for PipelineDelegateTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         validate_id(&args.book_id, "book_id")
-            .map_err(|e| BookToolError::InvalidInput(e))?;
+            .map_err(BookToolError::InvalidInput)?;
 
         // 统一审批：pipeline 阶段均为重操作
         let approved = self.approval.request_approval(
@@ -552,30 +553,45 @@ impl Tool for ImportChaptersTool {
             return Err(BookToolError::Denied);
         }
 
-        let content = std::fs::read_to_string(&source)?;
-        let chunks = split_into_chapters(&content, args.split_pattern.as_deref())?;
-        if chunks.is_empty() {
-            return Err(BookToolError::InvalidInput("切分后未得到任何章节".to_string()));
-        }
+        let split_pattern = args.split_pattern.clone();
+        // 所有文件 I/O 卸载到阻塞线程池
+        let written = tokio::task::spawn_blocking(move || -> Result<Vec<serde_json::Value>, BookToolError> {
+            // 大小检查：防止一次性读入超大文件
+            let metadata = std::fs::metadata(&source)
+                .map_err(|e| BookToolError::Io(e.to_string()))?;
+            if metadata.len() > MAX_READ_SIZE as u64 {
+                return Err(BookToolError::InvalidInput(format!(
+                    "Source file too large ({} bytes > {} max)", metadata.len(), MAX_READ_SIZE
+                )));
+            }
+            let content = std::fs::read_to_string(&source)?;
+            let chunks = split_into_chapters(&content, split_pattern.as_deref())?;
+            if chunks.is_empty() {
+                return Err(BookToolError::InvalidInput("切分后未得到任何章节".to_string()));
+            }
 
-        let chapters_dir = book_dir.join("chapters");
-        std::fs::create_dir_all(&chapters_dir)?;
+            let chapters_dir = book_dir.join("chapters");
+            std::fs::create_dir_all(&chapters_dir)?;
 
-        let start_no = next_chapter_number(&chapters_dir)? + 1;
-        let mut written: Vec<serde_json::Value> = Vec::new();
-        for (i, chunk) in chunks.iter().enumerate() {
-            let num = start_no + i as u32;
-            let title = extract_title(chunk);
-            let slug = sanitize_slug(&title);
-            let filename = format!("{:04}_{}.md", num, slug);
-            let path = chapters_dir.join(&filename);
-            std::fs::write(&path, ensure_trailing_newline(chunk))?;
-            written.push(serde_json::json!({
-                "chapter_number": num,
-                "title": title,
-                "file": filename,
-            }));
-        }
+            let start_no = next_chapter_number(&chapters_dir)? + 1;
+            let mut written: Vec<serde_json::Value> = Vec::new();
+            for (i, chunk) in chunks.iter().enumerate() {
+                let num = start_no + i as u32;
+                let title = extract_title(chunk);
+                let slug = sanitize_slug(&title);
+                let filename = format!("{:04}_{}.md", num, slug);
+                let path = chapters_dir.join(&filename);
+                std::fs::write(&path, ensure_trailing_newline(chunk))?;
+                written.push(serde_json::json!({
+                    "chapter_number": num,
+                    "title": title,
+                    "file": filename,
+                }));
+            }
+            Ok(written)
+        })
+        .await
+        .map_err(|e| BookToolError::Failed(format!("spawn_blocking join failed: {}", e)))??;
 
         Ok(serde_json::json!({
             "imported_count": written.len(),
@@ -643,10 +659,17 @@ impl Tool for GenerateCoverTool {
                 "书籍目录不存在: {}", args.book_id
             )));
         }
-        let story_dir = book_dir.join("story");
-        std::fs::create_dir_all(&story_dir)?;
-        let cover_path = story_dir.join("cover-prompt.md");
-        std::fs::write(&cover_path, ensure_trailing_newline(&args.description))?;
+        let description = args.description.clone();
+        // create_dir + write 卸载到阻塞线程池
+        tokio::task::spawn_blocking(move || -> Result<(), BookToolError> {
+            let story_dir = book_dir.join("story");
+            std::fs::create_dir_all(&story_dir)?;
+            let cover_path = story_dir.join("cover-prompt.md");
+            std::fs::write(&cover_path, ensure_trailing_newline(&description))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| BookToolError::Failed(format!("spawn_blocking join failed: {}", e)))??;
 
         Ok(serde_json::json!({
             "saved": true,
@@ -717,14 +740,19 @@ fn resolve_under_book(book_dir: &PathBuf, rel: &str) -> Result<PathBuf, BookTool
     if trimmed.is_empty() {
         return Err(BookToolError::InvalidInput("路径不能为空".to_string()));
     }
-    if trimmed.starts_with('/') || trimmed.starts_with('\\') || trimmed.contains("..") {
+    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
         return Err(BookToolError::PathTraversal);
     }
-    let resolved = book_dir.join(trimmed);
-    if !resolved.starts_with(book_dir) {
-        return Err(BookToolError::PathTraversal);
-    }
-    Ok(resolved)
+    // 用 security_kernel 的 validate_path_for_creation 做精确的 component-based 校验：
+    // - Component::ParentDir 精确检测（避免 contains("..") 误判 `my..file.txt`）
+    // - 无需文件已存在（creation 场景）
+    // - 解析后 canonical_base starts_with 检查，杜绝符号化穿越
+    let canonical = crate::security_kernel::validation::path::validate_path_for_creation(
+        std::path::Path::new(trimmed),
+        book_dir,
+    )
+    .map_err(|_| BookToolError::PathTraversal)?;
+    Ok(canonical.into_inner())
 }
 
 /// 将正文按章节标题切分。默认匹配 markdown 标题 `^#{1,6}\s` 或中文 `^第.+章`。
@@ -793,12 +821,15 @@ fn next_chapter_number(chapters_dir: &PathBuf) -> Result<u32, BookToolError> {
     }
     for entry in std::fs::read_dir(chapters_dir)? {
         let entry = entry?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(num_str) = name.get(..4) {
-            if let Ok(n) = num_str.parse::<u32>() {
-                if n > max {
-                    max = n;
-                }
+        // 取 file_stem（去掉 .md 扩展名），再提取前导数字。
+        // 不用 name.get(..4) 硬取 4 字节：对非 4 位零填充文件名（如 "12.md"）
+        // 会取到 "12.m" 解析失败，漏掉有效章节号。
+        let path = entry.path();
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let leading_digits: String = stem.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(n) = leading_digits.parse::<u32>() {
+            if n > max {
+                max = n;
             }
         }
     }

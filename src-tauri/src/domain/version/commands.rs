@@ -8,11 +8,11 @@ use tauri::State;
 const MAX_CONTENT_SIZE: usize = 10_000_000;
 
 fn validate_novel_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "novel_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "novel_id").map_err(AppError::invalid_input)
 }
 
 fn validate_version_id(id: &str) -> Result<(), AppError> {
-    validate_id(id, "version_id").map_err(|e| AppError::invalid_input(e))
+    validate_id(id, "version_id").map_err(AppError::invalid_input)
 }
 
 fn parse_revision_mode(mode: Option<&str>) -> Result<crate::domain::version::types::RevisionMode, AppError> {
@@ -109,7 +109,7 @@ pub async fn version_diff(
         .ok_or_else(|| AppError::not_found("From version not found"))?;
     let to = state.db.get_chapter_version(&to_version_id)?
         .ok_or_else(|| AppError::not_found("To version not found"))?;
-    let diff = crate::domain::version::diff::compute_line_diff(&from.content, &to.content);
+    let diff = crate::domain::version::diff::compute_line_diff(&from.content, &to.content)?;
     Ok(IpcResponse::ok(diff))
 }
 
@@ -126,9 +126,9 @@ pub async fn version_diff_latest(
     if versions.len() < 2 {
         return Ok(IpcResponse::ok(None));
     }
-    let to = versions.remove(0);  // 最新版本
-    let from = versions.remove(0); // 上一版本
-    let diff = crate::domain::version::diff::compute_line_diff(&from.content, &to.content);
+    let to = versions.swap_remove(0);  // 最新版本
+    let from = versions.swap_remove(0); // 上一版本
+    let diff = crate::domain::version::diff::compute_line_diff(&from.content, &to.content)?;
     Ok(IpcResponse::ok(Some(diff)))
 }
 

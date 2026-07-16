@@ -1,4 +1,4 @@
-﻿
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -15,7 +15,11 @@ pub struct OpenAiProvider {
 impl OpenAiProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(30))
+                .timeout(std::time::Duration::from_secs(600))
+                .build()
+                .expect("failed to build reqwest client for OpenAiProvider"),
             api_key,
             base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
         }
@@ -42,8 +46,14 @@ impl Provider for OpenAiProvider {
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body).send().await
             .map_err(|e| AppError::internal(format!("Request failed: {}", e)))?;
+        let status = resp.status();
         let json: serde_json::Value = resp.json().await
             .map_err(|e| AppError::internal(format!("Response parse failed: {}", e)))?;
+        if !status.is_success() {
+            let msg = json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str())
+                .unwrap_or("Unknown error");
+            return Err(AppError::internal(format!("API {}: {}", status, msg)));
+        }
         json["choices"][0]["message"]["content"].as_str().map(|s| s.to_string())
             .ok_or_else(|| AppError::internal("No content in response"))
     }
@@ -61,13 +71,14 @@ impl Provider for OpenAiProvider {
         tracing::info!(status = %resp.status(), "OpenAI stream response received");
 
         let byte_stream = resp.bytes_stream();
+        let buffer = super::sse_buffer::SseLineBuffer::new();
         let event_stream = byte_stream
-            .filter_map(|chunk| async {
-                match chunk {
+            .scan(buffer, |buf, chunk| {
+                let events: Vec<StreamEvent> = match chunk {
                     Ok(bytes) => {
-                        let text = String::from_utf8_lossy(&bytes);
+                        let lines = buf.push(bytes.as_ref());
                         let mut events = Vec::new();
-                        for line in text.lines() {
+                        for line in lines {
                             let line = line.trim();
                             if line.is_empty() || !line.starts_with("data: ") { continue; }
                             let data = &line[6..];
@@ -113,10 +124,11 @@ impl Provider for OpenAiProvider {
                                 }
                             }
                         }
-                        if events.is_empty() { None } else { Some(futures_util::stream::iter(events)) }
+                        events
                     }
-                    Err(e) => Some(futures_util::stream::iter(vec![StreamEvent::Error(e.to_string())])),
-                }
+                    Err(e) => vec![StreamEvent::Error(e.to_string())],
+                };
+                futures_util::future::ready(Some(futures_util::stream::iter(events)))
             })
             .flatten();
         Ok(Box::pin(event_stream))

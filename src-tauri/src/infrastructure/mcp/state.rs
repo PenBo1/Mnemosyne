@@ -15,7 +15,7 @@ use crate::infrastructure::fs::data_dir::DataDir;
 use crate::infrastructure::mcp::config::McpConfig;
 use crate::infrastructure::mcp::registry::McpRegistry;
 use crate::infrastructure::mcp::types::{
-    McpServerConfig, McpServerTestResult, McpTool, McpToolCallResult,
+    McpServerConfig, McpServerTestResult, McpTool, McpToolCallResult, McpTransport,
 };
 use crate::shared::error::AppError;
 
@@ -29,10 +29,20 @@ pub struct McpState {
 
 impl McpState {
     pub fn new(data_dir: DataDir) -> Self {
-        let config = McpConfig::load(&data_dir).unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to load mcp_config.json, using default");
-            McpConfig::default()
-        });
+        // 区分"文件不存在（用 default）"与"文件存在但解析失败（启动失败/告警）"。
+        // 解析失败时记录 warn 但仍用 default，避免单点错误阻塞整个应用启动；
+        // 配置损坏的修复由用户在 UI 中通过 mcp_update_server 完成。
+        let config = match McpConfig::load(&data_dir) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load mcp_config.json (using default). \
+                     If the file is corrupt, fix or delete it manually."
+                );
+                McpConfig::default()
+            }
+        };
         Self {
             config: Arc::new(RwLock::new(config)),
             registry: Arc::new(Mutex::new(McpRegistry::new())),
@@ -41,15 +51,24 @@ impl McpState {
     }
 
     /// 列出所有 server 配置。
-    pub fn list_servers(&self) -> Vec<McpServerConfig> {
+    ///
+    /// 锁毒化时返回错误而非静默回退空列表（"no silent fallback"）。
+    pub fn list_servers(&self) -> Result<Vec<McpServerConfig>, AppError> {
         self.config
             .read()
+            .map_err(|e| AppError::internal(format!("Config lock poisoned: {}", e)))
             .map(|c| c.list())
-            .unwrap_or_default()
     }
 
     /// 添加 server 配置并持久化。
+    ///
+    /// 安全约束（AGENTS.md Security Kernel 模型）：
+    /// MCP stdio 传输会启动任意子进程。由于 `ShellScope` 当前不支持
+    /// 任意外部进程变体，无法走 SecurityKernel.execute_async(Shell) 审批。
+    /// 因此在 add_server 入口拒绝高危险 shell 命令作为 stdio command。
+    /// 调用方仍需通过审批 UI 显式确认 MCP server 配置。
     pub fn add_server(&self, server: McpServerConfig) -> Result<(), AppError> {
+        validate_transport_safety(&server.transport)?;
         let mut guard = self
             .config
             .write()
@@ -61,6 +80,7 @@ impl McpState {
 
     /// 更新 server 配置并持久化，断开旧连接。
     pub async fn update_server(&self, id: &str, server: McpServerConfig) -> Result<(), AppError> {
+        validate_transport_safety(&server.transport)?;
         {
             let mut guard = self
                 .config
@@ -92,11 +112,14 @@ impl McpState {
     }
 
     /// 查找单个 server 配置（克隆）。
-    pub fn find_server(&self, id: &str) -> Option<McpServerConfig> {
-        self.config
+    ///
+    /// 锁毒化时返回错误而非静默返回 None（"no silent fallback"）。
+    pub fn find_server(&self, id: &str) -> Result<Option<McpServerConfig>, AppError> {
+        let guard = self
+            .config
             .read()
-            .ok()
-            .and_then(|c| c.find(id).cloned())
+            .map_err(|e| AppError::internal(format!("Config lock poisoned: {}", e)))?;
+        Ok(guard.find(id).cloned())
     }
 
     /// 测试 server 连接（ensure_connected + list_tools）。
@@ -104,7 +127,7 @@ impl McpState {
     /// 连接成功后保留在 registry 中供后续调用。
     pub async fn test_server(&self, id: &str) -> Result<McpServerTestResult, AppError> {
         let server = self
-            .find_server(id)
+            .find_server(id)?
             .ok_or_else(|| AppError::not_found(format!("MCP server not found: {}", id)))?;
 
         let mut registry = self.registry.lock().await;
@@ -136,12 +159,12 @@ impl McpState {
         match server_id {
             Some(id) => {
                 let server = self
-                    .find_server(id)
+                    .find_server(id)?
                     .ok_or_else(|| AppError::not_found(format!("MCP server not found: {}", id)))?;
                 registry.list_tools(&server).await
             }
             None => {
-                let servers = self.list_servers();
+                let servers = self.list_servers()?;
                 let (tools, errors) = registry.list_all_tools(&servers).await;
                 if !errors.is_empty() {
                     tracing::warn!(
@@ -162,7 +185,7 @@ impl McpState {
         arguments: serde_json::Value,
     ) -> Result<McpToolCallResult, AppError> {
         let server = self
-            .find_server(server_id)
+            .find_server(server_id)?
             .ok_or_else(|| AppError::not_found(format!("MCP server not found: {}", server_id)))?;
         let mut registry = self.registry.lock().await;
         registry.call_tool(&server, tool_name, arguments).await
@@ -182,4 +205,47 @@ impl Drop for McpState {
             registry.disconnect_all();
         }
     }
+}
+
+// ── 安全约束 ──────────────────────────────────────────────────
+
+/// 禁止作为 MCP stdio command 的可执行文件名黑名单。
+///
+/// 这些命令自身可执行任意代码（如 `sh -c "..."`），等同于让 MCP server
+/// 成为通用 RCE 通道。要求用户配置实际的 MCP server 二进制路径（如
+/// `node /path/to/server.js`、`python -m foo`），而非把 shell 当 command。
+const FORBIDDEN_COMMAND_BASENAMES: &[&str] = &[
+    // Unix shells
+    "sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh",
+    // Windows shells
+    "cmd.exe", "cmd", "powershell.exe", "powershell", "pwsh.exe", "pwsh",
+    // Other interpreters that accept arbitrary code as args
+    "python", "python3", "python2",
+    "node", "node.exe",
+    "ruby", "perl", "php",
+];
+
+/// 校验 MCP transport 的安全性。
+///
+/// 当前规则：禁止 stdio 命令直接以 shell / 任意代码解释器作为 command。
+/// 这不是完整 SecurityKernel 审批（参见 add_server 注释），仅作为
+/// "防止把 shell 作为 MCP server"的最小防御层。
+fn validate_transport_safety(transport: &McpTransport) -> Result<(), AppError> {
+    if let McpTransport::Stdio { command, .. } = transport {
+        // 取 basename 做比较（去掉路径前缀，统一大小写）
+        let basename = std::path::Path::new(command)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(command)
+            .to_lowercase();
+        if FORBIDDEN_COMMAND_BASENAMES.iter().any(|&forbidden| basename == forbidden) {
+            return Err(AppError::invalid_input(format!(
+                "MCP stdio command '{}' is forbidden: shell or interpreter as command \
+                 enables arbitrary code execution. Please specify the MCP server binary \
+                 directly (e.g. 'node /path/to/server.js').",
+                command
+            )));
+        }
+    }
+    Ok(())
 }
