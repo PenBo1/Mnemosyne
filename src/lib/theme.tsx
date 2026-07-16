@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { setWindowTheme } from "@/features/settings/services/general";
 
 type Theme = "light" | "dark" | "system";
@@ -69,11 +69,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [applyTheme]
   );
 
-  return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
+  // useMemo 稳定 context value 引用 —— 避免 theme 不变时所有 consumer 无意义重渲染
+  const value = useMemo<ThemeContextValue>(
+    () => ({ theme, resolvedTheme, setTheme }),
+    [theme, resolvedTheme, setTheme],
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

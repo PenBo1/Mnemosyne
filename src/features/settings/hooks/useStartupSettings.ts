@@ -6,12 +6,14 @@ const SAVE_DEBOUNCE_MS = 300;
 
 export function useStartupSettings(): void {
   useEffect(() => {
+    let cancelled = false;
     let unlisteners: Array<() => void> = [];
     let saveTimer: ReturnType<typeof setTimeout> | null = null;
     const win = getCurrentWindow();
 
     async function apply() {
       const s = await loadSettings();
+      if (cancelled) return;
       if (s.ui.restoreWindowState && s.window.bounds) {
         const b = s.window.bounds;
         try {
@@ -21,6 +23,7 @@ export function useStartupSettings(): void {
           console.error("[startup] restore window bounds failed", e);
         }
       }
+      if (cancelled) return;
       if (s.ui.restoreWindowState) {
         const saveBounds = () => {
           if (saveTimer) clearTimeout(saveTimer);
@@ -40,6 +43,11 @@ export function useStartupSettings(): void {
         };
         const u1 = await win.onResized(() => saveBounds());
         const u2 = await win.onMoved(() => saveBounds());
+        if (cancelled) {
+          u1();
+          u2();
+          return;
+        }
         unlisteners.push(u1, u2);
       }
     }
@@ -47,6 +55,7 @@ export function useStartupSettings(): void {
     void apply();
 
     return () => {
+      cancelled = true;
       if (saveTimer) clearTimeout(saveTimer);
       unlisteners.forEach((u) => u());
       unlisteners = [];

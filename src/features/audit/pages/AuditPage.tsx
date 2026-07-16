@@ -138,11 +138,6 @@ export function AuditPage() {
     void loadData();
   }, [loadData]);
 
-  // 过滤变化时重新加载
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
   const handleRefresh = () => {
     void loadData();
   };

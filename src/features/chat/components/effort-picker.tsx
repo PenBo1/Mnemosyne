@@ -13,7 +13,7 @@
 // - 从 chat-runtime 读取/写入 currentEffort
 // - localStorage 持久化(跨 session 保留)
 
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { GaugeIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import {
@@ -44,7 +44,7 @@ const EFFORT_COLOR: Record<EffortLevel, string> = {
  * 选择后立即通过 `setCurrentEffort` 写入 chat-runtime 模块状态,
  * 下次 sendMessage 时会读取最新值传给 Rust。
  */
-export function EffortPicker() {
+export const EffortPicker = memo(function EffortPicker() {
   const { t } = useI18n();
   const [effort, setEffort] = useState<EffortLevel>(getCurrentEffort());
 
@@ -90,7 +90,7 @@ export function EffortPicker() {
       </SelectContent>
     </Select>
   );
-}
+});
 
 function isEffortValue(s: string): boolean {
   return s === "low" || s === "medium" || s === "high" || s === "ultra";

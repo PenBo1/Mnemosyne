@@ -6,6 +6,8 @@ interface ErrorBoundaryProps {
   children: ReactNode;
   // 可选：自定义 fallback 渲染函数（接收错误和重置函数）
   fallback?: (error: Error, reset: () => void) => ReactNode;
+  // 可选：当这些值变化时自动重置错误状态（避免用 key 强制重挂载整棵子树）
+  resetKeys?: unknown[];
 }
 
 interface ErrorBoundaryState {
@@ -13,7 +15,7 @@ interface ErrorBoundaryState {
 }
 
 // ErrorBoundary：捕获子树渲染错误，避免整应用白屏崩溃
-// 用 key 重置：父组件改变传入的 key 时，组件会重新挂载并清空错误状态
+// 支持 resetKeys 自动重置：当 resetKeys 值变化时清空错误状态，无需 key 强制重挂载
 class ErrorBoundaryImpl extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };
 
@@ -23,6 +25,17 @@ class ErrorBoundaryImpl extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
     console.error("[ErrorBoundary] render error", error, info);
+  }
+
+  componentDidUpdate(prevProps: ErrorBoundaryProps) {
+    if (this.state.error && this.props.resetKeys) {
+      const changed = this.props.resetKeys.some(
+        (key, idx) => key !== prevProps.resetKeys?.[idx],
+      );
+      if (changed) {
+        this.setState({ error: null });
+      }
+    }
   }
 
   reset = () => {

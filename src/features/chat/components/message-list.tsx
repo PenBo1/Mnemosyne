@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -22,8 +22,16 @@ interface MessageListProps {
   onRegenerate: () => void;
 }
 
-/** 消息列表 —— 使用 MessageGroup 对连续同发送者消息分组 */
-export function MessageList({ messages, streaming, error, onRegenerate }: MessageListProps) {
+// 流式消息的固定时间戳 —— 避免 new Date().toISOString() 每帧生成新值
+const STREAMING_CREATED_AT = new Date(0).toISOString();
+
+/** 消息列表 —— memo 包裹避免 ChatPage 输入打字时触发重渲染 */
+export const MessageList = memo(function MessageList({
+  messages,
+  streaming,
+  error,
+  onRegenerate,
+}: MessageListProps) {
   const streamingContent = useAgentStore((s) => s.streamingContent);
   const streamingReasoning = useAgentStore((s) => s.streamingReasoning);
   const activeToolCalls = useAgentStore((s) => s.activeToolCalls);
@@ -37,16 +45,18 @@ export function MessageList({ messages, streaming, error, onRegenerate }: Messag
     return -1;
   }, [messages]);
 
-  // 将连续同角色消息分组
+  // 将连续同角色消息分组 —— 预计算 startIdx 消除 globalIdx O(n²)
   const groups = useMemo(() => {
-    const result: Array<{ role: string; messages: ChatMessage[] }> = [];
+    const result: Array<{ role: string; messages: ChatMessage[]; startIdx: number }> = [];
+    let idx = 0;
     for (const msg of messages) {
       const last = result[result.length - 1];
       if (last && last.role === msg.role) {
         last.messages.push(msg);
       } else {
-        result.push({ role: msg.role, messages: [msg] });
+        result.push({ role: msg.role, messages: [msg], startIdx: idx });
       }
+      idx++;
     }
     return result;
   }, [messages]);
@@ -68,10 +78,8 @@ export function MessageList({ messages, streaming, error, onRegenerate }: Messag
               <MessageScrollerItem key={groupIdx}>
                 <MessageGroup>
                   {group.messages.map((msg, msgIdx) => {
-                    // 计算全局索引
-                    const globalIdx = groups
-                      .slice(0, groupIdx)
-                      .reduce((acc, g) => acc + g.messages.length, 0) + msgIdx;
+                    // O(1) 全局索引 —— 直接用 group.startIdx + msgIdx
+                    const globalIdx = group.startIdx + msgIdx;
                     return (
                       <MessageBubble
                         key={msg.id}
@@ -99,7 +107,7 @@ export function MessageList({ messages, streaming, error, onRegenerate }: Messag
                     tool_calls: null,
                     tool_results: null,
                     token_count: null,
-                    created_at: new Date().toISOString(),
+                    created_at: STREAMING_CREATED_AT,
                   }}
                   isStreaming
                   reasoning={streamingReasoning}
@@ -125,4 +133,4 @@ export function MessageList({ messages, streaming, error, onRegenerate }: Messag
       </MessageScroller>
     </MessageScrollerProvider>
   );
-}
+});

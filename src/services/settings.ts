@@ -110,34 +110,43 @@ function deepMerge<T>(base: T, override: unknown): T {
   return out as T;
 }
 
-const store = new LazyStore("config.json", {
-  defaults: DEFAULTS as unknown as Record<string, unknown>,
-  autoSave: 100,
-});
+const store = new LazyStore("config.json");
 
 export async function loadSettings(): Promise<AppSettings> {
-  const entries = await store.entries<string | null>();
-  const stored: Record<string, unknown> = {};
-  for (const [key, value] of entries) {
-    if (value !== null) stored[key] = value;
+  try {
+    const entries = await store.entries<unknown>();
+    const stored: Record<string, unknown> = {};
+    for (const [key, value] of entries) {
+      if (value !== null && value !== undefined) {
+        stored[key] = value;
+      }
+    }
+    const merged = deepMerge(DEFAULTS, stored);
+    if (isPlainObject(stored.shortcuts)) {
+      merged.shortcuts = stored.shortcuts as Record<string, KeyBinding[]>;
+    }
+    return merged;
+  } catch (err) {
+    console.error("Failed to load settings:", err);
+    return { ...DEFAULTS };
   }
-  const merged = deepMerge(DEFAULTS, stored);
-  if (isPlainObject(stored.shortcuts)) {
-    merged.shortcuts = stored.shortcuts as Record<string, KeyBinding[]>;
-  }
-  return merged;
 }
 
-export async function saveSettings(settings: DeepPartial<AppSettings>): Promise<void> {
-  const current = await loadSettings();
-  const merged = deepMerge(current, settings);
-  if (settings.shortcuts !== undefined) {
-    merged.shortcuts = settings.shortcuts as Record<string, KeyBinding[]>;
+export async function saveSettings(settings: DeepPartial<AppSettings>, current?: AppSettings): Promise<void> {
+  try {
+    const base = current ?? await loadSettings();
+    const merged = deepMerge(base, settings);
+    if (settings.shortcuts !== undefined) {
+      merged.shortcuts = settings.shortcuts as Record<string, KeyBinding[]>;
+    }
+    for (const [key, value] of Object.entries(merged)) {
+      await store.set(key, value);
+    }
+    await store.save();
+  } catch (err) {
+    console.error("Failed to save settings:", err);
+    throw err;
   }
-  for (const [key, value] of Object.entries(merged)) {
-    await store.set(key, value);
-  }
-  await store.save();
 }
 
 export async function getActiveModel(): Promise<AiModelConfig | null> {
@@ -156,7 +165,7 @@ export async function addModel(config: Omit<AiModelConfig, "id">): Promise<AiMod
   if (!settings.ai.active_model_id) {
     settings.ai.active_model_id = newModel.id;
   }
-  await saveSettings({ ai: settings.ai });
+  await saveSettings({ ai: settings.ai }, settings);
   return newModel;
 }
 
@@ -166,13 +175,13 @@ export async function removeModel(id: string): Promise<void> {
   if (settings.ai.active_model_id === id) {
     settings.ai.active_model_id = settings.ai.models[0]?.id || null;
   }
-  await saveSettings({ ai: settings.ai });
+  await saveSettings({ ai: settings.ai }, settings);
 }
 
 export async function setActiveModel(id: string): Promise<void> {
   const settings = await loadSettings();
   settings.ai.active_model_id = id;
-  await saveSettings({ ai: settings.ai });
+  await saveSettings({ ai: settings.ai }, settings);
 }
 
 export async function updateModel(id: string, updates: Partial<Omit<AiModelConfig, "id">>): Promise<void> {
@@ -180,7 +189,7 @@ export async function updateModel(id: string, updates: Partial<Omit<AiModelConfi
   const model = settings.ai.models.find((m) => m.id === id);
   if (model) {
     Object.assign(model, updates);
-    await saveSettings({ ai: settings.ai });
+    await saveSettings({ ai: settings.ai }, settings);
   }
 }
 
@@ -201,7 +210,7 @@ export async function getRestoreWindowState(): Promise<boolean> {
 export async function setRestoreWindowState(enabled: boolean): Promise<void> {
   const settings = await loadSettings();
   settings.ui.restoreWindowState = enabled;
-  await saveSettings({ ui: settings.ui });
+  await saveSettings({ ui: settings.ui }, settings);
 }
 
 export async function setWindowBounds(bounds: WindowBounds | null): Promise<void> {
@@ -216,7 +225,7 @@ export async function getCustomInstructions(): Promise<string> {
 export async function setCustomInstructions(text: string): Promise<void> {
   const settings = await loadSettings();
   settings.ai.custom_instructions = text;
-  await saveSettings({ ai: settings.ai });
+  await saveSettings({ ai: settings.ai }, settings);
 }
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -247,7 +256,7 @@ export async function loadSnippets(): Promise<Snippet[]> {
 export async function saveSnippets(list: Snippet[]): Promise<void> {
   const settings = await loadSettings();
   settings.ai.snippets = list;
-  await saveSettings({ ai: settings.ai });
+  await saveSettings({ ai: settings.ai }, settings);
 }
 
 export async function getShortcutsOverrides(): Promise<Record<string, KeyBinding[]>> {
@@ -263,7 +272,7 @@ export async function resetShortcutOverride(id: ShortcutId): Promise<Record<stri
   const settings = await loadSettings();
   const next = { ...settings.shortcuts };
   delete next[id];
-  await saveSettings({ shortcuts: next });
+  await saveSettings({ shortcuts: next }, settings);
   return next;
 }
 
@@ -279,5 +288,5 @@ export async function getNetworkSettings(): Promise<NetworkSettings> {
 export async function saveNetworkSettings(network: Partial<NetworkSettings>): Promise<void> {
   const settings = await loadSettings();
   settings.network = { ...settings.network, ...network };
-  await saveSettings({ network: settings.network });
+  await saveSettings({ network: settings.network }, settings);
 }

@@ -6,7 +6,7 @@
 // - Apply All / Discard All 按钮
 // - 简化 diff 算法（行级 set-membership）
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { FileEdit, FilePlus, FolderPlus, Trash2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,9 +41,18 @@ function diffLines(original: string, proposed: string): Array<{ text: string; ki
 function PlanRow({ item, onReject }: { item: QueuedEdit; onReject: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = item.kind === "create_directory" ? FolderPlus : item.isNewFile ? FilePlus : FileEdit;
-  const diff = item.kind === "create_directory" ? [] : diffLines(item.originalContent, item.proposedContent);
-  const added = diff.filter((d) => d.kind === "added").length;
-  const removed = diff.filter((d) => d.kind === "removed").length;
+  const diff = useMemo(
+    () => item.kind === "create_directory" ? [] : diffLines(item.originalContent, item.proposedContent),
+    [item.kind, item.originalContent, item.proposedContent]
+  );
+  const { added, removed } = useMemo(() => {
+    let a = 0, r = 0;
+    for (const d of diff) {
+      if (d.kind === "added") a++;
+      else if (d.kind === "removed") r++;
+    }
+    return { added: a, removed: r };
+  }, [diff]);
 
   return (
     <div className="rounded border border-[var(--border-neutral-l1)] bg-[var(--bg-elevated-default)]">

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { SkillMeta, Skill } from "@/features/skill/types";
@@ -88,8 +88,11 @@ export function useSkills() {
     }
   }, [load]);
 
-  const filteredSkills = skills.filter(
-    (skill) => filterCategory === "all" || skill.category === filterCategory
+  const filteredSkills = useMemo(
+    () => skills.filter(
+      (skill) => filterCategory === "all" || skill.category === filterCategory
+    ),
+    [skills, filterCategory]
   );
 
   return {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { PlusIcon, FolderOpenIcon, FolderIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
@@ -36,7 +36,7 @@ const NEW_WORKSPACE_VALUE = "__new_workspace__";
  * - 新建工作区复用 pickDirectory + addWorkspace，与侧边栏逻辑一致
  * - 选择 __new_workspace__ 时不切换激活工作区，而是打开弹窗
  */
-export function WorkspacePicker() {
+export const WorkspacePicker = memo(function WorkspacePicker() {
   const { t } = useI18n();
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -166,4 +166,4 @@ export function WorkspacePicker() {
       </Dialog>
     </>
   );
-}
+});

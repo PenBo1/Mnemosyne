@@ -28,10 +28,16 @@ export const useTodosStore = create<TodosState>((set, get) => ({
     set((s) => {
       const nextHydrated = new Set(s.hydrated);
       nextHydrated.add(sessionId);
-      return {
-        bySession: { ...s.bySession, [sessionId]: todos },
-        hydrated: nextHydrated,
-      };
+      let bySession = { ...s.bySession, [sessionId]: todos };
+      // LRU: 超过 10 个 session 时移除最早的
+      if (nextHydrated.size > 10) {
+        const oldest = nextHydrated.values().next().value;
+        if (oldest && oldest !== sessionId) {
+          nextHydrated.delete(oldest);
+          delete bySession[oldest];
+        }
+      }
+      return { bySession, hydrated: nextHydrated };
     });
   },
 

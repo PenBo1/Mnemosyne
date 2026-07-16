@@ -92,22 +92,21 @@ export function GitPage() {
   // 每个工作区是独立的 git 仓库，Git 操作路径来自活动工作区
   const workspacePath = activeWorkspace?.path ?? "";
 
-  const {
-    gitInstalled,
-    gitVersion,
-    gitStatus,
-    gitLog,
-    gitDiff,
-    loading,
-    checkInstalled,
-    install,
-    init,
-    refresh,
-    stageFiles,
-    commit,
-    rollback,
-    loadDiff,
-  } = useGit();
+  // 细粒度 selector —— 避免 store 任意字段变化都触发整页重渲染
+  const gitInstalled = useGit((s) => s.gitInstalled);
+  const gitVersion = useGit((s) => s.gitVersion);
+  const gitStatus = useGit((s) => s.gitStatus);
+  const gitLog = useGit((s) => s.gitLog);
+  const gitDiff = useGit((s) => s.gitDiff);
+  const loading = useGit((s) => s.loading);
+  const checkInstalled = useGit((s) => s.checkInstalled);
+  const install = useGit((s) => s.install);
+  const init = useGit((s) => s.init);
+  const refresh = useGit((s) => s.refresh);
+  const stageFiles = useGit((s) => s.stageFiles);
+  const commit = useGit((s) => s.commit);
+  const rollback = useGit((s) => s.rollback);
+  const loadDiff = useGit((s) => s.loadDiff);
 
   const [activeTab, setActiveTab] = useState<"history" | "changes">("history");
   const [selectedHash, setSelectedHash] = useState<string | null>(null);

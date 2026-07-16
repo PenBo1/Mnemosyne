@@ -235,14 +235,21 @@ export const MessageBubble = memo(function MessageBubble({
           <Bubble variant="ghost" align="start">
             <BubbleContent>
               {hasContent ? (
-                <Suspense
-                  fallback={
-                    <span className="text-muted-foreground animate-pulse">Loading...</span>
-                  }
-                >
-                  <MarkdownRenderer content={message.content} />
-                  {isStreaming && <StreamingCursor />}
-                </Suspense>
+                isStreaming ? (
+                  // 流式期间用纯文本渲染 —— 避免 MarkdownRenderer 每帧全文 re-parse O(n²)
+                  <p className="whitespace-pre-wrap break-words leading-relaxed">
+                    {message.content}
+                    <StreamingCursor />
+                  </p>
+                ) : (
+                  <Suspense
+                    fallback={
+                      <span className="text-muted-foreground animate-pulse">Loading...</span>
+                    }
+                  >
+                    <MarkdownRenderer content={message.content} />
+                  </Suspense>
+                )
               ) : (
                 isStreaming && <StreamingCursor />
               )}

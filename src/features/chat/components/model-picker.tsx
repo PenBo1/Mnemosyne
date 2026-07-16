@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { CpuIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
@@ -22,7 +22,7 @@ import {
  * - 切换时写入 config.json（Rust 后端在下次发送消息时读取最新配置）
  * - 无模型时显示「打开设置」按钮，跳转到模型设置页
  */
-export function ModelPicker() {
+export const ModelPicker = memo(function ModelPicker() {
   const { t } = useI18n();
   const dispatch = useAppDispatch();
   const [models, setModels] = useState<AiModelConfig[]>([]);
@@ -84,4 +84,4 @@ export function ModelPicker() {
       </SelectContent>
     </Select>
   );
-}
+});

@@ -3,6 +3,7 @@
 // Shows when the Rust agent calls a tool that requires user approval.
 // User clicks Approve/Deny → calls respondApproval IPC → Rust continues.
 
+import { useMemo } from "react";
 import { AlertTriangle, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,10 +20,12 @@ export function ApprovalCard({
   onRespond: (approvalId: string, approved: boolean) => void;
 }) {
   const { t } = useI18n();
+  const argsStr = useMemo(
+    () => (confirmation ? JSON.stringify(confirmation.args, null, 2) : ""),
+    [confirmation]
+  );
 
   if (!confirmation) return null;
-
-  const argsStr = JSON.stringify(confirmation.args, null, 2);
 
   return (
     <Card className="mx-auto max-w-3xl border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] p-4">

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Plus, Trash2, PanelRightOpen, ListChecks } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { cn } from "@/lib/utils";
@@ -18,7 +19,7 @@ interface ChatHeaderProps {
 }
 
 /** 极简顶栏：左侧标题 + 状态，右侧操作按钮组 */
-export function ChatHeader({
+export const ChatHeader = memo(function ChatHeader({
   title,
   streaming,
   hasSession,
@@ -110,4 +111,4 @@ export function ChatHeader({
       </div>
     </header>
   );
-}
+});

@@ -93,7 +93,7 @@ export const useLoopEngineStore = create<LoopEngineState>((set, _get) => ({
     try {
       const log = await loopService.runLoopCycle(stateId);
       set((s) => ({
-        runLogs: [log, ...s.runLogs],
+        runLogs: [log, ...s.runLogs].slice(0, 200),
         states: s.states.map((ls) =>
           ls.id === stateId
             ? { ...ls, status: "idle" as const, lastRunAt: log.createdAt, lastRunResult: { findings: log.findings, actions: log.actionsTaken, escalations: log.escalations } }

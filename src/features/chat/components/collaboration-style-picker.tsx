@@ -12,7 +12,7 @@
 // - 从 chat-runtime 读取/写入 currentCollaborationStyle
 // - localStorage 持久化(跨 session 保留)
 
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { SparklesIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import {
@@ -46,7 +46,7 @@ const STYLE_COLOR: Record<CollaborationStyle, string> = {
  * 选择后立即通过 `setCurrentCollaborationStyle` 写入 chat-runtime 模块状态,
  * 下次 sendMessage 时会读取最新值传给 Rust。
  */
-export function CollaborationStylePicker() {
+export const CollaborationStylePicker = memo(function CollaborationStylePicker() {
   const { t } = useI18n();
   const [style, setStyle] = useState<CollaborationStyle>(getCurrentCollaborationStyle());
 
@@ -92,7 +92,7 @@ export function CollaborationStylePicker() {
       </SelectContent>
     </Select>
   );
-}
+});
 
 function isStyleValue(s: string): boolean {
   return (

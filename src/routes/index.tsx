@@ -18,9 +18,13 @@ function NotFound() {
 
 export function Router() {
   const { currentPage } = useAppState();
-  const { currentRoute, setRoute } = useRouteStore();
+  // 细粒度 selector —— 避免订阅整个 store
+  const currentRoute = useRouteStore((s) => s.currentRoute);
+  const setRoute = useRouteStore((s) => s.setRoute);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const { openNovelId, openNovelTitle, closeNovel } = useNovelReaderStore();
+  const openNovelId = useNovelReaderStore((s) => s.openNovelId);
+  const openNovelTitle = useNovelReaderStore((s) => s.openNovelTitle);
+  const closeNovel = useNovelReaderStore((s) => s.closeNovel);
 
   useEffect(() => {
     if (currentPage && currentRoute.name !== currentPage) {
@@ -36,7 +40,8 @@ export function Router() {
   }
 
   return (
-    <ErrorBoundary key={currentPage}>
+    // resetKeys 替代 key —— 页面切换时重置错误状态，但不强制重挂载整棵子树
+    <ErrorBoundary resetKeys={[currentPage]}>
       <LoadingBoundary>
         <resolved.Layout>
           <resolved.Page />

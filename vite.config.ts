@@ -10,6 +10,17 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
+
+  // 生产构建 esbuild 优化: 移除 debugger + 噪声 console (保留 error/warn 便于诊断)
+  esbuild: {
+    drop: ["debugger"],
+    pure: [
+      "console.log",
+      "console.debug",
+      "console.info",
+      "console.trace",
+    ],
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -59,17 +70,6 @@ export default defineConfig(async () => ({
           // radix UI 独立 chunk
           if (id.includes("@radix-ui/") || id.includes("/radix-ui/"))
             return "radix";
-
-          // AI provider 各自独立 chunk, 懒加载未用 provider
-          if (id.includes("@ai-sdk/anthropic")) return "ai-anthropic";
-          if (id.includes("@ai-sdk/google")) return "ai-google";
-          if (id.includes("@ai-sdk/openai-compatible"))
-            return "ai-openai-compat";
-          if (id.includes("@ai-sdk/openai")) return "ai-openai";
-          if (id.includes("@ai-sdk/cerebras")) return "ai-cerebras";
-          if (id.includes("@ai-sdk/groq")) return "ai-groq";
-          if (id.includes("@ai-sdk/xai")) return "ai-xai";
-          if (id.includes("@ai-sdk/")) return "ai-sdk-shared";
 
           // 重型可视化库独立 chunk (按需懒加载)
           // xyflow + dagre + d3-* 合并到 xyflow chunk: 都是图谱视图的依赖，一起加载更合理
