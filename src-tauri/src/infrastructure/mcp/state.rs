@@ -1,11 +1,15 @@
-// MCP State —— Tauri managed state，协调 McpConfig 与 McpRegistry。
-//
-// 设计：
-// - config: std::sync::RwLock（读写快速，不跨 await 持有）
-// - registry: tokio::sync::Mutex（操作跨 await，必须用 tokio Mutex）
-// - data_dir: 配置持久化路径
-//
-// 配置变更时主动断开受影响连接（update / remove），强制下次调用重连。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! MCP 状态 - Tauri 状态管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 协调 McpConfig 与 McpRegistry。
+//!
+//! 设计：
+//! - config: std::sync::RwLock（读写快速，不跨 await 持有）
+//! - registry: tokio::sync::Mutex（操作跨 await，必须用 tokio Mutex）
+//! - data_dir: 配置持久化路径
+//!
+//! 配置变更时主动断开受影响连接（update / remove），强制下次调用重连。
 
 use std::sync::{Arc, RwLock};
 

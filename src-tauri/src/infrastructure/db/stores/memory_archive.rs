@@ -1,18 +1,10 @@
-// MEMORY.md 归档索引 CRUD —— memory_archives 表。
-//
-// 用途:
-// - daily_summary 任务的 archive_old_memory 在 MEMORY.md 超 100KB 时
-//   导出 7 天前内容到 MEMORY.archive.<date>.md,本表记录归档元数据
-// - 前端通过 IPC list/search/read/delete 浏览历史归档,不必扫描文件目录
-//
-// 架构约束:
-// - infrastructure 层只依赖 shared/,不依赖 core/agent/
-// - 因此定义 MemoryArchiveRow DTO,role 用 String
-// - 业务层(daily_summary)在写归档文件后调用 insert_archive 写元数据
-//
-// 多 role 支持:每个 agent role(main/planner/writer/...共 16 个)
-// 各自有独立的 MEMORY.md 和归档文件,role 字段区分。
-// 归档文件路径由业务层拼装:<data_dir>/agents/<role>/MEMORY.archive.<date>.md
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 记忆归档存储 - MEMORY.md 归档索引
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 用途：
+//! - daily_summary 任务在 MEMORY.md 超 100KB 时导出 7 天前内容
+//! - 前端通过 IPC 浏览历史归档，不必扫描文件目录
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -20,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const UPSERT_SQL: &str = "\
 INSERT INTO memory_archives (\
@@ -38,30 +32,56 @@ const SELECT_COLUMNS: &str = "\
 id, role, archive_file, archived_at, content_size, \
 content_summary, date_range_start, date_range_end, created_at";
 
-/// 归档行(对应 memory_archives 表)
-///
-/// `archived_at` 为 Unix 秒时间戳(整数,便于排序),
-/// `created_at` 为 ISO 8601 字符串(与其它表一致)。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 归档行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryArchiveRow {
+    /// 归档 ID
     pub id: i64,
+    /// 角色
     pub role: String,
-    /// 归档文件名,如 `MEMORY.archive.2026-07-14.md`
+    /// 归档文件名
     pub archive_file: String,
-    /// 归档发生时间(Unix 秒)
+    /// 归档时间（Unix 秒）
     pub archived_at: i64,
-    /// 归档内容字节大小
+    /// 内容大小
     pub content_size: i64,
-    /// 归档内容摘要(前 200 字符)
+    /// 内容摘要
     pub content_summary: String,
-    /// 归档内容覆盖的日期范围起(YYYY-MM-DD,可能为空)
+    /// 日期范围起始
     pub date_range_start: String,
-    /// 归档内容覆盖的日期范围止(YYYY-MM-DD,可能为空)
+    /// 日期范围结束
     pub date_range_end: String,
+    /// 创建时间
     pub created_at: String,
 }
 
+/// 新建归档参数
+#[derive(Debug, Clone)]
+pub struct NewMemoryArchive<'a> {
+    /// 角色
+    pub role: &'a str,
+    /// 归档文件名
+    pub archive_file: &'a str,
+    /// 归档时间（Unix 秒）
+    pub archived_at: i64,
+    /// 内容大小
+    pub content_size: i64,
+    /// 内容摘要
+    pub content_summary: &'a str,
+    /// 日期范围起始
+    pub date_range_start: &'a str,
+    /// 日期范围结束
+    pub date_range_end: &'a str,
+    /// 创建时间
+    pub created_at: &'a str,
+}
+
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射数据库行到归档行
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<MemoryArchiveRow> {
     Ok(MemoryArchiveRow {
         id: row.get(0)?,
@@ -76,26 +96,10 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<MemoryArchiveRow> {
     })
 }
 
-/// 新建归档的输入参数(由业务层 daily_summary 装配)
-#[derive(Debug, Clone)]
-pub struct NewMemoryArchive<'a> {
-    pub role: &'a str,
-    pub archive_file: &'a str,
-    /// Unix 秒时间戳
-    pub archived_at: i64,
-    pub content_size: i64,
-    pub content_summary: &'a str,
-    pub date_range_start: &'a str,
-    pub date_range_end: &'a str,
-    /// ISO 8601 created_at
-    pub created_at: &'a str,
-}
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
 
 impl Database {
-    /// 插入或更新归档元数据。
-    ///
-    /// UNIQUE(role, archive_file) 约束保证同 role 同归档文件只保留一条记录。
-    /// 重新归档同一天的文件时,UPSERT 覆盖旧元数据。
+    /// 插入或更新归档元数据
     pub fn insert_archive(&self, row: &NewMemoryArchive) -> Result<i64, AppError> {
         let conn = self.conn()?;
         conn.execute(
@@ -111,7 +115,6 @@ impl Database {
                 row.created_at,
             ],
         ).map_err(db_err)?;
-        // UPSERT 后取 id(role+archive_file 唯一)
         let id: i64 = conn.query_row(
             "SELECT id FROM memory_archives WHERE role = ?1 AND archive_file = ?2",
             params![row.role, row.archive_file],
@@ -120,7 +123,7 @@ impl Database {
         Ok(id)
     }
 
-    /// 列出某 role 的所有归档,按 archived_at 倒序(最新在前)
+    /// 列出某角色的所有归档
     pub fn list_archives(&self, role: &str) -> Result<Vec<MemoryArchiveRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(&format!(
@@ -132,7 +135,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 列出所有 role 的归档,按 archived_at 倒序
+    /// 列出所有归档
     pub fn list_all_archives(&self) -> Result<Vec<MemoryArchiveRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(&format!(
@@ -143,9 +146,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 在 content_summary 中搜索(LIKE %query%),按 role 过滤
-    ///
-    /// query 为空时返回空数组(避免全表扫描)
+    /// 在摘要中搜索
     pub fn search_archives(
         &self,
         role: &str,
@@ -167,7 +168,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 按 id 查找单条归档(用于 read_archive / delete_archive 前取文件路径)
+    /// 按 ID 获取归档
     pub fn get_archive_by_id(&self, id: i64) -> Result<Option<MemoryArchiveRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(&format!(
@@ -182,10 +183,7 @@ impl Database {
         }
     }
 
-    /// 按 id 删除归档记录,返回是否删除了行
-    ///
-    /// 注意:本方法只删 DB 记录,不删磁盘文件(文件删除由 IPC 命令层负责,
-    /// 因为 infrastructure 层不应依赖 data_dir 的具体路径布局)。
+    /// 删除归档记录
     pub fn delete_archive(&self, id: i64) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -195,6 +193,8 @@ impl Database {
         Ok(affected > 0)
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -242,7 +242,6 @@ mod tests {
 
         let main_archives = db.list_archives("main").unwrap();
         assert_eq!(main_archives.len(), 2);
-        // 倒序:archived_at 大的在前
         assert_eq!(main_archives[0].id, id1);
         assert_eq!(main_archives[1].id, id2);
 
@@ -335,7 +334,6 @@ mod tests {
         let deleted = db.delete_archive(id).unwrap();
         assert!(deleted);
 
-        // 再删一次应返回 false
         let deleted_again = db.delete_archive(id).unwrap();
         assert!(!deleted_again);
 

@@ -1,18 +1,6 @@
-// Tracer —— OpenTelemetry 风格的 span 创建与管理。
-//
-// 设计:
-// - Tracer 持有 Database（Clone 廉价，Arc<Connection>），用于 span 持久化
-// - Span 实现 RAII Drop，自动记录 end_time 并写入 DB
-// - 支持父子 span（通过 parent_span_id 串联）
-// - 默认 trace_id 自动生成；若提供 parent context 则继承其 trace_id
-//
-// 与 W3C Trace Context 的关系:
-// - context.rs 负责跨进程传播（解析/生成 traceparent）
-// - 本模块负责进程内 span 的生命周期管理
-//
-// 错误处理:
-// - span 写入失败时通过 tracing::warn! 记录，不传播错误
-//   （observability 失败不应阻断业务流程；这是显式日志，非 silent fallback）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Tracer - OpenTelemetry 风格 span 创建与管理
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::infrastructure::db::connection::Database;
 use crate::infrastructure::db::stores::trace::SpanRow;

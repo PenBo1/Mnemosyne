@@ -1,10 +1,6 @@
-// ExecPolicy 规则求值器 —— 按 priority 降序遍历规则，返回首个匹配的决策。
-//
-// 匹配语义：
-// - 命令规则：token 前缀匹配（pattern 的每个 token 须等于 command 对应 token）
-// - 路径规则：字符串前缀匹配（path.starts_with(pattern)，大小写敏感）
-// - 网络规则：host 匹配（精确或 *.example.com 通配）+ protocol 精确匹配
-// - 无规则匹配时返回 default_decision
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 规则求值器 - 按 priority 降序遍历规则
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 
@@ -64,7 +60,11 @@ impl ExecPolicy {
         let normalized = normalize_path(path);
         for (idx, rule) in self.path_rules.iter().enumerate() {
             let pat = normalize_path(&rule.pattern);
-            if normalized.starts_with(&pat) {
+            // 三种匹配：前缀（目录树）/ 后缀（路径末尾的文件名，如 /.env）/ 精确（纯文件名）
+            if normalized.starts_with(&pat)
+                || normalized.ends_with(&format!("/{}", pat))
+                || normalized == pat
+            {
                 return Evaluation::matched(rule.decision, idx);
             }
         }

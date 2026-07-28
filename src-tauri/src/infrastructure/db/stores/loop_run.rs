@@ -1,18 +1,11 @@
-// loop_runs 表的 CRUD —— Loop-Engineering 运行日志持久化。
-//
-// - append-only:只追加,不修改(结束/累计通过专用 update API)
-// - 全局可观测性:所有 pattern 的运行记录汇聚于此
-// - GC 30 天:由 GC 模块调用 delete_loop_runs_before()
-//
-// 架构约束(AGENTS.md):
-// - infrastructure 层只依赖 shared/,不依赖 core/agent/
-// - 因此本模块定义自己的 LoopRunRow DTO(类比 AuditEventRow),
-//   pattern_id / outcome 用 String 表示
-// - 业务层(core/agent/loop_engine/)负责 LoopRunRow ↔ LoopRun 转换
-//
-// 与 budget::daily_token_usage 的关系:
-// - budget::daily_token_usage 直接查 SUM(total_tokens),不经过本模块的 Row 类型
-// - 本模块提供完整行级的 list/insert/update,供 IPC 层或 dashboard 使用
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 循环运行存储 - Loop-Engineering 运行日志持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 设计要点：
+//! - 追加写入（append-only），运行结束时通过 update API 更新
+//! - 全局可观测性：所有 pattern 的运行记录汇聚于此
+//! - GC 30 天：由 GC 模块调用 delete_loop_runs_before()
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -20,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const LOOP_RUN_INSERT_SQL: &str = "\
 INSERT INTO loop_runs (\
@@ -35,44 +30,62 @@ outcome, items_found, actions_taken, escalations, tokens_estimate,\
 prompt_tokens, completion_tokens, total_tokens, attempts, notes, loop_state_id,\
 findings_json, actions_json, escalations_json, phase_results_json, error_message";
 
-/// Loop-Engineering 运行记录的 DB 行级表示。
-///
-/// pattern_id / outcome 为 String(原始字符串),由业务层转换为强类型枚举。
-/// 字段命名与 DB 列名一致(snake_case),前端通过 IPC 序列化为 camelCase。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 循环运行记录行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoopRunRow {
+    /// 运行 ID
     pub run_id: String,
+    /// 模式 ID
     pub pattern_id: String,
+    /// 书籍 ID
     pub book_id: Option<String>,
+    /// 章节编号
     pub chapter_number: Option<u32>,
+    /// 开始时间
     pub started_at: String,
+    /// 结束时间
     pub ended_at: Option<String>,
+    /// 持续时间（秒）
     pub duration_s: Option<u64>,
-    /// "running" / "report-only" / "fix-proposed" / "escalated" / "no-op" / "failed"
+    /// 结果状态
     pub outcome: String,
+    /// 发现项数
     pub items_found: u32,
+    /// 执行操作数
     pub actions_taken: u32,
+    /// 升级数
     pub escalations: u32,
+    /// Token 估算
     pub tokens_estimate: u64,
+    /// Prompt Token 数
     pub prompt_tokens: u64,
+    /// Completion Token 数
     pub completion_tokens: u64,
+    /// 总 Token 数
     pub total_tokens: u64,
+    /// 尝试次数
     pub attempts: u32,
+    /// 备注
     pub notes: Option<String>,
-    /// 关联的 loop_state ID(可为空,兼容 budget 系统的全局运行记录)
+    /// 关联的 loop_state ID
     pub loop_state_id: Option<String>,
-    /// JSON 数组:发现项详情(可为空)
+    /// 发现项 JSON
     pub findings_json: Option<String>,
-    /// JSON 数组:执行操作详情(可为空)
+    /// 执行操作 JSON
     pub actions_json: Option<String>,
-    /// JSON 数组:升级事项详情(可为空)
+    /// 升级事项 JSON
     pub escalations_json: Option<String>,
-    /// JSON 数组:分阶段结果(可为空)
+    /// 分阶段结果 JSON
     pub phase_results_json: Option<String>,
-    /// 失败时的错误信息(可为空)
+    /// 错误信息
     pub error_message: Option<String>,
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射数据库行到运行记录行
 fn map_loop_run_row(row: &rusqlite::Row) -> rusqlite::Result<LoopRunRow> {
     Ok(LoopRunRow {
         run_id: row.get(0)?,
@@ -101,11 +114,10 @@ fn map_loop_run_row(row: &rusqlite::Row) -> rusqlite::Result<LoopRunRow> {
     })
 }
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 追加一条 Loop-Engineering 运行记录。
-    ///
-    /// 设计为 append-only:运行结束时调用 update_loop_run_ended() 而非重新 insert。
-    /// run_id 冲突(同毫秒并发)时返回 Err。
+    /// 追加一条运行记录
     pub fn insert_loop_run(&self, row: &LoopRunRow) -> Result<(), AppError> {
         let conn = self.conn()?;
         let book_id = row.book_id.as_deref();
@@ -149,10 +161,7 @@ impl Database {
         Ok(())
     }
 
-    /// 更新运行结束状态(outcome / ended_at / duration_s / counts / notes)。
-    ///
-    /// 用 run_id 作为唯一键定位(token 用量通过 update_loop_run_usage 单独累积,
-    /// 避免每次 add_usage 都重写整个行)。
+    /// 更新运行结束状态
     pub fn update_loop_run_ended(
         &self,
         run_id: &str,
@@ -187,7 +196,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 累加 token 用量(每次 add_usage 调用,而非全量替换)。
+    /// 累加 Token 用量
     pub fn update_loop_run_usage(
         &self,
         run_id: &str,
@@ -211,8 +220,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 列出最近 N 条运行记录(按 started_at DESC)。
-    /// limit 上限 1000,避免大表全扫。
+    /// 列出最近的运行记录
     pub fn list_recent_loop_runs(&self, limit: i64) -> Result<Vec<LoopRunRow>, AppError> {
         let limit = limit.clamp(1, 1000);
         let conn = self.conn()?;
@@ -226,8 +234,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 列出指定 loop_state 的运行记录(按 started_at DESC)。
-    /// limit 上限 1000,避免大表全扫。
+    /// 列出指定 loop_state 的运行记录
     pub fn list_loop_runs_by_state(&self, state_id: &str, limit: i64) -> Result<Vec<LoopRunRow>, AppError> {
         let limit = limit.clamp(1, 1000);
         let conn = self.conn()?;
@@ -241,9 +248,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// GC:删除 started_at 早于 cutoff_iso 的运行记录。
-    /// 用于 30 天滚动日志保留。
-    /// 返回删除的行数。
+    /// 删除指定时间之前的运行记录
     pub fn delete_loop_runs_before(&self, cutoff_iso: &str) -> Result<u64, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -253,6 +258,8 @@ impl Database {
         Ok(affected as u64)
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -347,20 +354,20 @@ mod tests {
             "2026-07-13T12:00:00Z",
             "observation-loop",
             "running",
-            1000, // 初始 total
+            1000,
         );
         db.insert_loop_run(&row).unwrap();
 
         let updated = db.update_loop_run_usage(
             "2026-07-13T12:00:00Z",
-            500, // prompt delta
-            250, // completion delta
+            500,
+            250,
         ).unwrap();
         assert!(updated);
 
         let listed = db.list_recent_loop_runs(10).unwrap();
-        assert_eq!(listed[0].prompt_tokens, 1000); // 500(initial) + 500(delta)
-        assert_eq!(listed[0].completion_tokens, 750); // 500(initial) + 250(delta)
+        assert_eq!(listed[0].prompt_tokens, 1000);
+        assert_eq!(listed[0].completion_tokens, 750);
         assert_eq!(listed[0].total_tokens, 1750);
     }
 
@@ -404,7 +411,6 @@ mod tests {
 
         let state1_runs = db.list_loop_runs_by_state("state-1", 100).unwrap();
         assert_eq!(state1_runs.len(), 2);
-        // 按 started_at DESC 排序
         assert_eq!(state1_runs[0].run_id, "2026-07-13T11:00:00Z");
         assert_eq!(state1_runs[1].run_id, "2026-07-13T10:00:00Z");
 

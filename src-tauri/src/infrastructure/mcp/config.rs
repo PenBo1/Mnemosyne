@@ -1,9 +1,13 @@
-// MCP 配置管理 —— McpConfig 持久化到 <data_dir>/mcp_config.json。
-//
-// 设计参考：infrastructure/tool_limits/config.rs
-// - 文件不存在 → 返回 Default（空 server 列表）
-// - 文件存在但解析失败 → 返回 Err（不静默回退，对齐 "no silent fallback"）
-// - 保存前校验 id 唯一性
+//! ═══════════════════════════════════════════════════════════════════════════
+//! MCP 配置 - 配置管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! McpConfig 持久化到 <data_dir>/mcp_config.json。
+//!
+//! 设计参考：infrastructure/tool_limits/config.rs
+//! - 文件不存在 → 返回 Default（空 server 列表）
+//! - 文件存在但解析失败 → 返回 Err（不静默回退）
+//! - 保存前校验 id 唯一性
 
 use serde::{Deserialize, Serialize};
 

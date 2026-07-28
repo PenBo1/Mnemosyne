@@ -1,13 +1,10 @@
-// loop_states 表的 CRUD —— Loop-Engineering 状态实例持久化。
-//
-// 设计要点：
-// - per-novel 的循环实例:绑定 pattern + 状态 + 预算用量
-// - JSON 字段(state_payload / config / last_run_result)由业务层序列化
-//
-// 架构约束(AGENTS.md):
-// - infrastructure 层只依赖 shared/,不依赖 core/agent/ 或 application/
-// - 因此本模块定义自己的 LoopStateRow DTO,字段命名与 DB 列名一致(snake_case)
-// - 业务层(application/loop_engine/)负责 LoopStateRow ↔ 前端 camelCase 类型转换
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 循环状态存储 - Loop-Engineering 状态实例持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 设计要点：
+//! - 每小说的循环实例：绑定 pattern + 状态 + 预算用量
+//! - JSON 字段（state_payload / config / last_run_result）由业务层序列化
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -15,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const LOOP_STATE_INSERT_SQL: &str = "\
 INSERT INTO loop_states (\
@@ -26,27 +25,42 @@ const LOOP_STATE_SELECT_COLUMNS: &str = "\
 id, novel_id, pattern_id, status, readiness_level, state_payload, config,\
 token_usage_today, token_cap_daily, last_run_at, last_run_result, created_at, updated_at";
 
-/// loop_states 表的行级表示。
-///
-/// JSON 字段(state_payload / config / last_run_result)为原始 JSON 字符串,
-/// 由业务层负责序列化/反序列化。字段命名与 DB 列名一致(snake_case)。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 循环状态行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoopStateRow {
+    /// 状态 ID
     pub id: String,
+    /// 小说 ID
     pub novel_id: String,
+    /// 模式 ID
     pub pattern_id: String,
+    /// 状态
     pub status: String,
+    /// 就绪等级
     pub readiness_level: String,
+    /// 状态载荷 JSON
     pub state_payload: Option<String>,
+    /// 配置 JSON
     pub config: Option<String>,
+    /// 今日 Token 用量
     pub token_usage_today: i64,
+    /// 每日 Token 上限
     pub token_cap_daily: i64,
+    /// 最后运行时间
     pub last_run_at: Option<String>,
+    /// 最后运行结果 JSON
     pub last_run_result: Option<String>,
+    /// 创建时间
     pub created_at: String,
+    /// 更新时间
     pub updated_at: String,
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射数据库行到循环状态行
 fn map_loop_state_row(row: &rusqlite::Row) -> rusqlite::Result<LoopStateRow> {
     Ok(LoopStateRow {
         id: row.get(0)?,
@@ -65,11 +79,12 @@ fn map_loop_state_row(row: &rusqlite::Row) -> rusqlite::Result<LoopStateRow> {
     })
 }
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 创建 loop state。
+    /// 创建循环状态
     pub fn insert_loop_state(&self, row: &LoopStateRow) -> Result<(), AppError> {
         let conn = self.conn()?;
-        // state_payload / config 在 DB 中为 NOT NULL DEFAULT '{}',None 时用 "{}" 兜底
         conn.execute(
             LOOP_STATE_INSERT_SQL,
             params![
@@ -91,7 +106,7 @@ impl Database {
         Ok(())
     }
 
-    /// 列出指定 novel 的所有 loop states。
+    /// 列出指定小说的所有循环状态
     pub fn list_loop_states(&self, novel_id: &str) -> Result<Vec<LoopStateRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -104,7 +119,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 获取单个 loop state。
+    /// 获取单个循环状态
     pub fn get_loop_state(&self, state_id: &str) -> Result<Option<LoopStateRow>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -122,9 +137,7 @@ impl Database {
         }
     }
 
-    /// 更新 loop state 的可变字段。
-    ///
-    /// 仅更新非 None 字段,None 字段保持原值(部分更新语义)。
+    /// 更新循环状态（部分更新语义）
     pub fn update_loop_state(
         &self,
         state_id: &str,
@@ -167,7 +180,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 删除 loop state。
+    /// 删除循环状态
     pub fn delete_loop_state(&self, state_id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -178,12 +191,34 @@ impl Database {
     }
 }
 
+// ── 测试模块 ────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn make_in_memory_db() -> Database {
-        Database::connect_in_memory().expect("in-memory db should init")
+        let db = Database::connect_in_memory().expect("in-memory db should init");
+        {
+            let conn = db.conn().expect("db conn should lock");
+            conn.execute(
+                "INSERT INTO workspaces (id, name, path, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["ws-1", "ws1", "/tmp/ws1", "2026-07-13T10:00:00Z", "2026-07-13T10:00:00Z"],
+            ).expect("seed workspace ws-1");
+            conn.execute(
+                "INSERT INTO novels (id, workspace_id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["novel-1", "ws-1", "n1", "2026-07-13T10:00:00Z", "2026-07-13T10:00:00Z"],
+            ).expect("seed novel novel-1");
+            conn.execute(
+                "INSERT INTO workspaces (id, name, path, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["ws-2", "ws2", "/tmp/ws2", "2026-07-13T10:00:00Z", "2026-07-13T10:00:00Z"],
+            ).expect("seed workspace ws-2");
+            conn.execute(
+                "INSERT INTO novels (id, workspace_id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["novel-2", "ws-2", "n2", "2026-07-13T10:00:00Z", "2026-07-13T10:00:00Z"],
+            ).expect("seed novel novel-2");
+        }
+        db
     }
 
     fn make_row(id: &str, novel_id: &str, pattern_id: &str) -> LoopStateRow {

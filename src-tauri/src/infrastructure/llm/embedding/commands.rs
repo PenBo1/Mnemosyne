@@ -1,7 +1,9 @@
-// Embedding IPC 命令
-//
-// 配置读写复用 config.json(ai.embedding 段),向量操作走 DbState。
-// 本地与云端统一 OpenAI 兼容协议,前端参数用 camelCase。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Embedding 命令 - Tauri IPC 命令
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 配置读写复用 config.json（ai.embedding 段），向量操作走 DbState。
+//! 本地与云端统一 OpenAI 兼容协议，前端参数用 camelCase。
 
 use tauri::State;
 
@@ -60,7 +62,17 @@ fn write_embedding_config(config_path: &std::path::Path, cfg: &EmbeddingConfig) 
 /// 读取 embedding 配置
 #[tauri::command]
 pub fn embedding_get_config(state: State<'_, DbState>) -> Result<IpcResponse<EmbeddingConfig>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!("embedding_get_config: enter");
+    
     let cfg = read_embedding_config(&state.data_dir.config_path());
+    
+    tracing::info!(
+        enabled = cfg.enabled,
+        model = %cfg.model,
+        duration_ms = start.elapsed().as_millis(),
+        "embedding_get_config: exit"
+    );
     Ok(IpcResponse::ok(cfg))
 }
 
@@ -95,35 +107,46 @@ pub async fn embedding_index_doc(
     state: State<'_, DbState>,
     params: IndexDocParams,
 ) -> Result<IpcResponse<usize>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        doc_type = %params.doc_type,
+        doc_id = %params.doc_id,
+        workspace_id = ?params.workspace_id,
+        "embedding_index_doc: enter"
+    );
+    
     validate_doc_type(&params.doc_type)?;
     if params.doc_id.trim().is_empty() {
+        tracing::error!("embedding_index_doc: doc_id is empty");
         return Err(AppError::invalid_input("doc_id is empty"));
     }
     if params.content.trim().is_empty() {
+        tracing::error!("embedding_index_doc: content is empty");
         return Err(AppError::invalid_input("content is empty"));
     }
 
     let cfg = read_embedding_config(&state.data_dir.config_path());
     if !cfg.enabled {
+        tracing::error!("embedding_index_doc: Embedding is disabled");
         return Err(AppError::invalid_input("Embedding is disabled"));
     }
 
-    // 切分
     let chunks = chunker::split_text(&params.content, None);
     if chunks.is_empty() {
+        tracing::error!("embedding_index_doc: content is empty after chunking");
         return Err(AppError::invalid_input("content is empty after chunking"));
     }
     tracing::info!(doc_type = %params.doc_type, doc_id = %params.doc_id, chunks = chunks.len(), "Indexing document");
 
-    // 批量 embed
-    let embeddings = client::embed_batch(&chunks, &cfg).await?;
+    let embeddings = client::embed_batch(&chunks, &cfg).await.map_err(|e| {
+        tracing::error!(error = %e, "embedding_index_doc: Failed to embed chunks");
+        e
+    })?;
 
-    // 组装 (content, embedding) 对
     let pairs: Vec<(String, Vec<f32>)> = chunks.into_iter()
         .zip(embeddings.into_iter())
         .collect();
 
-    // 存入 DB
     let count = state.db.upsert_vectors(
         params.workspace_id.as_deref(),
         &params.doc_type,
@@ -131,8 +154,16 @@ pub async fn embedding_index_doc(
         &pairs,
         &cfg.model,
         cfg.dim,
-    )?;
+    ).map_err(|e| {
+        tracing::error!(error = %e, "embedding_index_doc: Failed to store vectors");
+        e
+    })?;
 
+    tracing::info!(
+        count,
+        duration_ms = start.elapsed().as_millis(),
+        "embedding_index_doc: exit"
+    );
     Ok(IpcResponse::ok(count))
 }
 
@@ -229,41 +260,54 @@ pub async fn embedding_ingest_file(
     state: State<'_, DbState>,
     params: IngestFileParams,
 ) -> Result<IpcResponse<IngestResult>, AppError> {
-    // 基本路径校验(防止空路径/相对路径)
+    let start = std::time::Instant::now();
+    tracing::info!(
+        file_path = %params.file_path,
+        doc_id = ?params.doc_id,
+        workspace_id = ?params.workspace_id,
+        "embedding_ingest_file: enter"
+    );
+    
     let path = std::path::Path::new(&params.file_path);
     if !path.is_absolute() {
+        tracing::error!("embedding_ingest_file: file_path must be absolute");
         return Err(AppError::invalid_input("file_path must be absolute"));
     }
-    // 防穿越:不允许包含 ..
     if params.file_path.contains("..") {
+        tracing::error!("embedding_ingest_file: file_path contains '..'");
         return Err(AppError::invalid_input("file_path contains '..'"));
     }
     if !path.exists() {
+        tracing::error!(file_path = %params.file_path, "embedding_ingest_file: File not found");
         return Err(AppError::not_found(format!("File not found: {}", params.file_path)));
     }
 
     let cfg = read_embedding_config(&state.data_dir.config_path());
     if !cfg.enabled {
+        tracing::error!("embedding_ingest_file: Embedding is disabled");
         return Err(AppError::invalid_input("Embedding is disabled"));
     }
 
-    // 1. 提取文本
-    let material = ingest::extract_text_from_file(path)?;
+    let material = ingest::extract_text_from_file(path).map_err(|e| {
+        tracing::error!(error = %e, "embedding_ingest_file: Failed to extract text");
+        e
+    })?;
+    
     let char_count = material.text.chars().count();
     let excerpt = material.text.chars().take(200).collect();
 
-    // 2. 生成 doc_id(如未提供)
     let doc_id = params.doc_id.unwrap_or_else(|| {
         let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("material");
         let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
         format!("{}-{}", filename, timestamp)
     });
 
-    // 3. 切分
     let chunks = chunker::split_text(&material.text, None);
     if chunks.is_empty() {
+        tracing::error!("embedding_ingest_file: Material text is empty after chunking");
         return Err(AppError::invalid_input("Material text is empty after chunking"));
     }
+    
     let chunk_count = chunks.len();
     tracing::info!(
         kind = ?material.kind,
@@ -273,15 +317,15 @@ pub async fn embedding_ingest_file(
         "Ingesting material"
     );
 
-    // 4. 批量 embed
-    let embeddings = client::embed_batch(&chunks, &cfg).await?;
+    let embeddings = client::embed_batch(&chunks, &cfg).await.map_err(|e| {
+        tracing::error!(error = %e, "embedding_ingest_file: Failed to embed chunks");
+        e
+    })?;
 
-    // 5. 组装 (content, embedding) 对
     let pairs: Vec<(String, Vec<f32>)> = chunks.into_iter()
         .zip(embeddings.into_iter())
         .collect();
 
-    // 6. 存入 DB(doc_type = "material")
     state.db.upsert_vectors(
         params.workspace_id.as_deref(),
         "material",
@@ -289,8 +333,20 @@ pub async fn embedding_ingest_file(
         &pairs,
         &cfg.model,
         cfg.dim,
-    )?;
+    ).map_err(|e| {
+        tracing::error!(error = %e, "embedding_ingest_file: Failed to store vectors");
+        e
+    })?;
 
+    tracing::info!(
+        kind = format!("{:?}", material.kind).to_lowercase(),
+        doc_id = %doc_id,
+        char_count,
+        chunk_count,
+        duration_ms = start.elapsed().as_millis(),
+        "embedding_ingest_file: exit"
+    );
+    
     Ok(IpcResponse::ok(IngestResult {
         kind: format!("{:?}", material.kind).to_lowercase(),
         title: material.title,

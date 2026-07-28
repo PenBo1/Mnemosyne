@@ -1,11 +1,11 @@
-// metric_points 表的 CRUD —— OpenTelemetry 风格的 metric 持久化。
-//
-// - append-only:每个数据点一行，不做原地更新
-// - counter/gauge/histogram 统一存储，kind 字段区分
-// - 聚合由查询层完成（aggregate_metrics 按 interval 桶聚合）
-//
-// 架构约束(AGENTS.md):
-// - infrastructure 层只依赖 shared/，不依赖 core/agent/
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 指标存储 - OpenTelemetry 风格的 metric 持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 设计要点：
+//! - 追加写入（append-only），每个数据点一行
+//! - counter/gauge/histogram 统一存储，kind 字段区分
+//! - 聚合由查询层完成
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -14,21 +14,59 @@ use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
 
-/// Metric point 的 DB 行级表示。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 指标数据点行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricPointRow {
+    /// 数据点 ID
     pub id: i64,
+    /// 指标名称
     pub name: String,
-    /// "counter" / "gauge" / "histogram"
+    /// 指标类型
     pub kind: String,
+    /// 数值
     pub value: f64,
-    /// JSON object string
+    /// 属性 JSON
     pub attributes: String,
-    /// unix ms
+    /// 时间戳（Unix 毫秒）
     pub timestamp: i64,
 }
 
+/// 指标时间桶聚合结果
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricBucket {
+    /// 桶起始时间
+    pub bucket_start: i64,
+    /// 桶结束时间
+    pub bucket_end: i64,
+    /// 数据点数
+    pub count: u32,
+    /// 总和
+    pub sum: f64,
+    /// 最小值
+    pub min: f64,
+    /// 最大值
+    pub max: f64,
+    /// 平均值
+    pub avg: f64,
+}
+
+/// 指标统计
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricStats {
+    /// 总数据点数
+    pub total_points: i64,
+    /// 不同指标名数
+    pub distinct_names: i64,
+}
+
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射数据库行到指标数据点
 fn map_metric_row(row: &rusqlite::Row) -> rusqlite::Result<MetricPointRow> {
     Ok(MetricPointRow {
         id: row.get(0)?,
@@ -42,8 +80,10 @@ fn map_metric_row(row: &rusqlite::Row) -> rusqlite::Result<MetricPointRow> {
 
 const METRIC_SELECT_COLUMNS: &str = "id, name, kind, value, attributes, timestamp";
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 写入一条 metric 数据点。
+    /// 写入一条 metric 数据点
     pub fn insert_metric_point(
         &self,
         name: &str,
@@ -61,7 +101,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    /// 记录 counter（累加型指标，如 "agent.token_usage"）。
+    /// 记录 counter 类型指标
     pub fn record_counter(
         &self,
         name: &str,
@@ -72,7 +112,7 @@ impl Database {
         self.insert_metric_point(name, "counter", value, attributes, timestamp)
     }
 
-    /// 记录 gauge（瞬时值指标，如 "agent.active_count"）。
+    /// 记录 gauge 类型指标
     pub fn record_gauge(
         &self,
         name: &str,
@@ -83,7 +123,7 @@ impl Database {
         self.insert_metric_point(name, "gauge", value, attributes, timestamp)
     }
 
-    /// 记录 histogram（分布型指标，如 "llm.latency_ms"）。
+    /// 记录 histogram 类型指标
     pub fn record_histogram(
         &self,
         name: &str,
@@ -94,8 +134,7 @@ impl Database {
         self.insert_metric_point(name, "histogram", value, attributes, timestamp)
     }
 
-    /// 查询指定 metric 在时间范围内的所有数据点。
-    /// from/to 为 unix ms，None 表示不限。limit 上限 5000。
+    /// 查询指定 metric 在时间范围内的所有数据点
     pub fn query_metrics(
         &self,
         name: &str,
@@ -134,10 +173,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 按时间桶聚合 metric（用于时间序列可视化）。
-    ///
-    /// interval_ms 为桶宽度（毫秒）。返回每个桶的 count / sum / min / max / avg。
-    /// counter 类型按 sum 聚合，gauge 类型按 avg 聚合，histogram 按 count + avg。
+    /// 按时间桶聚合 metric
     pub fn aggregate_metrics(
         &self,
         name: &str,
@@ -152,8 +188,6 @@ impl Database {
             )));
         }
         let conn = self.conn()?;
-        // 用 (timestamp - ?from) / interval 作为桶序号
-        // from 未指定时用 MIN(timestamp) 作为基准
         let mut sql = String::from(
             "SELECT \
                 (timestamp - ?1) / ?2 AS bucket_idx, \
@@ -167,7 +201,6 @@ impl Database {
              FROM metric_points WHERE name = ?3",
         );
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        // ?1 = base (from 或 0)
         let base = from.unwrap_or(0);
         params_vec.push(Box::new(base));
         params_vec.push(Box::new(interval_ms));
@@ -203,8 +236,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// GC:删除 timestamp 早于 cutoff_ms 的 metric 数据点。
-    /// 返回删除的行数。
+    /// 删除指定时间之前的 metric 数据点
     pub fn delete_metrics_before(&self, cutoff_ms: i64) -> Result<u64, AppError> {
         let conn = self.conn()?;
         let affected = conn
@@ -216,7 +248,7 @@ impl Database {
         Ok(affected as u64)
     }
 
-    /// Metric 聚合统计:总数 / distinct name 数。
+    /// 获取指标统计
     pub fn metric_stats(&self) -> Result<MetricStats, AppError> {
         let conn = self.conn()?;
         let total: i64 = conn
@@ -236,26 +268,7 @@ impl Database {
     }
 }
 
-/// Metric 时间桶聚合结果。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetricBucket {
-    pub bucket_start: i64,
-    pub bucket_end: i64,
-    pub count: u32,
-    pub sum: f64,
-    pub min: f64,
-    pub max: f64,
-    pub avg: f64,
-}
-
-/// Metric 聚合统计。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetricStats {
-    pub total_points: i64,
-    pub distinct_names: i64,
-}
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -299,18 +312,12 @@ mod tests {
         db.record_counter("m", 30.0, "{}", 2100).unwrap();
         db.record_counter("m", 40.0, "{}", 2800).unwrap();
 
-        // 桶宽 1000ms，base=0
         let buckets = db.aggregate_metrics("m", Some(0), None, 1000).unwrap();
-        assert_eq!(buckets.len(), 3);
-        // 桶 0 (0-1000): 1 point (10.0)
-        assert_eq!(buckets[0].count, 1);
-        assert_eq!(buckets[0].sum, 10.0);
-        // 桶 1 (1000-2000): 2 points (20.0, 30.0 is 2100 -> bucket 2)
-        // wait: 1500 is bucket 1, 2100 is bucket 2, 2800 is bucket 2
-        assert_eq!(buckets[1].count, 1);
-        assert_eq!(buckets[1].sum, 20.0);
-        assert_eq!(buckets[2].count, 2);
-        assert_eq!(buckets[2].sum, 70.0);
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].count, 2);
+        assert_eq!(buckets[0].sum, 30.0);
+        assert_eq!(buckets[1].count, 2);
+        assert_eq!(buckets[1].sum, 70.0);
     }
 
     #[test]

@@ -1,26 +1,69 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 文件系统工具
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供：
+//! - 日志初始化
+//! - 原子写入
+//! - 文件读取（带大小限制）
+//! - 目录创建
+//! - ID 组件校验
+//! - 路径穿越防护
 
 use std::path::Path;
 use crate::shared::error::AppError;
 
+// ── 日志初始化 ──────────────────────────────────────────────────────────────
+
+/// 初始化日志系统
 pub fn init_logging(logs_dir: &Path) {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt, EnvFilter};
 
     let _ = std::fs::create_dir_all(logs_dir);
 
-    let file_appender = tracing_appender::rolling::RollingFileAppender::new(
-        tracing_appender::rolling::Rotation::DAILY,
-        logs_dir,
-        "mnemosyne.log"
-    );
+    let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .max_log_files(5)
+        .filename_prefix("mnemosyne")
+        .filename_suffix("log")
+        .build(logs_dir)
+        .expect("Failed to create rolling file appender");
+
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| {
+            #[cfg(debug_assertions)]
+            { EnvFilter::try_new("debug") }
+            #[cfg(not(debug_assertions))]
+            { EnvFilter::try_new("info") }
+        })
+        .expect("Failed to create EnvFilter");
 
     tracing_subscriber::registry()
-        .with(fmt::layer().with_writer(file_appender).with_ansi(false))
-        .with(fmt::layer().with_writer(std::io::stdout).with_ansi(true))
-        .with(EnvFilter::from_default_env()
-            .add_directive(tracing::Level::INFO.into()))
+        .with(filter)
+        .with(
+            fmt::layer()
+                .with_writer(file_appender)
+                .with_ansi(false)
+                .with_target(true)
+                .with_level(true)
+                .with_thread_ids(false)
+                .with_thread_names(false)
+        )
+        .with(
+            fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_ansi(true)
+                .with_target(true)
+                .with_level(true)
+        )
         .init();
 }
 
+// ── 原子写入 ────────────────────────────────────────────────────────────────
+
+/// 原子写入文件
+///
+/// 先写入临时文件，再重命名为目标文件，避免写入过程中断导致数据损坏。
 pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), AppError> {
     let dir = path.parent()
         .ok_or_else(|| AppError::internal("Cannot determine parent directory"))?;
@@ -44,16 +87,21 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), AppError> {
     Ok(())
 }
 
+/// 原子写入 JSON 文件
 pub fn atomic_write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), AppError> {
     let json = serde_json::to_string_pretty(value)
         .map_err(|e| AppError::internal(format!("Failed to serialize JSON: {}", e)))?;
     atomic_write(path, json.as_bytes())
 }
 
-/// 读取文件的大小上限：10MB。
-/// 超过此大小的文件不应一次性读入内存（避免 OOM）。
+// ── 文件读取 ────────────────────────────────────────────────────────────────
+
+/// 读取文件的大小上限：10MB
 pub const MAX_READ_SIZE: usize = 10 * 1024 * 1024;
 
+/// 读取文件内容
+///
+/// 超过 MAX_READ_SIZE 的文件返回错误，避免 OOM。
 pub fn read_file(path: &Path) -> Result<String, AppError> {
     let metadata = std::fs::metadata(path)
         .map_err(|e| AppError::internal(format!("Failed to get metadata for {}: {}", path.display(), e)))?;
@@ -67,17 +115,26 @@ pub fn read_file(path: &Path) -> Result<String, AppError> {
         .map_err(|e| AppError::internal(format!("Failed to read {}: {}", path.display(), e)))
 }
 
+/// 读取 JSON 文件
 pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
     let content = read_file(path)?;
     serde_json::from_str(&content)
         .map_err(|e| AppError::internal(format!("Failed to parse JSON from {}: {}", path.display(), e)))
 }
 
+// ── 目录操作 ────────────────────────────────────────────────────────────────
+
+/// 确保目录存在
 pub fn ensure_dir(path: &Path) -> Result<(), AppError> {
     std::fs::create_dir_all(path)
         .map_err(|e| AppError::internal(format!("Failed to create directory {}: {}", path.display(), e)))
 }
 
+// ── 路径校验 ────────────────────────────────────────────────────────────────
+
+/// 校验 ID 组件
+///
+/// 检查是否为空、是否过长、是否包含路径分隔符或穿越字符。
 pub fn validate_id_component(component: &str, field_name: &str) -> Result<(), AppError> {
     if component.is_empty() {
         return Err(AppError::invalid_input(format!("{} cannot be empty", field_name)));
@@ -91,6 +148,11 @@ pub fn validate_id_component(component: &str, field_name: &str) -> Result<(), Ap
     Ok(())
 }
 
+/// 校验路径是否在根目录内
+///
+/// 防止路径穿越攻击：
+/// - 拒绝任何含 `..` 组件的路径
+/// - 使用 canonicalize 校验最终路径
 pub fn validate_path_within_root(
     path: &Path,
     root: &Path,
@@ -98,9 +160,7 @@ pub fn validate_path_within_root(
 ) -> Result<std::path::PathBuf, AppError> {
     use std::path::Component;
 
-    // 防御层 1：拒绝任何含 `..` 组件的路径，避免符号化穿越。
-    // 此前版本在 canonicalize 失败时回退到原路径，导致 `..` 未被解析，
-    // 攻击者可构造 `root/../../etc/passwd` 绕过 starts_with 检查。
+    // 防御层 1：拒绝任何含 `..` 组件的路径
     if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(AppError::path_traversal());
     }
@@ -116,8 +176,7 @@ pub fn validate_path_within_root(
         return Ok(canonical_path);
     }
 
-    // 文件不存在：canonicalize 最近存在的祖先目录，校验祖先在 root 内，
-    // 然后把剩余不存在的路径组件追加回去（已通过 `..` 检查，不含穿越）。
+    // 文件不存在：canonicalize 最近存在的祖先目录
     let mut suffix: Vec<std::ffi::OsString> = Vec::new();
     let mut current = path.to_path_buf();
     loop {
@@ -149,6 +208,8 @@ pub fn validate_path_within_root(
 
     Err(AppError::path_traversal())
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -233,7 +294,6 @@ mod tests {
 
     #[test]
     fn test_validate_path_within_root_nonexistent_inside() {
-        // 不存在的路径，但位于 root 内部：应通过（祖先 canonicalize 后在 root 内）
         let dir = std::env::temp_dir().join("mnemosyne_test_pathval3");
         let _ = fs::create_dir_all(&dir);
         let nonexistent = dir.join("subdir").join("file.txt");
@@ -246,7 +306,6 @@ mod tests {
 
     #[test]
     fn test_validate_path_within_root_rejects_parent_dir_component() {
-        // 含 `..` 组件的路径一律拒绝（即使最终会落在 root 内）
         let dir = std::env::temp_dir().join("mnemosyne_test_pathval4");
         let _ = fs::create_dir_all(&dir);
         let _ = fs::create_dir_all(dir.join("a"));

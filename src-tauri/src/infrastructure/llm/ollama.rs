@@ -1,3 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Ollama Provider - 本地模型实现
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 实现 Ollama 本地模型调用：
+//! - 默认端点 http://localhost:11434
+//! - 支持 Llama 3.1、Qwen 2.5 等模型
+//! - 无需 API Key
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -38,34 +46,55 @@ impl Provider for OllamaProvider {
         ]
     }
 
-    async fn complete(&self, model: &str, system: &str, messages: &[Message]) -> Result<String, AppError> {
-        tracing::info!(model = %model, messages = messages.len(), "Ollama complete request");
-        let mut msgs = vec![serde_json::json!({ "role": "system", "content": system })];
-        for m in messages { msgs.push(serde_json::json!({ "role": m.role, "content": m.content })); }
-        let body = serde_json::json!({ "model": model, "messages": msgs, "stream": false });
-        let resp = self.client.post(format!("{}/api/chat", self.base_url))
-            .json(&body).send().await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Ollama request failed");
-                AppError::stream_error(e.to_string())
-            })?;
-        let json: serde_json::Value = resp.json().await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Ollama response parse failed");
-                AppError::invalid_format(e.to_string())
-            })?;
-        json["message"]["content"].as_str().map(|s| s.to_string())
-            .ok_or_else(|| {
-                tracing::error!("No content in Ollama response");
-                AppError::internal("No content in Ollama response")
-            })
+    async fn complete(&self, model: &str, system: &str, messages: &[Message], max_tokens: u64) -> Result<String, AppError> {
+        let start = std::time::Instant::now();
+        tracing::info!(model = %model, messages = messages.len(), max_tokens, "ollama_complete: enter");
+
+        let result = async {
+            let mut msgs = vec![serde_json::json!({ "role": "system", "content": system })];
+            for m in messages { msgs.push(serde_json::json!({ "role": m.role, "content": m.content })); }
+            // num_predict 是 ollama 的输出 token 上限，等价于 OpenAI/Anthropic 的 max_tokens
+            let body = serde_json::json!({ "model": model, "messages": msgs, "stream": false, "options": { "num_predict": max_tokens } });
+            let resp = self.client.post(format!("{}/api/chat", self.base_url))
+                .json(&body).send().await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "Ollama request failed");
+                    AppError::stream_error(e.to_string())
+                })?;
+            let json: serde_json::Value = resp.json().await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "Ollama response parse failed");
+                    AppError::invalid_format(e.to_string())
+                })?;
+            json["message"]["content"].as_str().map(|s| s.to_string())
+                .ok_or_else(|| {
+                    tracing::error!("No content in Ollama response");
+                    AppError::internal("No content in Ollama response")
+                })
+        }.await;
+        
+        match &result {
+            Ok(_) => tracing::info!(
+                model = %model,
+                duration_ms = start.elapsed().as_millis(),
+                "ollama_complete: exit"
+            ),
+            Err(e) => tracing::error!(
+                model = %model,
+                error = %e,
+                duration_ms = start.elapsed().as_millis(),
+                "ollama_complete: error"
+            ),
+        }
+        result
     }
 
-    async fn stream(&self, model: &str, system: &str, messages: &[Message], _tools: &[ToolSpec]) -> Result<std::pin::Pin<Box<dyn futures_util::Stream<Item = StreamEvent> + Send>>, AppError> {
-        tracing::info!(model = %model, messages = messages.len(), "Ollama stream request");
+    async fn stream(&self, model: &str, system: &str, messages: &[Message], _tools: &[ToolSpec], max_tokens: u64) -> Result<std::pin::Pin<Box<dyn futures_util::Stream<Item = StreamEvent> + Send>>, AppError> {
+        tracing::info!(model = %model, messages = messages.len(), max_tokens, "Ollama stream request");
         let mut msgs = vec![serde_json::json!({ "role": "system", "content": system })];
         for m in messages { msgs.push(serde_json::json!({ "role": m.role, "content": m.content })); }
-        let body = serde_json::json!({ "model": model, "messages": msgs, "stream": true });
+        // num_predict 是 ollama 的输出 token 上限，等价于 OpenAI/Anthropic 的 max_tokens
+        let body = serde_json::json!({ "model": model, "messages": msgs, "stream": true, "options": { "num_predict": max_tokens } });
         let resp = self.client.post(format!("{}/api/chat", self.base_url))
             .json(&body).send().await
             .map_err(|e| {

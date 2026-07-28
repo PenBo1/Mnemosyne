@@ -1,14 +1,6 @@
-// ProjectMemoryStore —— workspace 级别 project_memory.md 读写。
-//
-// 设计原则:
-// - 单文件 markdown(不引入 DB 表,避免 over-engineering)
-// - 读取时缓存,写入时 write-through
-// - workspace 不存在文件时返回空字符串(而非报错),让前端"首次写入"流程顺畅
-// - 文件大小软上限 256KB —— 超过时拒绝写入并返回错误(避免无限膨胀)
-//
-// 失败策略(对齐 "no silent fallback"):
-// - 文件系统错误:返回 Err
-// - workspace_id 包含路径分隔符:返回 Err(IPC 层已 validate,此处防御)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 项目记忆存储 - project_memory.md 读写
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::collections::HashMap;
 use std::sync::RwLock;

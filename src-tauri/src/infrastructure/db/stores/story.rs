@@ -1,3 +1,10 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 故事存储 - 故事事实与章节摘要
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供两类存储：
+//! - StoryFact：故事事实（subject-predicate-object 三元组）
+//! - ChapterSummary：章节摘要（角色、事件、状态变化、钩子活动）
 
 use rusqlite::params;
 use chrono::Utc;
@@ -7,6 +14,9 @@ use super::super::connection::db_err;
 use crate::shared::error::AppError;
 use crate::shared::story::models::{StoryFact, ChapterSummary};
 
+// ── Story Fact 辅助函数 ─────────────────────────────────────────────────────
+
+/// 映射故事事实行
 fn map_story_fact_row(row: &rusqlite::Row) -> rusqlite::Result<(String, String, String, String, i64, Option<i64>, i64, String)> {
     Ok((
         row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
@@ -14,6 +24,7 @@ fn map_story_fact_row(row: &rusqlite::Row) -> rusqlite::Result<(String, String, 
     ))
 }
 
+/// 构建故事事实
 fn build_story_fact(raw: (String, String, String, String, i64, Option<i64>, i64, String)) -> StoryFact {
     StoryFact {
         fact_id: raw.0,
@@ -38,7 +49,10 @@ const STORY_FACT_UPSERT_SQL: &str = "INSERT INTO story_facts (id, novel_id, fact
         source_chapter = excluded.source_chapter, \
         updated_at = excluded.updated_at";
 
+// ── Story Fact 操作 ────────────────────────────────────────────────────────
+
 impl Database {
+    /// 插入或更新故事事实
     pub fn upsert_story_fact(&self, novel_id: &str, fact: &StoryFact) -> Result<(), AppError> {
         let now = Utc::now().to_rfc3339();
         let conn = self.conn()?;
@@ -56,6 +70,7 @@ impl Database {
         Ok(())
     }
 
+    /// 批量插入或更新故事事实
     pub fn upsert_story_facts_batch(
         &self,
         novel_id: &str,
@@ -84,6 +99,7 @@ impl Database {
         Ok(())
     }
 
+    /// 查询指定章节的事实
     pub fn query_facts_at_chapter(
         &self,
         novel_id: &str,
@@ -100,6 +116,7 @@ impl Database {
         rows.map(|r| Ok(build_story_fact(r.map_err(db_err)?))).collect()
     }
 
+    /// 按章节范围查询事实
     pub fn query_facts_by_chapter_range(
         &self,
         novel_id: &str,
@@ -119,6 +136,7 @@ impl Database {
         rows.map(|r| Ok(build_story_fact(r.map_err(db_err)?))).collect()
     }
 
+    /// 列出所有故事事实
     pub fn list_story_facts(&self, novel_id: &str) -> Result<Vec<StoryFact>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -131,6 +149,7 @@ impl Database {
         rows.map(|r| Ok(build_story_fact(r.map_err(db_err)?))).collect()
     }
 
+    /// 按主体查询事实
     pub fn query_facts_by_subject(
         &self,
         novel_id: &str,
@@ -147,6 +166,7 @@ impl Database {
         rows.map(|r| Ok(build_story_fact(r.map_err(db_err)?))).collect()
     }
 
+    /// 使事实在指定章节失效
     pub fn expire_fact_at_chapter(
         &self,
         novel_id: &str,
@@ -164,6 +184,7 @@ impl Database {
         Ok(())
     }
 
+    /// 删除故事事实
     pub fn delete_story_fact(
         &self,
         novel_id: &str,
@@ -178,6 +199,9 @@ impl Database {
     }
 }
 
+// ── Chapter Summary 辅助函数 ────────────────────────────────────────────────
+
+/// 映射摘要行
 fn map_summary_row(row: &rusqlite::Row) -> rusqlite::Result<(i64, String, String, String, String, String, String, String, String)> {
     Ok((
         row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
@@ -185,6 +209,7 @@ fn map_summary_row(row: &rusqlite::Row) -> rusqlite::Result<(i64, String, String
     ))
 }
 
+/// 构建摘要
 fn build_summary(raw: (i64, String, String, String, String, String, String, String, String)) -> ChapterSummary {
     ChapterSummary {
         chapter: raw.0 as u32,
@@ -199,7 +224,10 @@ fn build_summary(raw: (i64, String, String, String, String, String, String, Stri
     }
 }
 
+// ── Chapter Summary 操作 ────────────────────────────────────────────────────
+
 impl Database {
+    /// 插入或更新章节摘要
     pub fn upsert_chapter_summary(
         &self,
         novel_id: &str,
@@ -241,6 +269,7 @@ impl Database {
         Ok(())
     }
 
+    /// 获取章节摘要
     pub fn get_chapter_summary(
         &self,
         novel_id: &str,
@@ -261,6 +290,7 @@ impl Database {
         }
     }
 
+    /// 列出所有章节摘要
     pub fn list_chapter_summaries(
         &self,
         novel_id: &str,
@@ -276,6 +306,7 @@ impl Database {
         rows.map(|r| Ok(build_summary(r.map_err(db_err)?))).collect()
     }
 
+    /// 列出章节范围摘要
     pub fn list_chapter_summaries_range(
         &self,
         novel_id: &str,
@@ -293,6 +324,7 @@ impl Database {
         rows.map(|r| Ok(build_summary(r.map_err(db_err)?))).collect()
     }
 
+    /// 列出最近的章节摘要
     pub fn list_recent_chapter_summaries(
         &self,
         novel_id: &str,
@@ -311,6 +343,7 @@ impl Database {
         rows.map(|r| Ok(build_summary(r.map_err(db_err)?))).collect()
     }
 
+    /// 删除章节摘要
     pub fn delete_chapter_summary(
         &self,
         novel_id: &str,
@@ -325,6 +358,7 @@ impl Database {
     }
 }
 
+/// 解析 JSON 数组
 fn parse_json_array(json: &str) -> Vec<String> {
     if json.is_empty() || json == "[]" {
         return Vec::new()

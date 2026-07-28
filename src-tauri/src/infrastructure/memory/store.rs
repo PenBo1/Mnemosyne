@@ -1,17 +1,11 @@
-// Agent 通用记忆存储 —— SQLite 持久化 + in-memory cache。
-//
-// Wave 5 改造要点（替代 <data_dir>/memory/<book_id>.json 文件持久化）：
-// - 写穿（write-through）：每次 mutate 同步写入 SQLite，不再 save_book 写 JSON
-// - 懒加载：首次访问某 book 时从 SQLite 加载到 in-memory cache
-// - 一次性导入：首次启动时若发现旧 <data_dir>/memory/<book_id>.json 文件，导入到 SQLite
-// - 修复 archive_* bug：原实现调用 memory.archive(&entry.id) 但 entry 从未 push 进 entries，
-//   导致 archive 静默失败。新实现直接以 importance=0 写入 SQLite（archived 语义）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 记忆存储 - Agent 通用记忆持久化
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use serde::{Serialize, Deserialize};
 use tokio::sync::RwLock;
 use crate::infrastructure::db::connection::Database;
 use crate::infrastructure::memory::types::{
@@ -24,13 +18,6 @@ const DEFAULT_BUDGET: usize = 20;
 /// book 数据本身持久化在 SQLite，淘汰后下次访问会通过 ensure_loaded() 重新加载。
 const MAX_BOOKS_IN_CACHE: usize = 32;
 
-/// 旧 JSON 文件结构（仅用于一次性导入）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LegacyMemoryData {
-    budget: usize,
-    entries: Vec<MemoryEntry>,
-}
-
 pub struct MemoryStore {
     books: RwLock<HashMap<String, Arc<RwLock<MemorySystem>>>>,
     /// 已从 SQLite 加载过的 book_id 集合，避免重复加载
@@ -38,7 +25,7 @@ pub struct MemoryStore {
     /// 每个 book 上次被访问的时间戳，用于 LRU 淘汰
     last_access: RwLock<HashMap<String, Instant>>,
     db: Database,
-    /// 保留 data_dir 用于一次性导入旧 JSON 文件
+    /// 保留 data_dir 供归档命令拼装归档文件路径
     data_dir: PathBuf,
 }
 
@@ -71,15 +58,14 @@ fn make_entry(
 
 impl MemoryStore {
     pub fn new(db: Database, data_dir: PathBuf) -> Arc<Self> {
-        let store = Arc::new(Self {
+        
+        Arc::new(Self {
             books: RwLock::new(HashMap::new()),
             loaded: RwLock::new(std::collections::HashSet::new()),
             last_access: RwLock::new(HashMap::new()),
             db,
             data_dir,
-        });
-        store.import_legacy_json_sync();
-        store
+        })
     }
 
     /// 暴露 Database 引用 —— 供归档 IPC 命令(memory_archives 表)使用。
@@ -95,59 +81,6 @@ impl MemoryStore {
     /// 归档文件位于 `<data_dir>/agents/<role>/MEMORY.archive.<date>.md`。
     pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
-    }
-
-    /// 一次性导入：扫描 <data_dir>/memory/*.json，迁移到 SQLite。
-    /// 导入成功后删除原 JSON 文件（避免重复导入）。
-    /// 失败只 log，不阻塞启动。
-    fn import_legacy_json_sync(&self) {
-        let memory_dir = self.data_dir.join("memory");
-        if !memory_dir.exists() {
-            return;
-        }
-        let entries = match std::fs::read_dir(&memory_dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            let book_id = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(s) if !s.is_empty() => s.to_string(),
-                _ => continue,
-            };
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            let data: LegacyMemoryData = match serde_json::from_str(&content) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            if data.entries.is_empty() {
-                let _ = std::fs::remove_file(&path);
-                continue;
-            }
-            match self.db.upsert_memory_entries_batch(&book_id, &data.entries) {
-                Ok(()) => {
-                    tracing::info!(
-                        book_id = %book_id,
-                        count = data.entries.len(),
-                        "Imported legacy memory JSON to SQLite"
-                    );
-                    let _ = std::fs::remove_file(&path);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        book_id = %book_id,
-                        error = %e,
-                        "Failed to import legacy memory JSON (kept for retry)"
-                    );
-                }
-            }
-        }
     }
 
     /// 懒加载：首次访问某 book 时从 SQLite 读取全部条目到 in-memory cache。
@@ -233,6 +166,7 @@ impl MemoryStore {
         object: &str,
         category: &str,
     ) {
+        let start_time = Instant::now();
         let entry_type = match category {
             "character" => MemoryType::Character,
             "plot" => MemoryType::Plot,
@@ -253,11 +187,27 @@ impl MemoryStore {
         );
         // 写穿 SQLite
         if let Err(e) = self.db.upsert_memory_entry(book_id, &entry) {
-            tracing::warn!(book_id = %book_id, error = %e, "Failed to persist archive_fact");
+            tracing::error!(
+                book_id = %book_id,
+                chapter = chapter,
+                subject = %subject,
+                error = %e,
+                "[memory] archive_fact failed"
+            );
         }
         // 更新 in-memory cache
         let memory = self.get_or_create(book_id, DEFAULT_BUDGET).await;
         memory.write().await.entries.push(entry);
+        
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+        tracing::info!(
+            book_id = %book_id,
+            chapter = chapter,
+            subject = %subject,
+            category = %category,
+            duration_ms = duration_ms,
+            "[memory] fact archived"
+        );
     }
 
     pub async fn archive_hook(

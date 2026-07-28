@@ -1,27 +1,6 @@
-// ExecPolicy DSL 解析器 —— 将文本配置解析为 ExecPolicy 结构。
-//
-// DSL 语法（简洁实用，不过度工程化）：
-//
-//   # 注释行
-//   default allow|deny|ask
-//
-//   # 命令规则（token 前缀匹配）
-//   allow|deny|ask command "git status"
-//   deny command "rm -rf" @priority 100
-//
-//   # 路径规则（字符串前缀匹配）
-//   deny path "/etc/"
-//   deny path "**/.env"     # ** 匹配任意路径前缀
-//
-//   # 网络规则（host + protocol）
-//   allow network "api.openai.com" https
-//   deny network "169.254.169.254" http @priority 50
-//
-// 规则：
-// - pattern 用双引号包裹（支持含空格的模式）
-// - @priority N 为可选优先级（默认 0）
-// - 路径模式中的 ** 前缀在评估时被去除（等价于"任意路径下匹配文件名"）
-// - 空行和 # 开头的行被忽略
+//! ═══════════════════════════════════════════════════════════════════════════
+//! DSL 解析器 - 文本配置解析
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::shared::error::AppError;
 

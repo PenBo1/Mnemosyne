@@ -1,11 +1,9 @@
-// memory_entries 表的 CRUD —— Agent 通用记忆加速层。
-//
-// 替代 <data_dir>/memory/<book_id>.json 文件持久化。
-//
-// 与 MemoryStore(infrastructure/memory/store.rs)的关系:
-// - MemoryStore 仍是 in-memory cache + 业务逻辑层（archive/importance/budget）
-// - 本模块提供 SQLite 持久化原语（upsert/list/delete/update/search）
-// - MemoryStore 在 mutate 时调用本模块写穿（write-through）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 记忆存储 - Agent 通用记忆持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 替代 <data_dir>/memory/<book_id>.json 文件持久化。
+//! MemoryStore 仍是内存缓存 + 业务逻辑层，本模块提供 SQLite 持久化原语。
 
 use rusqlite::params;
 use chrono::Utc;
@@ -14,6 +12,8 @@ use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
 use crate::infrastructure::memory::types::{MemoryEntry, MemoryType};
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const MEMORY_ENTRY_UPSERT_SQL: &str = "\
 INSERT INTO memory_entries (\
@@ -33,6 +33,13 @@ ON CONFLICT(book_id, id) DO UPDATE SET\
     tags_json = excluded.tags_json,\
     updated_at = excluded.updated_at";
 
+const MEMORY_ENTRY_SELECT_COLUMNS: &str = "\
+id, key, value, memory_type, source, importance,\
+content, entry_type, chapter, timestamp, tags_json, created_at, updated_at";
+
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 解析记忆类型字符串
 fn parse_memory_type(s: &str) -> MemoryType {
     match s {
         "fact" => MemoryType::Fact,
@@ -50,6 +57,7 @@ fn parse_memory_type(s: &str) -> MemoryType {
     }
 }
 
+/// 映射数据库行到记忆条目
 fn map_memory_row(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
     let tags_json: String = row.get(10)?;
     let tags: Vec<String> = if tags_json.is_empty() || tags_json == "[]" {
@@ -74,12 +82,10 @@ fn map_memory_row(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
     })
 }
 
-const MEMORY_ENTRY_SELECT_COLUMNS: &str = "\
-id, key, value, memory_type, source, importance,\
-content, entry_type, chapter, timestamp, tags_json, created_at, updated_at";
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
 
 impl Database {
-    /// 写穿单条记忆条目（upsert by book_id + id）
+    /// 写穿单条记忆条目
     pub fn upsert_memory_entry(&self, book_id: &str, entry: &MemoryEntry) -> Result<(), AppError> {
         let now = Utc::now().to_rfc3339();
         let tags_json = serde_json::to_string(entry.tags.as_deref().unwrap_or(&[]))
@@ -98,7 +104,7 @@ impl Database {
         Ok(())
     }
 
-    /// 列出某 book 的全部记忆条目（按 importance DESC, created_at ASC 排序）
+    /// 列出某书籍的全部记忆条目
     pub fn list_memory_entries(&self, book_id: &str) -> Result<Vec<MemoryEntry>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -112,7 +118,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 模糊搜索（key 或 value 包含 query 子串）
+    /// 模糊搜索记忆条目
     pub fn search_memory_entries(
         &self,
         book_id: &str,
@@ -137,7 +143,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 删除单条记忆（返回是否命中）
+    /// 删除单条记忆
     pub fn delete_memory_entry(&self, book_id: &str, entry_id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -147,7 +153,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 更新条目内容（value + content 同步 + updated_at）
+    /// 更新条目内容
     pub fn update_memory_entry_content(
         &self,
         book_id: &str,
@@ -165,7 +171,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 归档（importance=0）单条记忆
+    /// 归档单条记忆
     pub fn archive_memory_entry(&self, book_id: &str, entry_id: &str) -> Result<bool, AppError> {
         let now = Utc::now().to_rfc3339();
         let conn = self.conn()?;
@@ -177,9 +183,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 统计：返回 (main_count, archival_count)
-    /// - main: importance > 0（活跃记忆）
-    /// - archival: importance == 0（已归档）
+    /// 统计记忆条目
     pub fn count_memory_entries(&self, book_id: &str) -> Result<(usize, usize), AppError> {
         let conn = self.conn()?;
         let row = conn.query_row(
@@ -197,7 +201,7 @@ impl Database {
         Ok(row)
     }
 
-    /// 批量写穿（事务）—— 用于一次性导入旧 JSON 文件
+    /// 批量写穿记忆条目
     pub fn upsert_memory_entries_batch(
         &self,
         book_id: &str,

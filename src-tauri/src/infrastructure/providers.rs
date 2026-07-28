@@ -1,3 +1,6 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Provider 管理 - LLM 供应商配置
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 use crate::shared::error::{AppError, IpcResponse};
@@ -71,13 +74,14 @@ pub async fn provider_test_connection(
     base_url: String,
     model: String,
 ) -> Result<IpcResponse<()>, AppError> {
-    tracing::info!(provider = %provider, model = %model, "provider_test_connection");
-    // test_connection 不依赖 registry 状态（内部构造临时 provider 句柄），
-    // 因此无需持有 registry 锁。直接从 state.data_dir 重建 registry 仅供查询。
-    // 这样避免了跨 await 持有 Mutex（test_connection 会发起网络请求，可能长阻塞）。
+    tracing::info!(provider = %provider, model = %model, base_url = %base_url, "provider_test_connection: starting");
     let registry = crate::infrastructure::llm::registry::ProviderRegistry::new(&state.data_dir);
-    registry.test_connection(&provider, &api_key, &base_url, &model).await?;
-    tracing::info!(provider = %provider, model = %model, "Connection test passed");
+    let result = registry.test_connection(&provider, &api_key, &base_url, &model).await;
+    if let Err(ref e) = result {
+        tracing::warn!(provider = %provider, model = %model, error = %e, "provider_test_connection: failed");
+    }
+    result?;
+    tracing::info!(provider = %provider, model = %model, "provider_test_connection: passed");
     Ok(IpcResponse::ok(()))
 }
 
@@ -85,10 +89,16 @@ pub async fn provider_test_connection(
 pub async fn provider_refresh(
     state: State<'_, LlmState>,
 ) -> Result<IpcResponse<()>, AppError> {
-    tracing::info!("provider_refresh");
+    tracing::info!("provider_refresh: starting");
     let new_registry = crate::infrastructure::llm::registry::ProviderRegistry::new(&state.data_dir);
+    let provider_count = new_registry.list_providers().len();
+    let model_count = new_registry.all_models().len();
     let mut registry = state.registry.lock().await;
     *registry = new_registry;
-    tracing::info!("Provider registry refreshed");
+    tracing::info!(
+        providers = provider_count,
+        models = model_count,
+        "provider_refresh: completed"
+    );
     Ok(IpcResponse::ok(()))
 }

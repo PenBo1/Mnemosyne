@@ -1,3 +1,6 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 小说存储 - 小说与章节数据操作
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use rusqlite::params;
 use uuid::Uuid;
@@ -8,7 +11,10 @@ use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
 
+// ── 小说操作 ────────────────────────────────────────────────────────────────
+
 impl Database {
+    /// 插入小说
     pub fn insert_novel(&self, id: &str, req: &CreateNovelRequest) -> Result<Novel, AppError> {
         Self::validate_title(&req.title)?;
         Self::validate_genre(&req.genre)?;
@@ -24,11 +30,13 @@ impl Database {
             .ok_or_else(|| AppError::internal("Novel not found after creation"))
     }
 
+    /// 创建小说
     pub fn create_novel(&self, req: &CreateNovelRequest) -> Result<Novel, AppError> {
         let id = Uuid::new_v4().to_string();
         self.insert_novel(&id, req)
     }
 
+    /// 按 ID 获取小说
     pub fn get_novel_by_id(&self, id: &str) -> Result<Option<Novel>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -49,6 +57,7 @@ impl Database {
         }
     }
 
+    /// 列出所有小说
     pub fn list_novels(&self) -> Result<Vec<Novel>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -66,6 +75,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
+    /// 更新小说
     pub fn update_novel(&self, id: &str, req: &UpdateNovelRequest) -> Result<Novel, AppError> {
         if let Some(ref title) = req.title {
             Self::validate_title(title)?;
@@ -93,12 +103,14 @@ impl Database {
             .ok_or_else(|| AppError::internal("Novel not found after update"))
     }
 
+    /// 删除小说
     pub fn delete_novel(&self, id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute("DELETE FROM novels WHERE id = ?", params![id]).map_err(db_err)?;
         Ok(affected > 0)
     }
 
+    /// 验证标题
     pub(super) fn validate_title(title: &str) -> Result<(), AppError> {
         let trimmed = title.trim();
         if trimmed.is_empty() {
@@ -110,6 +122,7 @@ impl Database {
         Ok(())
     }
 
+    /// 验证题材
     pub(super) fn validate_genre(genre: &str) -> Result<(), AppError> {
         if genre.len() > 100 {
             return Err(AppError::invalid_input("Genre too long (max 100 chars)"));
@@ -118,7 +131,10 @@ impl Database {
     }
 }
 
+// ── 章节操作 ────────────────────────────────────────────────────────────────
+
 impl Database {
+    /// 创建章节
     pub fn create_chapter(&self, novel_id: &str, number: i64, title: &str) -> Result<Chapter, AppError> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
@@ -133,6 +149,7 @@ impl Database {
             .ok_or_else(|| AppError::internal("Chapter not found after creation"))
     }
 
+    /// 按 ID 获取章节
     pub fn get_chapter_by_id(&self, id: &str) -> Result<Option<Chapter>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -152,6 +169,7 @@ impl Database {
         }
     }
 
+    /// 列出小说的所有章节
     pub fn list_chapters(&self, novel_id: &str) -> Result<Vec<Chapter>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -168,6 +186,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
+    /// 更新章节统计
     pub fn update_chapter_stats(&self, id: &str, word_count: i64, audit_score: Option<f64>, revision_count: i64) -> Result<Chapter, AppError> {
         let now = Utc::now().to_rfc3339();
         {
@@ -181,6 +200,7 @@ impl Database {
             .ok_or_else(|| AppError::internal("Chapter not found after update"))
     }
 
+    /// 删除章节
     pub fn delete_chapter(&self, id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute("DELETE FROM chapters WHERE id = ?", params![id]).map_err(db_err)?;

@@ -1,3 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Provider 注册表 - 多 Provider 管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 管理多个 LLM Provider 实例：
+//! - 从配置文件加载 Provider
+//! - 从环境变量自动注册 Provider
+//! - 支持预设（presets）快速配置
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -54,6 +62,8 @@ pub struct ProviderRegistry {
     active_model_id: Option<String>,
     model_configs: Vec<AiModelConfig>,
     config_path: PathBuf,
+    /// 缓存的激活 Provider（key 为 model_id，避免每次 send_message 重建）
+    active_provider_cache: Arc<std::sync::RwLock<Option<(String, Arc<dyn Provider>)>>>,
 }
 
 impl ProviderRegistry {
@@ -64,6 +74,7 @@ impl ProviderRegistry {
             active_model_id: None,
             model_configs: Vec::new(),
             config_path: PathBuf::new(),
+            active_provider_cache: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -191,6 +202,7 @@ impl ProviderRegistry {
             active_model_id: settings.ai.active_model_id,
             model_configs: settings.ai.models,
             config_path: settings_path,
+            active_provider_cache: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -254,6 +266,71 @@ impl ProviderRegistry {
         self.model_configs.iter().find(|m| m.id == *active_id)
     }
 
+    /// 返回当前激活模型对应的 Provider 实例。
+    ///
+    /// 首次调用时根据 active_model_config 构造 Provider 并缓存，
+    /// 后续调用若 model_id 未变则直接返回缓存。
+    pub fn active_provider(&self) -> Result<Arc<dyn Provider>, AppError> {
+        let config = self.active_model_config()
+            .ok_or_else(|| AppError::internal("no active model configured"))?;
+
+        // 检查缓存
+        {
+            let cache = self.active_provider_cache.read().unwrap();
+            if let Some((cached_model_id, provider)) = &*cache {
+                if *cached_model_id == config.id {
+                    return Ok(Arc::clone(provider));
+                }
+            }
+        }
+
+        // 构造新 Provider
+        let provider = self.build_provider(config)?;
+
+        // 写入缓存
+        {
+            let mut cache = self.active_provider_cache.write().unwrap();
+            *cache = Some((config.id.clone(), Arc::clone(&provider)));
+        }
+
+        Ok(provider)
+    }
+
+    /// 根据配置构造 Provider 实例（不缓存）
+    fn build_provider(&self, config: &AiModelConfig) -> Result<Arc<dyn Provider>, AppError> {
+        use super::openai::OpenAiProvider;
+        use super::ollama::OllamaProvider;
+        use super::agnes::AgnesProvider;
+        use super::anthropic::AnthropicProvider;
+
+        let api_key = config.api_key.clone();
+        let base_url = if config.base_url.is_empty() { None } else { Some(config.base_url.clone()) };
+
+        match config.provider.to_lowercase().as_str() {
+            "openai" => Ok(Arc::new(OpenAiProvider::new(api_key, base_url))),
+            "ollama" => Ok(Arc::new(OllamaProvider::new(base_url))),
+            "agnes" => Ok(Arc::new(AgnesProvider::new(api_key, base_url))),
+            "anthropic" => Ok(Arc::new(AnthropicProvider::new(api_key, base_url))),
+            "deepseek" | "openrouter" => {
+                // OpenAI 兼容协议
+                Ok(Arc::new(OpenAiProvider::new(api_key, base_url)))
+            }
+            name => {
+                // 查 presets 表
+                if let Some(preset) = ProviderPreset::find(name) {
+                    let resolved_base_url = base_url.unwrap_or_else(|| preset.base_url.to_string());
+                    let provider: Arc<dyn Provider> = match preset.protocol {
+                        PresetProtocol::OpenAi => Arc::new(OpenAiProvider::new(api_key, Some(resolved_base_url))),
+                        PresetProtocol::Anthropic => Arc::new(AnthropicProvider::new(api_key, Some(resolved_base_url))),
+                    };
+                    Ok(provider)
+                } else {
+                    Err(AppError::provider_not_found(&config.provider))
+                }
+            }
+        }
+    }
+
     pub fn list_providers(&self) -> Vec<ProviderInfo> {
         self.providers.iter().map(|(name, p)| ProviderInfo { name: name.clone(), models: p.models() }).collect()
     }
@@ -295,47 +372,64 @@ impl ProviderRegistry {
     }
 
     pub async fn test_connection(&self, provider_name: &str, api_key: &str, base_url: &str, model: &str) -> Result<(), AppError> {
+        let start = std::time::Instant::now();
+        tracing::info!(provider = %provider_name, model = %model, "registry_test_connection: enter");
+        
         use super::openai::OpenAiProvider;
         use super::ollama::OllamaProvider;
         use super::agnes::AgnesProvider;
         use super::anthropic::AnthropicProvider;
         use std::sync::Arc;
 
-        tracing::info!(provider = %provider_name, model = %model, "Testing provider connection");
-        // 先尝试内置 provider
-        let provider: Arc<dyn Provider> = match provider_name {
-            "openai" => Arc::new(OpenAiProvider::new(
-                api_key.to_string(),
-                if base_url.is_empty() { None } else { Some(base_url.to_string()) },
-            )),
-            "ollama" => Arc::new(OllamaProvider::new(
-                if base_url.is_empty() { None } else { Some(base_url.to_string()) },
-            )),
-            "agnes" => Arc::new(AgnesProvider::new(
-                api_key.to_string(),
-                if base_url.is_empty() { None } else { Some(base_url.to_string()) },
-            )),
-            "anthropic" => Arc::new(AnthropicProvider::new(
-                api_key.to_string(),
-                if base_url.is_empty() { None } else { Some(base_url.to_string()) },
-            )),
-            name => {
-                // 查 presets 表,如果是预设 provider 就用对应协议构造
-                let preset = ProviderPreset::find(name)
-                    .ok_or_else(|| AppError::bad_request(format!("Unknown provider: {}", provider_name)))?;
-                let resolved_base_url = if base_url.is_empty() {
-                    preset.base_url.to_string()
-                } else {
-                    base_url.to_string()
-                };
-                match preset.protocol {
-                    PresetProtocol::OpenAi => Arc::new(OpenAiProvider::new(api_key.to_string(), Some(resolved_base_url))),
-                    PresetProtocol::Anthropic => Arc::new(AnthropicProvider::new(api_key.to_string(), Some(resolved_base_url))),
+        let result = async {
+            let provider: Arc<dyn Provider> = match provider_name {
+                "openai" => Arc::new(OpenAiProvider::new(
+                    api_key.to_string(),
+                    if base_url.is_empty() { None } else { Some(base_url.to_string()) },
+                )),
+                "ollama" => Arc::new(OllamaProvider::new(
+                    if base_url.is_empty() { None } else { Some(base_url.to_string()) },
+                )),
+                "agnes" => Arc::new(AgnesProvider::new(
+                    api_key.to_string(),
+                    if base_url.is_empty() { None } else { Some(base_url.to_string()) },
+                )),
+                "anthropic" => Arc::new(AnthropicProvider::new(
+                    api_key.to_string(),
+                    if base_url.is_empty() { None } else { Some(base_url.to_string()) },
+                )),
+                name => {
+                    let preset = ProviderPreset::find(name)
+                        .ok_or_else(|| AppError::bad_request(format!("Unknown provider: {}", provider_name)))?;
+                    let resolved_base_url = if base_url.is_empty() {
+                        preset.base_url.to_string()
+                    } else {
+                        base_url.to_string()
+                    };
+                    match preset.protocol {
+                        PresetProtocol::OpenAi => Arc::new(OpenAiProvider::new(api_key.to_string(), Some(resolved_base_url))),
+                        PresetProtocol::Anthropic => Arc::new(AnthropicProvider::new(api_key.to_string(), Some(resolved_base_url))),
+                    }
                 }
-            }
-        };
+            };
 
-        provider.test_connection().await
+            provider.test_connection().await
+        }.await;
+        
+        match &result {
+            Ok(()) => tracing::info!(
+                provider = %provider_name,
+                duration_ms = start.elapsed().as_millis(),
+                "registry_test_connection: exit (success)"
+            ),
+            Err(e) => tracing::error!(
+                provider = %provider_name,
+                error = %e,
+                duration_ms = start.elapsed().as_millis(),
+                "registry_test_connection: error"
+            ),
+        }
+        result
     }
 }
 

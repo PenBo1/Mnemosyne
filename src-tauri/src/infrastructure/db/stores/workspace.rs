@@ -1,3 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 工作区存储 - Workspace 管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供 Workspace CRUD：
+//! - 创建、列出、获取、更新、删除工作区
+//! - 更新最近打开时间（用于恢复上次活动工作区）
+//! - 级联删除关联会话及其消息
 
 use rusqlite::params;
 use uuid::Uuid;
@@ -10,6 +18,7 @@ use crate::shared::error::AppError;
 use crate::infrastructure::db::connection::validate_name;
 
 impl Database {
+    /// 创建工作区
     pub fn create_workspace(&self, req: CreateWorkspaceRequest) -> Result<Workspace, AppError> {
         validate_name(&req.name, "Workspace name")?;
         let id = Uuid::new_v4().to_string();
@@ -23,6 +32,7 @@ impl Database {
         Ok(Workspace { id, name: req.name, path, created_at: now.clone(), updated_at: now, last_opened_at: None })
     }
 
+    /// 列出工作区
     pub fn list_workspaces(&self) -> Result<Vec<Workspace>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -38,6 +48,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
+    /// 获取工作区
     pub fn get_workspace(&self, id: &str) -> Result<Option<Workspace>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -56,6 +67,7 @@ impl Database {
         }
     }
 
+    /// 更新工作区
     pub fn update_workspace(&self, req: UpdateWorkspaceRequest) -> Result<Workspace, AppError> {
         let existing = self.get_workspace(&req.id)?
             .ok_or_else(|| AppError::not_found("Workspace not found"))?;
@@ -76,7 +88,7 @@ impl Database {
             .ok_or_else(|| AppError::internal("Workspace not found after update"))
     }
 
-    /// 更新工作区最近打开时间（用于恢复上次活动工作区）
+    /// 更新工作区最近打开时间
     pub fn touch_workspace(&self, id: &str) -> Result<(), AppError> {
         let now = Utc::now().to_rfc3339();
         let conn = self.conn()?;
@@ -87,11 +99,13 @@ impl Database {
         Ok(())
     }
 
+    /// 删除工作区
+    ///
+    /// 级联删除关联会话及其消息。
     pub fn delete_workspace(&self, id: &str) -> Result<bool, AppError> {
-        // 级联删除关联会话及其消息（sessions 表无外键约束，需显式清理）
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(db_err)?;
-        // 先收集关联会话 ID，用于删除 messages
+        // 先收集关联会话 ID
         let session_ids: Vec<String> = {
             let mut stmt = tx.prepare("SELECT id FROM sessions WHERE workspace_id = ?").map_err(db_err)?;
             let rows = stmt.query_map([id], |row| row.get::<_, String>(0)).map_err(db_err)?;

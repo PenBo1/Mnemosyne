@@ -1,8 +1,6 @@
-// Workspace 授权错误 —— WorkspaceRegistry::authorize 的返回错误类型。
-//
-// 仅保留实际使用的 Io 变体；先前的 NotAuthorized / PathTraversal / InvalidPath
-// 变体从未被构造（死代码），已移除。
-// `From<WorkspaceError> for String` 也已移除（无消费方）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 工作区错误 - 错误类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug)]
 pub enum WorkspaceError {

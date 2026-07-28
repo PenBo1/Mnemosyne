@@ -1,68 +1,98 @@
-// 审计事件持久化:audit_events 表的读写方法。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 审计事件存储 - 安全审计日志持久化
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
 
-/// 一行审计事件(前端展示用)。payload 为完整 SecurityEvent JSON。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 审计事件行（前端展示用）
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEventRow {
+    /// 事件 ID
     pub id: String,
+    /// 事件类型
     pub event_type: String,
+    /// 操作名称
     pub operation: Option<String>,
+    /// 工作空间 ID
     pub workspace_id: Option<String>,
+    /// 是否被拒绝
     pub is_denied: bool,
+    /// 是否安全相关
     pub is_security_related: bool,
+    /// 完整事件 JSON
     pub payload: serde_json::Value,
+    /// 记录时间
     pub recorded_at: String,
 }
 
-/// 审计事件聚合统计(供仪表盘 Violations 卡片)。
+/// 审计事件聚合统计
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEventStats {
+    /// 总数
     pub total: i64,
+    /// 拒绝数
     pub denied: i64,
+    /// 安全相关数
     pub security_related: i64,
+    /// 按类型统计
     pub by_type: Vec<AuditTypeCount>,
 }
 
+/// 按类型统计
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditTypeCount {
+    /// 事件类型
     pub event_type: String,
+    /// 数量
     pub count: i64,
 }
 
-/// 审计事件过滤查询参数(对齐前端 AuditFilter)。
-///
-/// 所有字段都是 Option —— None 表示不应用该过滤。
-/// 时间字段使用 RFC3339 字符串比较(SQL TEXT 比较 ISO8601 排序正确)。
+/// 审计事件过滤查询参数
 #[derive(Debug, Clone, serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEventFilter {
+    /// 工作空间 ID
     pub workspace_id: Option<String>,
+    /// 操作名称
     pub operation: Option<String>,
+    /// 事件类型
     pub event_type: Option<String>,
+    /// 起始时间
     pub since: Option<String>,
+    /// 结束时间
     pub until: Option<String>,
+    /// 仅显示拒绝
     pub only_denied: Option<bool>,
+    /// 仅显示安全相关
     pub only_security: Option<bool>,
+    /// 偏移量
     pub offset: Option<i64>,
+    /// 限制数
     pub limit: Option<i64>,
 }
 
-/// 直方图桶(按时间聚合)。bucket 为桶起始时间(RFC3339),count 为该桶事件数。
+/// 直方图桶
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditHistogramBucket {
+    /// 桶起始时间
     pub bucket: String,
+    /// 事件数
     pub count: i64,
+    /// 拒绝数
     pub denied: i64,
 }
 
-/// 插入审计事件。payload 为完整 SecurityEvent 序列化后的 JSON 字符串。
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
+/// 插入审计事件
 pub fn insert_audit_event(
     db: &Database,
     id: &str,
@@ -94,7 +124,7 @@ pub fn insert_audit_event(
 }
 
 impl Database {
-    /// 查询审计事件(按 recorded_at 倒序)。limit 上限 1000。
+    /// 查询审计事件（按时间倒序）
     pub fn query_audit_events(&self, limit: i64) -> Result<Vec<AuditEventRow>, AppError> {
         let limit = limit.clamp(1, 1000);
         let conn = self.conn()?;
@@ -121,7 +151,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
-    /// 审计事件聚合统计:总数 / 拒绝数 / 安全相关数 / 按类型分组。
+    /// 审计事件聚合统计
     pub fn audit_event_stats(&self) -> Result<AuditEventStats, AppError> {
         let conn = self.conn()?;
         let total: i64 = conn
@@ -148,12 +178,7 @@ impl Database {
         Ok(AuditEventStats { total, denied, security_related, by_type })
     }
 
-    /// 按过滤条件查询审计事件。
-    ///
-    /// 动态拼装 WHERE 子句 + 参数绑定。
-    /// 所有字符串字段使用 LIKE 模糊匹配(operation 便于按前缀查 fs_/git_ 等),
-    /// except workspace_id 和 event_type 用精确匹配。
-    /// limit 默认 50,上限 1000;offset 默认 0。
+    /// 按过滤条件查询审计事件
     pub fn query_audit_events_filtered(
         &self,
         filter: &AuditEventFilter,
@@ -229,10 +254,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
-    /// 按时间桶聚合统计(用于直方图可视化)。
-    ///
-    /// `granularity` 支持 "hour" / "day" / "month"(对应 SQLite strftime 格式)。
-    /// `since`/`until` 为可选 RFC3339 字符串,空表示不限。
+    /// 按时间桶聚合统计（用于直方图可视化）
     pub fn audit_event_histogram(
         &self,
         granularity: &str,

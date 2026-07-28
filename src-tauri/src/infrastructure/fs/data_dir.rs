@@ -1,17 +1,38 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 数据目录 - 应用数据路径管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 集中管理所有应用数据的路径：
+//! - data/: SQLite 数据库
+//! - logs/: 日志文件
+//! - skills/: 技能定义
+//! - book_sources/: 书籍来源
+//! - agents/: Agent 配置
+//! - books/: 书籍工作区
+//! - novels/: 下载的小说
+//! - materials/: 辅助材料
+//! - detection/: AIGC 检测历史
+//! - play/: 互动小说
+//! - memories/: 记忆系统
+//! - workspaces/: 工作区数据
 
 use std::path::PathBuf;
 use crate::shared::error::AppError;
 
+/// 数据目录
 #[derive(Clone)]
 pub struct DataDir {
+    /// 根目录
     root: PathBuf,
 }
 
 impl DataDir {
+    /// 创建数据目录实例
     pub fn new(root: PathBuf) -> Self {
         Self { root }
     }
 
+    /// 初始化所有子目录
     pub fn initialize(&self) -> Result<(), AppError> {
         std::fs::create_dir_all(&self.root)
             .map_err(|e| AppError::internal(format!("Failed to create data root: {}", e)))?;
@@ -35,102 +56,116 @@ impl DataDir {
             .map_err(|e| AppError::internal(format!("Failed to create detection dir: {}", e)))?;
         std::fs::create_dir_all(self.play_dir())
             .map_err(|e| AppError::internal(format!("Failed to create play dir: {}", e)))?;
+        std::fs::create_dir_all(self.memory_root())
+            .map_err(|e| AppError::internal(format!("Failed to create memory root: {}", e)))?;
 
         self.ensure_config_json()?;
 
         Ok(())
     }
 
+    // ── 目录访问器 ────────────────────────────────────────────────────────────
+
+    /// 根目录
     pub fn root(&self) -> &PathBuf {
         &self.root
     }
 
+    /// 数据目录
     pub fn data_dir(&self) -> PathBuf {
         self.root.join("data")
     }
 
+    /// 日志目录
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join("logs")
     }
 
+    /// 技能目录
     pub fn skills_dir(&self) -> PathBuf {
         self.root.join("skills")
     }
 
+    /// 书籍来源目录
     pub fn book_sources_dir(&self) -> PathBuf {
         self.root.join("book_sources")
     }
 
+    /// Agent 配置目录
     pub fn agents_dir(&self) -> PathBuf {
         self.root.join("agents")
     }
 
-    /// 创作 pipeline 的书籍工作区目录
+    /// 书籍工作区目录
     pub fn books_dir(&self) -> PathBuf {
         self.root.join("books")
     }
 
-    /// 下载小说的本地存储目录(单文件 .txt)
+    /// 小说存储目录
     pub fn novels_dir(&self) -> PathBuf {
         self.root.join("novels")
     }
 
-    /// 辅助材料导入目录 —— 存放 ingest 产出的 markdown 正文 + JSON 清单。
-    /// 每个 material 一对文件: `<id>.md` 与 `<id>.json`,检索时枚举 .json 还原清单。
+    /// 辅助材料目录
     pub fn materials_dir(&self) -> PathBuf {
         self.root.join("materials")
     }
 
-    /// AIGC 检测历史目录 —— 按 book_id 分文件存储检测/改写历史(JSON)。
+    /// AIGC 检测历史目录
     pub fn detection_dir(&self) -> PathBuf {
         self.root.join("detection")
     }
 
-    /// Play 模式根目录 —— 存放互动小说世界与 run 数据。
+    /// 互动小说目录
     pub fn play_dir(&self) -> PathBuf {
         self.root.join("play")
     }
 
-    /// 工作区级别的应用数据根目录 —— 存放每个 workspace 的 project_memory.md 等文件。
-    ///
-    /// 注意:不在 initialize() 中预先创建,改由 ProjectMemoryStore 在首次写入时按需创建,
-    /// 避免为已删除的 workspace 留下空目录。
+    /// 记忆系统根目录
+    pub fn memory_root(&self) -> PathBuf {
+        self.root.join("memories")
+    }
+
+    /// 工作区数据根目录
     pub fn workspaces_dir(&self) -> PathBuf {
         self.root.join("workspaces")
     }
 
-    /// 单个 workspace 的数据目录 —— `<root>/workspaces/<workspace_id>/`
-    ///
-    /// `workspace_id` 由 IPC 层调用方经过 validate_id_component 校验后传入,
-    /// 此处不再做路径净化,以保持与 agents_dir() 一致的简洁。
+    /// 单个工作区目录
     pub fn workspace_dir(&self, workspace_id: &str) -> PathBuf {
         self.workspaces_dir().join(workspace_id)
     }
 
-    /// workspace 级别的项目记忆文件路径 —— `<root>/workspaces/<workspace_id>/project_memory.md`
-    ///
-    /// 这里采用 DataDir 集中存储(而非污染 workspace 的外部 path 目录),
-    /// 便于 delete_workspace 时确定性清理。
+    /// 工作区项目记忆路径
     pub fn workspace_memory_path(&self, workspace_id: &str) -> PathBuf {
         self.workspace_dir(workspace_id).join("project_memory.md")
     }
 
+    // ── 文件路径 ──────────────────────────────────────────────────────────────
+
+    /// 配置文件路径
     pub fn config_path(&self) -> PathBuf {
         self.root.join("config.json")
     }
 
+    /// 状态数据库路径
     pub fn state_db_path(&self) -> PathBuf {
         self.data_dir().join("state.sqlite")
     }
 
+    /// 日志数据库路径
     pub fn logs_db_path(&self) -> PathBuf {
         self.data_dir().join("logs.sqlite")
     }
 
+    /// 反馈数据库路径
     pub fn feedback_db_path(&self) -> PathBuf {
         self.data_dir().join("feedback.sqlite")
     }
 
+    // ── 配置初始化 ──────────────────────────────────────────────────────────
+
+    /// 确保配置文件存在
     fn ensure_config_json(&self) -> Result<(), AppError> {
         let path = self.config_path();
         if path.exists() {
@@ -158,6 +193,8 @@ impl DataDir {
         Ok(())
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

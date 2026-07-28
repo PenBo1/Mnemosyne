@@ -1,24 +1,24 @@
-// 正则密钥脱敏 —— 日志、工具输出、IPC 响应的统一脱敏入口。
-//
-// - 默认开启,启动时快照,防止运行时被关闭
-// - 短 token (<18 字符) 全掩码,长 token 保留首 6 + 末 4
-// - force=true 用于"绝不可返回原始 secret"的安全边界
-//
-// 已移植的关键模式:
-// - 厂商前缀(OpenAI/GitHub/Slack/AWS/Stripe/Google/JWT 等)
-// - ENV 赋值(KEY=value,KEY 含 API_KEY/TOKEN/SECRET/PASSWORD/AUTH)
-// - JSON 字段("apiKey": "..."、"token": "..." 等)
-// - Authorization: Bearer xxx
-// - 私钥块(-----BEGIN ... PRIVATE KEY-----)
-// - 数据库连接串(postgres://user:pass@host)
-// - URL userinfo(https://user:pass@host)
-// - Telegram bot token(<digits>:<token>)
-// - JWT(eyJ... 三段式)
-//
-// 未移植(目前无对应场景):
-// - HTTP 请求行 query string 脱敏(/webhook?password=...)
-// - form-urlencoded body 脱敏
-// - E.164 电话号码脱敏(可后续按需补)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 密钥脱敏 - 日志、工具输出、IPC 响应的统一脱敏
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 正则密钥脱敏 —— 日志、工具输出、IPC 响应的统一脱敏入口。
+//!
+//! 特性：
+//! - 默认开启，启动时快照，防止运行时被关闭
+//! - 短 token (<18 字符) 全掩码，长 token 保留首 6 + 末 4
+//! - force=true 用于"绝不可返回原始 secret"的安全边界
+//!
+//! 支持的脱敏模式：
+//! - 厂商前缀（OpenAI/GitHub/Slack/AWS/Stripe/Google/JWT 等）
+//! - ENV 赋值（KEY=value，KEY 含 API_KEY/TOKEN/SECRET/PASSWORD/AUTH）
+//! - JSON 字段（"apiKey": "..."、"token": "..." 等）
+//! - Authorization: Bearer xxx
+//! - 私钥块（-----BEGIN ... PRIVATE KEY-----）
+//! - 数据库连接串（postgres://user:pass@host）
+//! - URL userinfo（https://user:pass@host）
+//! - Telegram bot token（<digits>:<token>）
+//! - JWT（eyJ... 三段式）
 
 use std::sync::OnceLock;
 

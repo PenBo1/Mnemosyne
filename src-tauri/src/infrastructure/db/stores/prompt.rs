@@ -1,4 +1,7 @@
-﻿
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Prompt 存储 - Prompt 模板数据操作
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
@@ -10,7 +13,10 @@ use super::super::types::{json_decode, json_encode};
 use crate::shared::error::AppError;
 use crate::infrastructure::db::connection::validate_name;
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
+    /// 创建 Prompt
     pub fn create_prompt(&self, req: CreatePromptRequest) -> Result<Prompt, AppError> {
         validate_name(&req.name, "Prompt name")?;
         let id = Uuid::new_v4().to_string();
@@ -24,6 +30,7 @@ impl Database {
         Ok(Prompt { id, name: req.name, content: req.content, category: req.category, tags: req.tags, created_at: now.clone(), updated_at: now })
     }
 
+    /// 映射 Prompt 行
     fn map_prompt_row(row: &rusqlite::Row) -> Result<(String, String, String, String, String, String, String), rusqlite::Error> {
         Ok((
             row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
@@ -31,6 +38,7 @@ impl Database {
         ))
     }
 
+    /// 列出 Prompt
     pub fn list_prompts(&self, category: Option<&str>) -> Result<Vec<Prompt>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(if category.is_some() {
@@ -53,6 +61,7 @@ impl Database {
         }).collect()
     }
 
+    /// 获取 Prompt
     pub fn get_prompt(&self, id: &str) -> Result<Option<Prompt>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -73,6 +82,7 @@ impl Database {
         }
     }
 
+    /// 更新 Prompt
     pub fn update_prompt(&self, req: UpdatePromptRequest) -> Result<Prompt, AppError> {
         let existing = self.get_prompt(&req.id)?
             .ok_or_else(|| AppError::not_found("Prompt not found"))?;
@@ -98,6 +108,7 @@ impl Database {
             .ok_or_else(|| AppError::internal("Prompt not found after update"))
     }
 
+    /// 删除 Prompt
     pub fn delete_prompt(&self, id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute("DELETE FROM prompts WHERE id = ?", params![id]).map_err(db_err)?;

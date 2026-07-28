@@ -1,16 +1,29 @@
-﻿
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 数据库错误 - 错误类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::path::PathBuf;
 
+/// 数据库错误类型
 #[derive(Debug)]
 pub enum DbError {
+    /// 记录不存在
     NotFound(String),
+    /// 连接错误
     ConnectionError(String),
+    /// 查询错误
     QueryError(String),
+    /// 迁移错误
     MigrationError(String),
+    /// 事务错误
     TransactionError(String),
+    /// 输入无效
     InvalidInput(String),
+    /// 约束违反
     ConstraintViolation(String),
+    /// 权限拒绝
     PermissionDenied(PathBuf),
+    /// IO 错误
     Io(std::io::Error),
 }
 

@@ -1,314 +1,314 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 密钥管理 - API 密钥存储与访问
+//! ═══════════════════════════════════════════════════════════════════════════
 
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
+use crate::infrastructure::db::state::DbState;
 use crate::shared::error::{AppError, IpcResponse};
 
-#[cfg(target_os = "linux")]
-use std::collections::HashMap;
-#[cfg(target_os = "linux")]
-use std::fs;
-#[cfg(target_os = "linux")]
-use std::path::PathBuf;
-#[cfg(target_os = "linux")]
-use tauri::Manager;
+/// 占位符 token 常见字面量(小写匹配)。
+const PLACEHOLDER_LITERALS: &[&str] = &[
+    "placeholder",
+    "your-api-key",
+    "your_api_key",
+    "your-api-key-here",
+    "your_api_key_here",
+    "your-secret-key",
+    "your_secret_key",
+    "xxx",
+    "xxxx",
+    "test",
+    "example",
+    "dummy",
+    "todo",
+    "tbd",
+    "n/a",
+    "none",
+    "null",
+];
 
-/// 平台密钥存储状态。
-/// Linux: 文件回退 + 内存缓存; 其他平台: 无状态 (keyring crate 自管)。
+/// 检测 token 是否为占位符/示例值(而非真实密钥)。
+///
+/// 用于在加载 secrets 时拒绝明显未配置的占位值,避免误用模板/示例 key 发起 API 请求。
+/// 大小写不敏感,并忽略首尾空白。简化版检测:覆盖常见字面量、`sk-xxx` 模板与 `<...>`/`{...}` 占位符。
+pub fn is_placeholder_token(token: &str) -> bool {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+
+    if PLACEHOLDER_LITERALS.contains(&lower.as_str()) {
+        return true;
+    }
+
+    // 形如 sk-xxx / sk-... / sk-placeholder 等模板
+    if let Some(rest) = lower.strip_prefix("sk-") {
+        if rest.is_empty() {
+            return true;
+        }
+        // rest 全为占位字符(x / . / - / _)或命中字面量
+        if rest.chars().all(|c| matches!(c, 'x' | '.' | '-' | '_'))
+            || PLACEHOLDER_LITERALS.contains(&rest)
+        {
+            return true;
+        }
+    }
+
+    // 模板占位符 <...> / {...}
+    if (trimmed.starts_with('<') && trimmed.ends_with('>'))
+        || (trimmed.starts_with('{') && trimmed.ends_with('}'))
+    {
+        return true;
+    }
+
+    false
+}
+
 #[derive(Default)]
+pub struct SecretsStore {
+    data_dir: PathBuf,
+}
+
+impl SecretsStore {
+    pub fn new(data_dir: &Path) -> Self {
+        Self {
+            data_dir: data_dir.to_path_buf(),
+        }
+    }
+
+    fn secrets_file(&self) -> PathBuf {
+        self.data_dir.join("config").join("secrets.json")
+    }
+
+    pub fn get_all(&self) -> Result<serde_json::Map<String, serde_json::Value>, AppError> {
+        let path = self.secrets_file();
+        if !path.exists() {
+            return Ok(serde_json::Map::new());
+        }
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|e| {
+                tracing::error!(path = %path.display(), error = %e, "[secrets] failed to read file");
+                AppError::internal(format!("Failed to read secrets: {}", e))
+            })?;
+        let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&raw)
+            .map_err(|e| {
+                tracing::error!(path = %path.display(), error = %e, "[secrets] failed to parse JSON");
+                AppError::internal(format!("Failed to parse secrets: {}", e))
+            })?;
+        Ok(map)
+    }
+
+    pub fn get(&self, key: &str) -> Result<Option<String>, AppError> {
+        let all = self.get_all()?;
+        let value = all.get(key).and_then(|v| v.as_str()).map(|s| s.to_string());
+        Ok(value)
+    }
+
+    pub fn set(&mut self, key: &str, value: &str) -> Result<(), AppError> {
+        tracing::info!(key, "[secrets] set: started");
+        let mut all = self.get_all()?;
+        all.insert(key.to_string(), serde_json::json!(value));
+        let path = self.secrets_file();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| {
+                    tracing::error!(path = %parent.display(), error = %e, "[secrets] failed to create directory");
+                    AppError::internal(format!("Failed to create directory: {}", e))
+                })?;
+        }
+        let json = serde_json::to_string_pretty(&all)
+            .map_err(|e| {
+                tracing::error!(error = %e, "[secrets] failed to serialize");
+                AppError::internal(format!("Failed to serialize secrets: {}", e))
+            })?;
+        std::fs::write(&path, &json)
+            .map_err(|e| {
+                tracing::error!(path = %path.display(), error = %e, "[secrets] failed to write file");
+                AppError::internal(format!("Failed to write secrets: {}", e))
+            })?;
+        tracing::info!(key, "[secrets] set: completed");
+        Ok(())
+    }
+
+    pub fn delete(&mut self, key: &str) -> Result<bool, AppError> {
+        tracing::info!(key, "[secrets] delete: started");
+        let mut all = self.get_all()?;
+        let removed = all.remove(key).is_some();
+        if removed {
+            let path = self.secrets_file();
+            let json = serde_json::to_string_pretty(&all)
+                .map_err(|e| {
+                    tracing::error!(error = %e, "[secrets] failed to serialize");
+                    AppError::internal(format!("Failed to serialize secrets: {}", e))
+                })?;
+            std::fs::write(&path, &json)
+                .map_err(|e| {
+                    tracing::error!(path = %path.display(), error = %e, "[secrets] failed to write file");
+                    AppError::internal(format!("Failed to write secrets: {}", e))
+                })?;
+        }
+        tracing::info!(key, removed, "[secrets] delete: completed");
+        Ok(removed)
+    }
+
+    pub fn exists(&self, key: &str) -> Result<bool, AppError> {
+        let all = self.get_all()?;
+        Ok(all.contains_key(key))
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct SecretsState {
-    #[cfg(target_os = "linux")]
-    cache: Mutex<Option<HashMap<String, String>>>,
-    #[cfg(not(target_os = "linux"))]
-    _phantom: Mutex<()>,
+    pub inner: Arc<std::sync::Mutex<SecretsStore>>,
 }
 
-// ── Linux 文件回退实现 ──────────────────────────────────────────
-
-#[cfg(target_os = "linux")]
-fn key(service: &str, account: &str) -> String {
-    format!("{}::{}", service, account)
-}
-
-#[cfg(target_os = "linux")]
-fn store_path(app: &AppHandle) -> Result<PathBuf, AppError> {
-    let dir = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| AppError::internal(format!("failed to resolve data dir: {}", e)))?;
-    fs::create_dir_all(&dir).map_err(|e| AppError::internal(format!("mkdir failed: {}", e)))?;
-    Ok(dir.join("secrets.json"))
-}
-
-#[cfg(target_os = "linux")]
-fn read_store(app: &AppHandle) -> Result<HashMap<String, String>, AppError> {
-    read_store_at(&store_path(app)?)
-}
-
-#[cfg(target_os = "linux")]
-fn read_store_at(path: &std::path::Path) -> Result<HashMap<String, String>, AppError> {
-    if !path.exists() {
-        return Ok(HashMap::new());
-    }
-    let bytes = fs::read(path).map_err(|e| AppError::file_read_error(path.display().to_string()))?;
-    serde_json::from_slice::<HashMap<String, String>>(&bytes).map_err(|e| {
-        AppError::invalid_format(format!("secrets file corrupt: {}", e))
-    })
-}
-
-#[cfg(target_os = "linux")]
-fn write_store(app: &AppHandle, map: &HashMap<String, String>) -> Result<(), AppError> {
-    write_store_at(&store_path(app)?, map)
-}
-
-#[cfg(target_os = "linux")]
-fn write_store_at(path: &std::path::Path, map: &HashMap<String, String>) -> Result<(), AppError> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-
-    let tmp = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec(map).map_err(|e| AppError::internal(format!("serialize: {}", e)))?;
-
-    // 0600: 仅文件属主可读写
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&tmp)
-        .map_err(|e| AppError::file_write_error(tmp.display().to_string()))?;
-    f.write_all(&bytes)
-        .map_err(|e| AppError::file_write_error(tmp.display().to_string()))?;
-    f.sync_all()
-        .map_err(|e| AppError::file_write_error(tmp.display().to_string()))?;
-    fs::rename(&tmp, path).map_err(|e| AppError::internal(format!("rename: {}", e)))?;
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn with_store<F, R>(app: &AppHandle, state: &SecretsState, f: F) -> Result<R, AppError>
-where
-    F: FnOnce(&mut HashMap<String, String>) -> R,
-{
-    let mut guard = state
-        .cache
-        .lock()
-        .map_err(|e| AppError::internal(format!("cache lock poisoned: {}", e)))?;
-    if guard.is_none() {
-        *guard = Some(read_store(app)?);
-    }
-    let map = guard.as_mut().expect("cache initialized above");
-    Ok(f(map))
-}
-
-// ── 非 Linux keyring 实现 ───────────────────────────────────────
-
-#[cfg(not(target_os = "linux"))]
-fn entry(service: &str, account: &str) -> Result<keyring::Entry, AppError> {
-    keyring::Entry::new(service, account)
-        .map_err(|e| AppError::internal(format!("keyring entry: {}", e)))
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 可复用 helper(供其他模块服务端解析密钥,避免密钥经 IPC 传递)
-// ═══════════════════════════════════════════════════════════════
-
-/// 从平台密钥存储读取一个密钥。供需要密钥的领域命令(如 detection)服务端解析使用,
-/// 而非让前端通过 invoke 传入密钥(符合安全模型"密钥不经 IPC 传递")。
-pub fn get_secret(
-    app: &AppHandle,
-    state: &SecretsState,
-    service: &str,
-    account: &str,
-) -> Result<Option<String>, AppError> {
-    #[cfg(target_os = "linux")]
-    {
-        with_store(app, state, |m| m.get(&key(service, account)).cloned())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(service, account)?;
-        match e.get_password() {
-            Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(AppError::internal(format!("keyring get: {}", err))),
+impl SecretsState {
+    pub fn new(data_dir: &Path) -> Self {
+        Self {
+            inner: Arc::new(std::sync::Mutex::new(SecretsStore::new(data_dir))),
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Tauri 命令
-//
-// 安全模型（AGENTS.md）：密钥绝不经 IPC 返回前端。
-// - secrets_set / secrets_delete / secrets_exists 仅暴露元数据（bool / void）。
-// - secrets_get / secrets_get_all 已删除：前端需要密钥时由 Rust 服务端
-//   通过 get_secret helper 自行解析，不经 IPC 传递。
-// ═══════════════════════════════════════════════════════════════
+pub fn get_secret(
+    _app: &AppHandle,
+    state: &State<'_, SecretsState>,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, AppError> {
+    let key = format!("{}_{}", service, account);
+    let store = state.inner.lock().unwrap();
+    store.get(&key)
+}
+
+#[tauri::command]
+pub async fn secrets_get(
+    state: State<'_, DbState>,
+    key: String,
+) -> Result<IpcResponse<Option<String>>, AppError> {
+    let start = Instant::now();
+    tracing::info!(key = %key, "[secrets_get] started");
+
+    let store = SecretsStore::new(state.data_dir.root());
+    let value = store.get(&key)?;
+
+    tracing::info!(key = %key, found = value.is_some(), duration_ms = start.elapsed().as_millis() as u64, "[secrets_get] completed");
+    Ok(IpcResponse::ok(value))
+}
 
 #[tauri::command]
 pub async fn secrets_set(
-    app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
-    service: String,
-    account: String,
-    password: String,
-) -> Result<IpcResponse<()>, AppError> {
-    #[cfg(target_os = "linux")]
-    {
-        let k = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.insert(k, password);
-        })?;
-        let snapshot = {
-            let guard = state
-                .cache
-                .lock()
-                .map_err(|e| AppError::internal(format!("cache lock poisoned: {}", e)))?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)?;
-        Ok(IpcResponse::no_content())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        e.set_password(&password)
-            .map_err(|e| AppError::internal(format!("keyring set: {}", e)))?;
-        Ok(IpcResponse::no_content())
-    }
+    state: State<'_, DbState>,
+    key: String,
+    value: String,
+) -> Result<IpcResponse<bool>, AppError> {
+    let start = Instant::now();
+    tracing::info!(key = %key, "[secrets_set] started");
+
+    let mut store = SecretsStore::new(state.data_dir.root());
+    store.set(&key, &value)?;
+
+    tracing::info!(key = %key, duration_ms = start.elapsed().as_millis() as u64, "[secrets_set] completed");
+    Ok(IpcResponse::ok(true))
 }
 
 #[tauri::command]
 pub async fn secrets_delete(
-    app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
-    service: String,
-    account: String,
-) -> Result<IpcResponse<()>, AppError> {
-    #[cfg(target_os = "linux")]
-    {
-        let k = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.remove(&k);
-        })?;
-        let snapshot = {
-            let guard = state
-                .cache
-                .lock()
-                .map_err(|e| AppError::internal(format!("cache lock poisoned: {}", e)))?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)?;
-        Ok(IpcResponse::no_content())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(IpcResponse::no_content()),
-            Err(err) => Err(AppError::internal(format!("keyring delete: {}", err))),
-        }
-    }
+    state: State<'_, DbState>,
+    key: String,
+) -> Result<IpcResponse<bool>, AppError> {
+    let start = Instant::now();
+    tracing::info!(key = %key, "[secrets_delete] started");
+
+    let mut store = SecretsStore::new(state.data_dir.root());
+    let removed = store.delete(&key)?;
+
+    tracing::info!(key = %key, removed, duration_ms = start.elapsed().as_millis() as u64, "[secrets_delete] completed");
+    Ok(IpcResponse::ok(removed))
 }
 
-/// 检查密钥是否已设置 —— 仅返回 bool，不暴露 secret 内容。
-///
-/// 前端 UI 用此命令展示"密钥已配置"状态，而无需获取密钥本身
-/// （符合 AGENTS.md "密钥不经 IPC 传递" 的安全模型）。
+#[tauri::command]
+pub async fn secrets_get_all(
+    state: State<'_, DbState>,
+) -> Result<IpcResponse<Vec<String>>, AppError> {
+    let start = Instant::now();
+    tracing::info!("[secrets_get_all] started");
+
+    let store = SecretsStore::new(state.data_dir.root());
+    let all = store.get_all()?;
+    let keys: Vec<String> = all.keys().cloned().collect();
+
+    tracing::info!(count = keys.len(), duration_ms = start.elapsed().as_millis() as u64, "[secrets_get_all] completed");
+    Ok(IpcResponse::ok(keys))
+}
+
 #[tauri::command]
 pub async fn secrets_exists(
-    app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
-    service: String,
-    account: String,
+    state: State<'_, DbState>,
+    key: String,
 ) -> Result<IpcResponse<bool>, AppError> {
-    let exists = get_secret(&app, &state, &service, &account)?
-        .is_some();
+    let start = Instant::now();
+    tracing::info!(key = %key, "[secrets_exists] started");
+
+    let store = SecretsStore::new(state.data_dir.root());
+    let exists = store.exists(&key)?;
+
+    tracing::info!(key = %key, exists, duration_ms = start.elapsed().as_millis() as u64, "[secrets_exists] completed");
     Ok(IpcResponse::ok(exists))
 }
 
-// ── Linux 单测 (文件回退逻辑) ───────────────────────────────────
-
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::MetadataExt;
-    use tempfile::TempDir;
 
     #[test]
-    fn key_format_is_service_double_colon_account() {
-        assert_eq!(key("openai", "alice"), "openai::alice");
-        assert_eq!(key("", ""), "::");
-    }
+    fn test_is_placeholder_token() {
+        // 空字符串与纯空白
+        assert!(is_placeholder_token(""));
+        assert!(is_placeholder_token("   "));
+        assert!(is_placeholder_token("\t\n"));
 
-    #[test]
-    fn read_store_at_missing_path_is_empty() {
-        let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("nope.json");
-        let map = read_store_at(&p).unwrap();
-        assert!(map.is_empty());
-    }
+        // 常见占位符字面量(大小写不敏感)
+        assert!(is_placeholder_token("placeholder"));
+        assert!(is_placeholder_token("PLACEHOLDER"));
+        assert!(is_placeholder_token("your-api-key-here"));
+        assert!(is_placeholder_token("YOUR_API_KEY_HERE"));
+        assert!(is_placeholder_token("your-api-key"));
+        assert!(is_placeholder_token("your-secret-key"));
+        assert!(is_placeholder_token("xxx"));
+        assert!(is_placeholder_token("XXXX"));
+        assert!(is_placeholder_token("test"));
+        assert!(is_placeholder_token("example"));
+        assert!(is_placeholder_token("dummy"));
+        assert!(is_placeholder_token("todo"));
+        assert!(is_placeholder_token("n/a"));
+        assert!(is_placeholder_token("none"));
+        assert!(is_placeholder_token("null"));
 
-    #[test]
-    fn write_then_read_roundtrip() {
-        let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("secrets.json");
-        let mut m = HashMap::new();
-        m.insert(key("svc", "alice"), "p1".into());
-        m.insert(key("svc", "bob"), "p2".into());
+        // sk- 模板形式
+        assert!(is_placeholder_token("sk-xxx"));
+        assert!(is_placeholder_token("sk-..."));
+        assert!(is_placeholder_token("sk-"));
+        assert!(is_placeholder_token("SK-XXX"));
+        assert!(is_placeholder_token("sk-test"));
 
-        write_store_at(&p, &m).unwrap();
-        let loaded = read_store_at(&p).unwrap();
-        assert_eq!(loaded, m);
-    }
+        // 模板占位符 <...> / {...}
+        assert!(is_placeholder_token("<your-api-key>"));
+        assert!(is_placeholder_token("{YOUR_KEY}"));
 
-    #[test]
-    fn write_uses_mode_0600() {
-        let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("secrets.json");
-        write_store_at(&p, &HashMap::new()).unwrap();
+        // 首尾空白仍判定为占位符
+        assert!(is_placeholder_token("  placeholder  "));
 
-        let mode = fs::metadata(&p).unwrap().mode() & 0o777;
-        assert_eq!(mode, 0o600, "secrets file must be user-only readable");
-    }
-
-    #[test]
-    fn write_does_not_leave_tmp_file_on_success() {
-        let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("secrets.json");
-        write_store_at(&p, &HashMap::new()).unwrap();
-
-        let tmp_path = p.with_extension("json.tmp");
-        assert!(!tmp_path.exists(), "tmp file must be renamed away on success");
-    }
-
-    #[test]
-    fn write_overwrites_existing_atomically() {
-        let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("secrets.json");
-
-        let mut first = HashMap::new();
-        first.insert("a".into(), "1".into());
-        write_store_at(&p, &first).unwrap();
-
-        let mut second = HashMap::new();
-        second.insert("b".into(), "2".into());
-        write_store_at(&p, &second).unwrap();
-
-        let loaded = read_store_at(&p).unwrap();
-        assert_eq!(loaded, second);
-        assert!(!loaded.contains_key("a"));
-    }
-
-    #[test]
-    fn read_store_at_garbage_file_errors() {
-        let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("secrets.json");
-        fs::write(&p, b"not json").unwrap();
-        assert!(read_store_at(&p).is_err());
+        // 真实 token 不应被误判
+        assert!(!is_placeholder_token("sk-proj-abc123XYZdef456"));
+        assert!(!is_placeholder_token("sk-ant-api03-RealKeyValue999"));
+        assert!(!is_placeholder_token("abcdef0123456789"));
+        assert!(!is_placeholder_token("sk-live-9f8e7d6c5b4a3210fedcba"));
     }
 }

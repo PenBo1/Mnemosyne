@@ -1,15 +1,6 @@
-// W3C Trace Context —— traceparent header 解析与生成。
-//
-// 规范: https://www.w3.org/TR/trace-context/
-// traceparent 格式: version-trace_id-parent_span_id-trace_flags
-//   - version:     2 hex chars (目前 "00")
-//   - trace_id:    32 hex chars
-//   - parent_span_id: 16 hex chars
-//   - trace_flags: 2 hex chars (bit 0 = sampled)
-//
-// 用途:
-// - 跨进程传播 trace 上下文（如 LLM 调用、子进程 spawn）
-// - 将前端请求的 traceparent 透传到 Rust，串联前后端调用链
+//! ═══════════════════════════════════════════════════════════════════════════
+//! W3C Trace Context - traceparent 解析与生成
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::shared::error::AppError;
 

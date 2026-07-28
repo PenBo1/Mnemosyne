@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 沙箱状态 - 状态管理
+//! ═══════════════════════════════════════════════════════════════════════════
+
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use super::heuristics;
 use super::execpolicy::{self, evaluator::Evaluation, ExecPolicy, NetworkProtocol};
@@ -25,7 +29,7 @@ impl SandboxState {
     }
 
     /// 加载 exec_policy.conf；文件不存在时用默认策略初始化并持久化。
-    fn load_or_init_exec_policy(root: &PathBuf) -> ExecPolicy {
+    fn load_or_init_exec_policy(root: &Path) -> ExecPolicy {
         let conf_path = root.join(EXEC_POLICY_CONF);
         if conf_path.exists() {
             match std::fs::read_to_string(&conf_path) {

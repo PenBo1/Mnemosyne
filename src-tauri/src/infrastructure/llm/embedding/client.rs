@@ -1,7 +1,9 @@
-// OpenAI 兼容 /v1/embeddings 客户端
-//
-// 本地(Ollama OpenAI 兼容端点 / LM Studio)与云端(OpenAI / 其他兼容服务)
-// 走同一套协议,仅 base_url / api_key / model 不同。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Embedding 客户端 - OpenAI 兼容 API 调用
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 本地(Ollama OpenAI 兼容端点 / LM Studio)与云端(OpenAI / 其他兼容服务)
+//! 走同一套协议，仅 base_url / api_key / model 不同。
 
 use std::sync::OnceLock;
 

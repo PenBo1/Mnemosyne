@@ -1,3 +1,6 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! LLM 类型 - 通用数据类型
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 
@@ -96,9 +99,35 @@ pub struct TokenUsage {
     pub output_tokens: u32,
 }
 
+/// Anthropic prompt cache TTL
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CacheTtl {
+    /// 5 分钟（默认）
+    #[default]
+    FiveMinutes,
+    /// 1 小时（需 beta header）
+    OneHour,
+}
+
+impl CacheTtl {
+    /// 序列化为 API 字段值
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CacheTtl::FiveMinutes => "5m",
+            CacheTtl::OneHour => "1h",
+        }
+    }
+
+    /// 对应的 beta header 值
+    pub fn beta_header(&self) -> Option<&'static str> {
+        match self {
+            CacheTtl::FiveMinutes => None,
+            CacheTtl::OneHour => Some("extended-cache-ttl-2025-04-11"),
+        }
+    }
+}
+
 /// Provider Trait
-///
-/// 定义 LLM Provider 的通用接口
 #[async_trait::async_trait]
 pub trait Provider: Send + Sync {
     /// Provider 名称
@@ -116,17 +145,17 @@ pub trait Provider: Send + Sync {
         model: &str,
         system: &str,
         messages: &[Message],
+        max_tokens: u64,
     ) -> Result<String, crate::shared::error::AppError>;
 
-    /// 非流式完成(带工具调用支持)
-    ///
-    /// 默认实现返回不支持错误,provider 可按需覆写以支持非流式工具调用。
+    /// 非流式完成（带工具调用支持）
     async fn complete_with_tools(
         &self,
         _model: &str,
         _system: &str,
         _messages: &[Message],
         _tools: &[ToolSpec],
+        _max_tokens: u64,
     ) -> Result<String, crate::shared::error::AppError> {
         Err(crate::shared::error::AppError::internal(
             "complete_with_tools not supported by this provider"
@@ -140,6 +169,7 @@ pub trait Provider: Send + Sync {
         system: &str,
         messages: &[Message],
         tools: &[ToolSpec],
+        max_tokens: u64,
     ) -> Result<
         std::pin::Pin<Box<dyn futures_util::Stream<Item = StreamEvent> + Send>>,
         crate::shared::error::AppError,

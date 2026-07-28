@@ -1,11 +1,13 @@
-// MCP stdio 客户端 —— JSON-RPC 2.0 over newline-delimited stdio。
-//
-// 最小可行实现：
-// - 仅支持 stdio 传输（HTTP/SSE 返回 NOT_IMPLEMENTED）
-// - 同步请求-响应（一次只处理一个请求，按 id 匹配）
-// - 支持 initialize / list_tools / call_tool 三个核心方法
-// - 使用 tokio::process::Command 启动子进程
-// - 所有请求-响应循环受 REQUEST_TIMEOUT 保护，避免子进程死锁/挂起时永久阻塞
+//! ═══════════════════════════════════════════════════════════════════════════
+//! MCP 客户端 - stdio JSON-RPC 2.0 实现
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 最小可行实现：
+//! - 仅支持 stdio 传输（HTTP/SSE 返回 NOT_IMPLEMENTED）
+//! - 同步请求-响应（一次只处理一个请求，按 id 匹配）
+//! - 支持 initialize / list_tools / call_tool 三个核心方法
+//! - 使用 tokio::process::Command 启动子进程
+//! - 所有请求-响应循环受 REQUEST_TIMEOUT 保护
 
 use std::process::Stdio;
 use std::time::Duration;

@@ -1,3 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 网络模块 - IP 分类与安全探测
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供：
+//! - IP 地址分类（公网/私网/环回/元数据服务）
+//! - URL 校验
+//! - 本地模型服务探测
 
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::time::Duration;
@@ -11,16 +19,22 @@ use crate::security_kernel::{
 };
 use crate::security_kernel::permission::{Operation, NetworkScope, NetworkEndpoint};
 
-// ── IP classification ──────────────────────────────────────
+// ── IP 分类 ──────────────────────────────────────────────────────────────────
 
+/// IP 类型
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum IpKind {
+    /// 公网
     Public,
+    /// 私网
     Private,
+    /// 环回
     Loopback,
+    /// 元数据服务（需阻止）
     BlockedMetadata,
 }
 
+/// 判断 IP 类型
 fn ip_kind(ip: IpAddr) -> IpKind {
     match ip {
         IpAddr::V4(v) => {
@@ -60,6 +74,7 @@ fn ip_kind(ip: IpAddr) -> IpKind {
     }
 }
 
+/// 解析并分类主机
 async fn resolve_and_classify(host: &str) -> Result<(IpKind, Vec<IpAddr>), AppError> {
     if let Ok(ip) = host.parse::<IpAddr>() {
         return Ok((ip_kind(ip), vec![ip]));
@@ -90,6 +105,7 @@ async fn resolve_and_classify(host: &str) -> Result<(IpKind, Vec<IpAddr>), AppEr
     Ok((worst, lookup))
 }
 
+/// 是否为阻止的主机名
 fn is_blocked_host_name(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
     matches!(
@@ -98,6 +114,7 @@ fn is_blocked_host_name(host: &str) -> bool {
     )
 }
 
+/// 校验 URL
 fn validate_url(url: &str) -> Result<reqwest::Url, AppError> {
     let parsed = reqwest::Url::parse(url).map_err(|e| {
         AppError::invalid_input(format!("invalid url: {}", e))
@@ -118,6 +135,7 @@ fn validate_url(url: &str) -> Result<reqwest::Url, AppError> {
     Ok(parsed)
 }
 
+/// 分类并收集安全 IP
 async fn classify_and_collect_safe_ips(
     host: &str,
     allow_private: bool,
@@ -149,14 +167,9 @@ async fn classify_and_collect_safe_ips(
     Ok(safe)
 }
 
-// ── IPC commands ───────────────────────────────────────────
+// ── IPC 命令 ────────────────────────────────────────────────────────────────
 
-/// 构造 lm_ping 的 OperationContext。
-///
-/// lm_ping 是诊断工具(探测本地/远程模型服务是否可达),无 workspace/session 上下文。
-/// 此处用 nil UUID 占位,sandbox 安全审计会记录"未知 workspace"标记,
-/// 但不会阻塞(因为 lm_ping 的 Operation::Network 已由 policy 层放行 provider scope)。
-/// 若未来需要按 workspace 限频,应通过 IPC 参数显式传入 workspace_id/session_id。
+/// 创建操作上下文
 fn create_operation_context() -> OperationContext {
     OperationContext {
         workspace: WorkspaceId(uuid::Uuid::nil()),
@@ -166,7 +179,7 @@ fn create_operation_context() -> OperationContext {
     }
 }
 
-/// Probe local model service (GET <base>/models, return HTTP status).
+/// 探测本地模型服务
 #[tauri::command]
 pub async fn lm_ping(
     base_url: String,
@@ -214,6 +227,8 @@ pub async fn lm_ping(
 
     Ok(IpcResponse::ok(status))
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

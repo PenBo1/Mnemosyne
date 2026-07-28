@@ -1,13 +1,11 @@
-// loop_patterns 表的 CRUD —— Loop-Engineering 模式定义持久化。
-//
-// 设计要点：
-// - builtin 4 pattern(对应 core/agent/loop_engine/types.rs 的 LoopPatternId)
-// - user-defined pattern(UUID id,is_builtin=0)
-// - builtin 不可删除(is_builtin=1)
-//
-// 架构约束(AGENTS.md):
-// - infrastructure 层只依赖 shared/,不依赖 core/agent/ 或 application/
-// - JSON 字段(phases / human_gates / cost_config / skills_required)由业务层序列化
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 循环模式存储 - Loop-Engineering 模式定义持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 设计要点：
+//! - 内置 4 种模式（对应 LoopPatternId）
+//! - 用户自定义模式（UUID id, is_builtin=0）
+//! - 内置模式不可删除（is_builtin=1）
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -15,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const LOOP_PATTERN_UPSERT_SQL: &str = "\
 INSERT INTO loop_patterns (\
@@ -38,28 +38,44 @@ const LOOP_PATTERN_SELECT_COLUMNS: &str = "\
 id, name, description, goal, cadence, risk_level, phases, human_gates,\
 cost_config, skills_required, is_active, is_builtin, created_at, updated_at";
 
-/// loop_patterns 表的行级表示。
-///
-/// JSON 字段(phases / human_gates / cost_config / skills_required)为原始 JSON 字符串,
-/// 由业务层负责序列化/反序列化。is_active / is_builtin 用 i64 表示(0/1)。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 循环模式行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoopPatternRow {
+    /// 模式 ID
     pub id: String,
+    /// 模式名称
     pub name: String,
+    /// 描述
     pub description: Option<String>,
+    /// 目标
     pub goal: Option<String>,
+    /// 执行节奏
     pub cadence: String,
+    /// 风险等级
     pub risk_level: String,
+    /// 阶段 JSON
     pub phases: Option<String>,
+    /// 人工审核门 JSON
     pub human_gates: Option<String>,
+    /// 成本配置 JSON
     pub cost_config: Option<String>,
+    /// 所需技能 JSON
     pub skills_required: Option<String>,
+    /// 是否激活
     pub is_active: i64,
+    /// 是否内置
     pub is_builtin: i64,
+    /// 创建时间
     pub created_at: String,
+    /// 更新时间
     pub updated_at: String,
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射数据库行到循环模式行
 fn map_loop_pattern_row(row: &rusqlite::Row) -> rusqlite::Result<LoopPatternRow> {
     Ok(LoopPatternRow {
         id: row.get(0)?,
@@ -79,13 +95,12 @@ fn map_loop_pattern_row(row: &rusqlite::Row) -> rusqlite::Result<LoopPatternRow>
     })
 }
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 插入或更新 loop pattern(upsert 语义)。
+    /// 插入或更新循环模式
     pub fn upsert_loop_pattern(&self, row: &LoopPatternRow) -> Result<(), AppError> {
         let conn = self.conn()?;
-        // description/goal 在 DB 中为 NOT NULL DEFAULT '',None 时用 "" 兜底
-        // phases/human_gates/skills_required 在 DB 中为 NOT NULL DEFAULT '[]',None 时用 "[]"
-        // cost_config 在 DB 中为 NOT NULL DEFAULT '{}',None 时用 "{}"
         conn.execute(
             LOOP_PATTERN_UPSERT_SQL,
             params![
@@ -108,7 +123,7 @@ impl Database {
         Ok(())
     }
 
-    /// 列出所有 loop patterns(builtin + user-defined)。
+    /// 列出所有循环模式
     pub fn list_loop_patterns(&self) -> Result<Vec<LoopPatternRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -121,7 +136,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 获取单个 loop pattern。
+    /// 获取单个循环模式
     pub fn get_loop_pattern(&self, pattern_id: &str) -> Result<Option<LoopPatternRow>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -139,9 +154,7 @@ impl Database {
         }
     }
 
-    /// 删除 loop pattern(builtin 不可删除)。
-    ///
-    /// 返回 Ok(false) 如果 pattern 不存在或为 builtin。
+    /// 删除循环模式（内置模式不可删除）
     pub fn delete_loop_pattern(&self, pattern_id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -151,6 +164,8 @@ impl Database {
         Ok(affected > 0)
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -187,7 +202,6 @@ mod tests {
 
         let patterns = db.list_loop_patterns().unwrap();
         assert_eq!(patterns.len(), 2);
-        // builtin 排在前面
         assert_eq!(patterns[0].id, "chapter-write-loop");
         assert_eq!(patterns[1].id, "user-1");
     }

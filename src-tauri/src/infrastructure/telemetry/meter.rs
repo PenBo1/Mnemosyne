@@ -1,13 +1,6 @@
-// Meter —— OpenTelemetry 风格的 metric 记录。
-//
-// 设计:
-// - Meter 持有 Database（Clone 廉价），用于 metric 持久化
-// - counter/gauge/histogram 统一存储到 metric_points 表，kind 字段区分
-// - 每次调用立即写入 DB（append-only），不做内存缓冲
-//
-// 与 stats.rs 的关系:
-// - stats.rs 从 messages 表聚合 AI 指标（被动统计）
-// - Meter 提供主动记录任意业务 metric 的能力（主动埋点）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Meter - OpenTelemetry 风格 metric 记录
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::infrastructure::db::connection::Database;
 

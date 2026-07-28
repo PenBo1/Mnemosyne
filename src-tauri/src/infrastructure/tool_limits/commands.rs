@@ -1,11 +1,9 @@
-// Tool Limits IPC commands —— 工具执行上限配置的读写。
-//
-// 命令清单:
-// - tool_limits_get → 当前配置(从内存缓存读)
-// - tool_limits_update(config) → 更新配置(写盘 + 刷新缓存)
-// - tool_limits_reset → 重置为默认值
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 工具限制命令 - IPC 命令接口
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use tauri::State;
+use std::time::Instant;
 
 use crate::infrastructure::tool_limits::config::ToolLimitsConfig;
 use crate::infrastructure::tool_limits::state::ToolLimitsState;
@@ -15,7 +13,16 @@ use crate::shared::error::{AppError, IpcResponse};
 pub async fn tool_limits_get(
     state: State<'_, ToolLimitsState>,
 ) -> Result<IpcResponse<ToolLimitsConfig>, AppError> {
-    Ok(IpcResponse::ok(state.get()))
+    let start = Instant::now();
+    tracing::info!("tool_limits_get: enter");
+    
+    let config = state.get();
+    
+    tracing::info!(
+        duration_ms = start.elapsed().as_millis(),
+        "tool_limits_get: exit"
+    );
+    Ok(IpcResponse::ok(config))
 }
 
 #[tauri::command]
@@ -23,7 +30,18 @@ pub async fn tool_limits_update(
     config: ToolLimitsConfig,
     state: State<'_, ToolLimitsState>,
 ) -> Result<IpcResponse<()>, AppError> {
-    state.update(config)?;
+    let start = Instant::now();
+    tracing::info!("tool_limits_update: enter");
+    
+    state.update(config).map_err(|e| {
+        tracing::error!(error = %e, "tool_limits_update: Failed to update tool limits");
+        e
+    })?;
+    
+    tracing::info!(
+        duration_ms = start.elapsed().as_millis(),
+        "tool_limits_update: exit"
+    );
     Ok(IpcResponse::ok(()))
 }
 
@@ -31,6 +49,17 @@ pub async fn tool_limits_update(
 pub async fn tool_limits_reset(
     state: State<'_, ToolLimitsState>,
 ) -> Result<IpcResponse<()>, AppError> {
-    state.reset()?;
+    let start = Instant::now();
+    tracing::info!("tool_limits_reset: enter");
+    
+    state.reset().map_err(|e| {
+        tracing::error!(error = %e, "tool_limits_reset: Failed to reset tool limits");
+        e
+    })?;
+    
+    tracing::info!(
+        duration_ms = start.elapsed().as_millis(),
+        "tool_limits_reset: exit"
+    );
     Ok(IpcResponse::ok(()))
 }

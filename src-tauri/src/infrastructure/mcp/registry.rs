@@ -1,10 +1,14 @@
-// MCP 注册表 —— 管理活跃的 MCP server 连接，聚合工具，路由调用。
-//
-// 设计：
-// - clients: server_id → McpClient 的映射
-// - 懒连接：list_tools / call_tool 时若未连接则按需 connect + initialize
-// - 工具聚合：list_all_tools 遍历所有 enabled server，注入 server_id
-// - 配置变更由 state 层协调（remove → disconnect、update → reconnect）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! MCP 注册表 - 连接管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 管理活跃的 MCP server 连接，聚合工具，路由调用。
+//!
+//! 设计：
+//! - clients: server_id → McpClient 的映射
+//! - 懒连接：list_tools / call_tool 时若未连接则按需 connect + initialize
+//! - 工具聚合：list_all_tools 遍历所有 enabled server，注入 server_id
+//! - 配置变更由 state 层协调（remove → disconnect、update → reconnect）
 
 use std::collections::HashMap;
 

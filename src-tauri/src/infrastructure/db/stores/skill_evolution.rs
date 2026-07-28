@@ -1,20 +1,10 @@
-// 技能进化系统 CRUD —— skill_usage_stats + skill_candidate_proposals。
-//
-// 两个核心能力:
-// 1. 已存在 skill 的使用统计(每次工具调用时增量更新)
-//    - record_skill_usage(skill_name, success):upsert + count
-//    - list_skill_usage_stats():列出所有 skill 的统计
-//    - 根据统计计算"成熟度"(emerging/developing/mature/deprecated)
-//
-// 2. 从成功任务中提取 skill 候选(等待人工审核)
-//    - insert_skill_candidate(...):LLM 分析成功 session → 生成草稿
-//    - list_skill_candidates(status):列出 pending/approved/rejected 候选
-//    - update_candidate_status(id, status):审核流程
-//
-// 集成点:
-// - 工具调用执行后(成功/失败)→ record_skill_usage()
-// - session commit 时(若用户标记为"成功") → LLM 生成 candidate → insert_skill_candidate()
-// - 用户在 UI 中审核候选 → update_candidate_status(approved) → SkillManager 创建正式 skill
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 技能进化存储 - 技能使用统计与候选提案
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 两个核心能力：
+//! 1. 已存在 skill 的使用统计（每次工具调用时增量更新）
+//! 2. 从成功任务中提取 skill 候选（等待人工审核）
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -23,7 +13,7 @@ use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
 
-// ── skill_usage_stats ─────────────────────────────────────────
+// ── Skill 使用统计 ──────────────────────────────────────────────────────────
 
 const USAGE_UPSERT_SQL: &str = "\
 INSERT INTO skill_usage_stats (\
@@ -44,13 +34,21 @@ first_used_at, last_used_at, last_session_id";
 /// Skill 使用统计行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillUsageStatsRow {
+    /// 技能名称
     pub skill_name: String,
+    /// 使用次数
     pub used_count: u64,
+    /// 成功次数
     pub success_count: u64,
+    /// 失败次数
     pub failure_count: u64,
+    /// 用户反馈分
     pub user_feedback_score: f64,
+    /// 首次使用时间
     pub first_used_at: String,
+    /// 最后使用时间
     pub last_used_at: String,
+    /// 最后会话 ID
     pub last_session_id: Option<String>,
 }
 
@@ -58,17 +56,18 @@ pub struct SkillUsageStatsRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SkillMaturity {
-    /// 新生(1-2 次):刚开始使用
+    /// 新生（1-2 次）
     Emerging,
-    /// 开发中(3-9 次):持续被使用
+    /// 开发中（3-9 次）
     Developing,
-    /// 成熟(10+ 次):可信赖
+    /// 成熟（10+ 次）
     Mature,
-    /// 弃用(90 天未用):可考虑删除
+    /// 弃用（90 天未用）
     Deprecated,
 }
 
 impl SkillMaturity {
+    /// 转为字符串
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Emerging => "emerging",
@@ -80,15 +79,8 @@ impl SkillMaturity {
 }
 
 impl SkillUsageStatsRow {
-    /// 根据统计数据计算成熟度
-    ///
-    /// 规则(对齐 migration 注释):
-    /// - last_used_at 距今 > 90 天 → Deprecated(优先判断)
-    /// - used_count 1-2 → Emerging
-    /// - used_count 3-9 → Developing
-    /// - used_count >= 10 → Mature
+    /// 计算成熟度
     pub fn maturity(&self) -> SkillMaturity {
-        // 先判断是否过期
         if let Ok(last) = chrono::DateTime::parse_from_rfc3339(&self.last_used_at) {
             let now = chrono::Utc::now();
             if (now - last.with_timezone(&chrono::Utc)).num_days() > 90 {
@@ -96,14 +88,14 @@ impl SkillUsageStatsRow {
             }
         }
         match self.used_count {
-            0 => SkillMaturity::Emerging, // 不应发生,但兜底
+            0 => SkillMaturity::Emerging,
             1..=2 => SkillMaturity::Emerging,
             3..=9 => SkillMaturity::Developing,
             _ => SkillMaturity::Mature,
         }
     }
 
-    /// 成功率(0.0-1.0)
+    /// 计算成功率
     pub fn success_rate(&self) -> f64 {
         if self.used_count == 0 {
             return 0.0;
@@ -112,6 +104,7 @@ impl SkillUsageStatsRow {
     }
 }
 
+/// 映射使用统计行
 fn map_usage_row(row: &rusqlite::Row) -> rusqlite::Result<SkillUsageStatsRow> {
     Ok(SkillUsageStatsRow {
         skill_name: row.get(0)?,
@@ -125,7 +118,7 @@ fn map_usage_row(row: &rusqlite::Row) -> rusqlite::Result<SkillUsageStatsRow> {
     })
 }
 
-// ── skill_candidate_proposals ─────────────────────────────────
+// ── Skill 候选提案 ────────────────────────────────────────────────────────
 
 const CANDIDATE_INSERT_SQL: &str = "\
 INSERT INTO skill_candidate_proposals (\
@@ -140,19 +133,29 @@ candidate_content, status, reviewer_notes, reviewed_at, created_at";
 /// Skill 候选行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillCandidateRow {
+    /// 候选 ID
     pub id: String,
+    /// 候选名称
     pub candidate_name: String,
+    /// 候选描述
     pub candidate_description: String,
+    /// 来源会话 ID
     pub source_session_id: String,
+    /// 来源摘要
     pub source_summary: String,
+    /// 候选内容
     pub candidate_content: String,
-    /// "pending" / "approved" / "rejected" / "superseded"
+    /// 状态
     pub status: String,
+    /// 审核者备注
     pub reviewer_notes: Option<String>,
+    /// 审核时间
     pub reviewed_at: Option<String>,
+    /// 创建时间
     pub created_at: String,
 }
 
+/// 映射候选行
 fn map_candidate_row(row: &rusqlite::Row) -> rusqlite::Result<SkillCandidateRow> {
     Ok(SkillCandidateRow {
         id: row.get(0)?,
@@ -168,13 +171,10 @@ fn map_candidate_row(row: &rusqlite::Row) -> rusqlite::Result<SkillCandidateRow>
     })
 }
 
-// ── Database 方法 ──────────────────────────────────────────────
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
 
 impl Database {
-    /// 记录一次 skill 使用(每次工具调用后调用)
-    ///
-    /// 如果 skill_name 不存在,插入新记录(count=1);
-    /// 如果已存在,used_count+1,success_count 或 failure_count +1。
+    /// 记录一次 skill 使用
     pub fn record_skill_usage(
         &self,
         skill_name: &str,
@@ -200,7 +200,7 @@ impl Database {
         Ok(())
     }
 
-    /// 列出所有 skill 的使用统计(按 used_count 降序)
+    /// 列出所有 skill 使用统计
     pub fn list_skill_usage_stats(&self) -> Result<Vec<SkillUsageStatsRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(&format!(
@@ -211,7 +211,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 按 skill_name 获取使用统计
+    /// 获取 skill 使用统计
     pub fn get_skill_usage_stats(
         &self,
         skill_name: &str,
@@ -229,7 +229,7 @@ impl Database {
         }
     }
 
-    /// 调整用户反馈分(每次用户给 +1/-1 分时调用)
+    /// 调整用户反馈分
     pub fn adjust_skill_feedback(
         &self,
         skill_name: &str,
@@ -244,7 +244,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 插入 skill 候选(LLM 分析成功 session 后调用)
+    /// 插入 skill 候选
     pub fn insert_skill_candidate(
         &self,
         candidate_name: &str,
@@ -271,7 +271,7 @@ impl Database {
         Ok(id)
     }
 
-    /// 按 status 列出 skill 候选(默认 pending)
+    /// 列出 skill 候选
     pub fn list_skill_candidates(
         &self,
         status: Option<&str>,
@@ -304,10 +304,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 更新候选状态(审核流程)
-    ///
-    /// status 可选值:approved / rejected / superseded
-    /// reviewer_notes:审核者备注(可选)
+    /// 更新候选状态
     pub fn update_candidate_status(
         &self,
         id: &str,
@@ -331,7 +328,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// 删除候选(用户主动清理)
+    /// 删除候选
     pub fn delete_skill_candidate(&self, id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -341,6 +338,8 @@ impl Database {
         Ok(affected > 0)
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -360,7 +359,6 @@ mod tests {
         assert_eq!(stats.failure_count, 0);
         assert_eq!(stats.last_session_id, Some("sess-1".to_string()));
 
-        // 第二次使用(失败)
         db.record_skill_usage("read_file", false, Some("sess-2")).unwrap();
         let stats = db.get_skill_usage_stats("read_file").unwrap().unwrap();
         assert_eq!(stats.used_count, 2);
@@ -372,19 +370,16 @@ mod tests {
     #[test]
     fn maturity_reflects_usage_count() {
         let db = make_in_memory_db();
-        // 1 次 → Emerging
         db.record_skill_usage("skill1", true, None).unwrap();
         let s = db.get_skill_usage_stats("skill1").unwrap().unwrap();
         assert_eq!(s.maturity(), SkillMaturity::Emerging);
 
-        // 3 次 → Developing
         for _ in 0..2 {
             db.record_skill_usage("skill1", true, None).unwrap();
         }
         let s = db.get_skill_usage_stats("skill1").unwrap().unwrap();
         assert_eq!(s.maturity(), SkillMaturity::Developing);
 
-        // 10 次 → Mature
         for _ in 0..7 {
             db.record_skill_usage("skill1", true, None).unwrap();
         }
@@ -412,7 +407,7 @@ mod tests {
         }
         let all = db.list_skill_usage_stats().unwrap();
         assert_eq!(all.len(), 2);
-        assert_eq!(all[0].skill_name, "common"); // used_count 高的在前
+        assert_eq!(all[0].skill_name, "common");
         assert_eq!(all[1].skill_name, "rare");
     }
 
@@ -452,11 +447,9 @@ mod tests {
         let db = make_in_memory_db();
         let id = db.insert_skill_candidate("x", "y", "s", "z", "c").unwrap();
 
-        // pending → approved
         let updated = db.update_candidate_status(&id, "approved", Some("looks good")).unwrap();
         assert!(updated);
 
-        // 再次更新应失败(已经 approved,不是 pending)
         let updated_again = db.update_candidate_status(&id, "rejected", None).unwrap();
         assert!(!updated_again);
 
@@ -487,7 +480,6 @@ mod tests {
     fn maturity_deprecated_for_stale_skill() {
         let db = make_in_memory_db();
         db.record_skill_usage("old", true, None).unwrap();
-        // 直接修改 last_used_at 为 100 天前
         let stale = chrono::Utc::now() - chrono::Duration::days(100);
         let conn = db.conn().unwrap();
         conn.execute(

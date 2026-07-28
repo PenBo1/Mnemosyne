@@ -1,12 +1,11 @@
-// trace_spans 表的 CRUD —— OpenTelemetry 风格的 span 持久化。
-//
-// - append-only:span 在结束时一次性写入（end_time 已知）
-// - GC 30 天:由 GC 模块调用 delete_spans_before()
-// - 与 audit_events 正交：本表关注调用链与性能，audit_events 关注安全决策
-//
-// 架构约束(AGENTS.md):
-// - infrastructure 层只依赖 shared/，不依赖 core/agent/
-// - 因此本模块定义自己的 SpanRow DTO，业务层（telemetry::tracer）负责转换
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 追踪存储 - OpenTelemetry 风格的 Span 持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 特点：
+//! - append-only：span 在结束时一次性写入
+//! - GC 30 天：由 GC 模块调用 delete_spans_before()
+//! - 与 audit_events 正交：本表关注调用链与性能
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -14,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const SPAN_INSERT_SQL: &str = "\
 INSERT INTO trace_spans (\
@@ -25,33 +26,43 @@ const SPAN_SELECT_COLUMNS: &str = "\
 id, trace_id, parent_span_id, name, kind, start_time, end_time,\
 attributes, events, status, status_message, workspace_id, session_id";
 
-/// Trace span 的 DB 行级表示。
-///
-/// 字段命名与 DB 列名一致(snake_case)，前端通过 IPC 序列化为 camelCase。
-/// attributes / events 为 JSON 字符串，由业务层序列化/反序列化。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// Trace span 的数据库行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpanRow {
+    /// Span ID
     pub id: String,
+    /// Trace ID
     pub trace_id: String,
+    /// 父 Span ID
     pub parent_span_id: Option<String>,
+    /// 操作名称
     pub name: String,
-    /// "internal" / "client" / "server" / "producer" / "consumer"
+    /// Span 类型（internal/client/server/producer/consumer）
     pub kind: String,
-    /// unix ms
+    /// 开始时间（unix ms）
     pub start_time: i64,
+    /// 结束时间（unix ms）
     pub end_time: Option<i64>,
-    /// JSON object string
+    /// 属性 JSON
     pub attributes: String,
-    /// JSON array string
+    /// 事件 JSON 数组
     pub events: String,
-    /// "ok" / "error" / "unset"
+    /// 状态（ok/error/unset）
     pub status: String,
+    /// 状态消息
     pub status_message: Option<String>,
+    /// 工作区 ID
     pub workspace_id: Option<String>,
+    /// 会话 ID
     pub session_id: Option<String>,
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射 Span 行
 fn map_span_row(row: &rusqlite::Row) -> rusqlite::Result<SpanRow> {
     Ok(SpanRow {
         id: row.get(0)?,
@@ -70,8 +81,10 @@ fn map_span_row(row: &rusqlite::Row) -> rusqlite::Result<SpanRow> {
     })
 }
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 写入一条 span 记录。id 冲突时返回 Err。
+    /// 写入一条 span 记录
     pub fn insert_span(&self, row: &SpanRow) -> Result<(), AppError> {
         let conn = self.conn()?;
         conn.execute(
@@ -96,7 +109,7 @@ impl Database {
         Ok(())
     }
 
-    /// 按 span ID 查询单个 span。
+    /// 按 Span ID 查询
     pub fn get_span(&self, id: &str) -> Result<Option<SpanRow>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
@@ -110,8 +123,7 @@ impl Database {
         }
     }
 
-    /// 列出指定 trace 的所有 span（按 start_time ASC，便于构建调用树）。
-    /// limit 上限 1000。
+    /// 列出指定 trace 的所有 span
     pub fn list_spans_by_trace(&self, trace_id: &str, limit: i64) -> Result<Vec<SpanRow>, AppError> {
         let limit = limit.clamp(1, 1000);
         let conn = self.conn()?;
@@ -128,8 +140,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 列出最近的 span（跨所有 trace，按 start_time DESC）。
-    /// limit 上限 1000。
+    /// 列出最近的 span
     pub fn list_recent_spans(&self, limit: i64) -> Result<Vec<SpanRow>, AppError> {
         let limit = limit.clamp(1, 1000);
         let conn = self.conn()?;
@@ -144,9 +155,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 按 name 列出 span（按 start_time DESC）。
-    /// 用于查询特定操作（如 "agent.send_message"）的所有执行记录。
-    /// limit 上限 1000。
+    /// 按名称列出 span
     pub fn list_spans_by_name(&self, name: &str, limit: i64) -> Result<Vec<SpanRow>, AppError> {
         let limit = limit.clamp(1, 1000);
         let conn = self.conn()?;
@@ -163,9 +172,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 列出最近的 trace（每个 trace 取最早 span 的时间作为 trace 起始）。
-    /// 返回 (trace_id, first_start_time, span_count, last_end_time)。
-    /// limit 上限 200。
+    /// 列出最近的 trace
     pub fn list_recent_traces(&self, limit: i64) -> Result<Vec<TraceSummary>, AppError> {
         let limit = limit.clamp(1, 200);
         let conn = self.conn()?;
@@ -190,8 +197,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// GC:删除 start_time 早于 cutoff_ms 的 span 记录。
-    /// 返回删除的行数。
+    /// 删除指定时间之前的 span
     pub fn delete_spans_before(&self, cutoff_ms: i64) -> Result<u64, AppError> {
         let conn = self.conn()?;
         let affected = conn
@@ -203,7 +209,7 @@ impl Database {
         Ok(affected as u64)
     }
 
-    /// Trace span 聚合统计:总数 / 错误数 / 平均耗时。
+    /// 获取 Span 统计
     pub fn span_stats(&self) -> Result<SpanStats, AppError> {
         let conn = self.conn()?;
         let total: i64 = conn
@@ -242,25 +248,37 @@ impl Database {
     }
 }
 
-/// Trace 摘要（每个 trace 一行）。
+// ── 数据结构 ────────────────────────────────────────────────────────────────
+
+/// Trace 摘要
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TraceSummary {
+    /// Trace ID
     pub trace_id: String,
+    /// 最早开始时间
     pub first_start_time: i64,
+    /// 最晚结束时间
     pub last_end_time: i64,
+    /// Span 数量
     pub span_count: u32,
 }
 
-/// Span 聚合统计。
+/// Span 统计
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpanStats {
+    /// 总 Span 数
     pub total_spans: i64,
+    /// 错误 Span 数
     pub error_spans: i64,
+    /// 总 Trace 数
     pub total_traces: i64,
+    /// 平均耗时（毫秒）
     pub avg_duration_ms: f64,
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

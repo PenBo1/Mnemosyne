@@ -1,16 +1,6 @@
-// 多渠道通知模块 —— 支持 Telegram / Feishu / WeCom / Webhook(HMAC-SHA256 签名)。
-//
-// Rust 版本用 reqwest 异步发送,失败不阻塞主流程(只 log)。
-//
-// 安全约束:
-// - URL 仅允许 http/https 协议(防 file:// SSRF)
-// - bot_token / webhook_url 等敏感字段从 NotifyChannel 结构传入,不持久化在代码里
-// - HMAC 使用 hmac = "0.12" crate(标准实现,避免手写 HMAC 出错)
-//
-// 与现有 notifications.rs(本地 OS 通知)的关系:
-// - notifications.rs: 走 tauri_plugin_notification,弹系统通知
-// - notify.rs(本文件): 走网络,推送到外部 IM 平台
-// 两者互补,不替代。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 多渠道通知模块 - Telegram/Feishu/WeCom/Webhook
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::sync::OnceLock;
 
@@ -19,6 +9,7 @@ use crate::shared::error::{AppError, IpcResponse};
 
 /// 通知消息
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct NotifyMessage {
     pub title: String,
     pub body: String,
@@ -37,17 +28,6 @@ pub struct NotifyMessage {
     pub chapter_number: Option<u32>,
 }
 
-impl Default for NotifyMessage {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            body: String::new(),
-            event: None,
-            book_id: None,
-            chapter_number: None,
-        }
-    }
-}
 
 /// 输出格式
 /// - "markdown": 保留 markdown 标记(适合 IM 平台富文本)

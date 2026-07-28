@@ -1,3 +1,12 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 维基存储 - Wiki 词条与实体关系
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 两类存储：
+//! - WikiEntry：维基词条（标题、内容、分类、重要性）
+//! - WikiEntityLink：实体关系（源词条、目标词条、关系类型）
+//!
+//! 支持 FTS5 全文搜索和图谱视图。
 
 use rusqlite::params;
 use uuid::Uuid;
@@ -12,6 +21,9 @@ use crate::shared::wiki::models::{
     CreateWikiEntryRequest, UpdateWikiEntryRequest, CreateWikiLinkRequest,
 };
 
+// ── WikiEntry 辅助函数 ──────────────────────────────────────────────────────
+
+/// 映射维基词条行
 fn map_wiki_entry_row(row: &rusqlite::Row) -> rusqlite::Result<(String, String, String, String, String, String, Option<i64>, String, i64, i64, String, String)> {
     Ok((
         row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
@@ -20,6 +32,7 @@ fn map_wiki_entry_row(row: &rusqlite::Row) -> rusqlite::Result<(String, String, 
     ))
 }
 
+/// 构建维基词条对象
 fn build_wiki_entry(
     raw: (String, String, String, String, String, String, Option<i64>, String, i64, i64, String, String),
 ) -> Result<WikiEntry, AppError> {
@@ -40,7 +53,10 @@ fn build_wiki_entry(
     })
 }
 
+// ── WikiEntry 操作 ──────────────────────────────────────────────────────────
+
 impl Database {
+    /// 列出维基词条
     pub fn list_wiki_entries(
         &self,
         novel_id: &str,
@@ -61,6 +77,7 @@ impl Database {
         rows.map(|r| build_wiki_entry(r.map_err(db_err)?)).collect()
     }
 
+    /// 获取维基词条
     pub fn get_wiki_entry(&self, entry_id: &str) -> Result<Option<WikiEntry>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -75,6 +92,7 @@ impl Database {
         }
     }
 
+    /// 创建维基词条
     pub fn create_wiki_entry(&self, req: &CreateWikiEntryRequest) -> Result<WikiEntry, AppError> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
@@ -101,6 +119,7 @@ impl Database {
         })
     }
 
+    /// 更新维基词条
     pub fn update_wiki_entry(
         &self,
         entry_id: &str,
@@ -136,12 +155,14 @@ impl Database {
         })
     }
 
+    /// 删除维基词条
     pub fn delete_wiki_entry(&self, entry_id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute("DELETE FROM wiki_entries WHERE id = ?", params![entry_id]).map_err(db_err)?;
         Ok(affected > 0)
     }
 
+    /// 搜索维基词条
     pub fn search_wiki_entries(
         &self,
         novel_id: &str,
@@ -161,6 +182,7 @@ impl Database {
         rows.map(|r| build_wiki_entry(r.map_err(db_err)?)).collect()
     }
 
+    /// 获取章节的维基上下文
     pub fn get_wiki_context_for_chapter(
         &self,
         novel_id: &str,
@@ -174,6 +196,7 @@ impl Database {
         rows.map(|r| build_wiki_entry(r.map_err(db_err)?)).collect()
     }
 
+    /// 获取维基图谱视图
     pub fn get_wiki_graph_view(
         &self,
         novel_id: &str,
@@ -228,7 +251,10 @@ impl Database {
     }
 }
 
+// ── WikiEntityLink 操作 ─────────────────────────────────────────────────────
+
 impl Database {
+    /// 创建维基链接
     pub fn create_wiki_link(&self, req: &CreateWikiLinkRequest) -> Result<WikiEntityLink, AppError> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
@@ -253,6 +279,7 @@ impl Database {
         })
     }
 
+    /// 删除维基链接
     pub fn delete_wiki_link(&self, link_id: &str) -> Result<bool, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute("DELETE FROM wiki_entity_links WHERE id = ?", params![link_id]).map_err(db_err)?;
@@ -260,6 +287,9 @@ impl Database {
     }
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射图谱节点行
 fn map_graph_node_row(row: &rusqlite::Row) -> rusqlite::Result<WikiGraphNode> {
     let importance: i64 = row.get(3)?;
     Ok(WikiGraphNode {
@@ -270,6 +300,7 @@ fn map_graph_node_row(row: &rusqlite::Row) -> rusqlite::Result<WikiGraphNode> {
     })
 }
 
+/// 统计字数
 fn count_words(content: &str) -> u32 {
     crate::shared::story::types::count_words_default(content)
 }

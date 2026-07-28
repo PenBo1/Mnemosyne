@@ -1,6 +1,12 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! OpenAI 协议 - 请求构建
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 构建 OpenAI API 兼容的请求 JSON。
 
 use super::types::{Message, ToolSpec};
 
+/// 构建工具负载
 pub fn build_tools_payload(tools: &[ToolSpec]) -> Vec<serde_json::Value> {
     tools.iter().map(|t| {
         serde_json::json!({
@@ -10,12 +16,14 @@ pub fn build_tools_payload(tools: &[ToolSpec]) -> Vec<serde_json::Value> {
     }).collect()
 }
 
+/// 构建请求 JSON
 pub fn build_request(
     model: &str,
     system: &str,
     messages: &[Message],
     tools: &[ToolSpec],
     stream: bool,
+    max_tokens: u64,
 ) -> serde_json::Value {
     let mut msgs = vec![serde_json::json!({ "role": "system", "content": system })];
     for m in messages {
@@ -28,7 +36,7 @@ pub fn build_request(
         }
         msgs.push(entry);
     }
-    let mut body = serde_json::json!({ "model": model, "messages": msgs, "stream": stream, "max_tokens": 8192 });
+    let mut body = serde_json::json!({ "model": model, "messages": msgs, "stream": stream, "max_tokens": max_tokens });
     if !tools.is_empty() {
         body["tools"] = serde_json::json!(build_tools_payload(tools));
         body["tool_choice"] = serde_json::json!("auto");

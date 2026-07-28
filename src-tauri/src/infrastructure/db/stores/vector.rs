@@ -1,12 +1,16 @@
-// 向量存储:vectors 表的读写与余弦相似度搜索。
-//
-// 向量以 BLOB(f32 小端序)存储,搜索时全量加载到 Rust 端计算余弦相似度。
-// 桌面应用规模(数千块)下性能足够,无需引入向量数据库依赖。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 向量存储 - 语义向量索引与搜索
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 向量以 BLOB（f32 小端序）存储，搜索时全量加载到 Rust 端计算余弦相似度。
+//! 桌面应用规模（数千块）下性能足够，无需引入向量数据库依赖。
 
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
 use crate::infrastructure::llm::embedding::types::{SearchResult, VectorStats, DocTypeCount};
+
+// ── 向量编解码 ──────────────────────────────────────────────────────────────
 
 /// f32 向量序列化为小端字节 BLOB
 pub fn encode_vector(vec: &[f32]) -> Vec<u8> {
@@ -43,17 +47,28 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-/// 内部行结构(含向量字节)
+// ── 内部数据结构 ────────────────────────────────────────────────────────────
+
+/// 内部行结构（含向量字节）
 struct VectorRowInner {
+    /// 文档类型
     doc_type: String,
+    /// 文档 ID
     doc_id: String,
+    /// 分块索引
     chunk_idx: i64,
+    /// 内容
     content: String,
+    /// 向量字节
     embedding: Vec<u8>,
 }
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 批量插入向量(先按 doc_type+doc_id 删除旧记录,再插入新记录)
+    /// 批量插入向量
+    ///
+    /// 先按 doc_type+doc_id 删除旧记录，再插入新记录。
     pub fn upsert_vectors(
         &self,
         workspace_id: Option<&str>,
@@ -114,7 +129,9 @@ impl Database {
         Ok(n)
     }
 
-    /// 语义搜索:加载同 workspace+model 的向量,计算余弦相似度,返回 top-N
+    /// 语义搜索
+    ///
+    /// 加载同 workspace+model 的向量，计算余弦相似度，返回 top-N。
     pub fn search_similar(
         &self,
         workspace_id: Option<&str>,
@@ -194,6 +211,8 @@ impl Database {
         Ok(VectorStats { total, by_doc_type })
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

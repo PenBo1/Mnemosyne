@@ -1,6 +1,8 @@
-// 文本切分:按段落 + 字数将长文本切成适合 embedding 的块
-//
-// 策略:优先按双换行分段,单段过长再按 max_chars 切分,保留段落边界语义。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 文本切分 - 长文本分块
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 策略：优先按双换行分段，单段过长再按 max_chars 切分，保留段落边界语义。
 
 const DEFAULT_MAX_CHARS: usize = 800;
 
@@ -10,9 +12,6 @@ pub fn split_text(text: &str, max_chars: Option<usize>) -> Vec<String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Vec::new();
-    }
-    if trimmed.chars().count() <= max {
-        return vec![trimmed.to_string()];
     }
 
     let mut chunks = Vec::new();

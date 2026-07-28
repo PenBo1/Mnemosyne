@@ -1,3 +1,12 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 版本存储 - 章节版本管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供章节版本 CRUD：
+//! - 列出章节的所有版本
+//! - 获取特定版本
+//! - 获取最新版本
+//! - 创建新版本
 
 use rusqlite::params;
 use uuid::Uuid;
@@ -9,6 +18,7 @@ use crate::shared::error::AppError;
 use crate::shared::version::types::{ChapterVersion, CreateVersionRequest, RevisionMode};
 
 impl Database {
+    /// 映射章节版本行
     fn map_chapter_version(row: &rusqlite::Row) -> Result<ChapterVersion, rusqlite::Error> {
         let mode_str: String = row.get(8)?;
         Ok(ChapterVersion {
@@ -25,6 +35,7 @@ impl Database {
         })
     }
 
+    /// 列出章节的所有版本
     pub fn list_chapter_versions(
         &self,
         novel_id: &str,
@@ -38,6 +49,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
+    /// 获取特定版本
     pub fn get_chapter_version(&self, version_id: &str) -> Result<Option<ChapterVersion>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
@@ -52,6 +64,7 @@ impl Database {
         }
     }
 
+    /// 获取章节的最新版本
     pub fn get_latest_chapter_version(
         &self,
         novel_id: &str,
@@ -70,6 +83,7 @@ impl Database {
         }
     }
 
+    /// 获取下一个版本号
     pub fn get_next_version_number(&self, novel_id: &str, chapter_number: u32) -> Result<u32, AppError> {
         let conn = self.conn()?;
         let max: i64 = conn.query_row(
@@ -80,6 +94,7 @@ impl Database {
         Ok((max + 1) as u32)
     }
 
+    /// 创建章节版本
     pub fn create_chapter_version(
         &self,
         req: &CreateVersionRequest,

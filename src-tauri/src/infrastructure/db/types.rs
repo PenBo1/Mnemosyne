@@ -1,10 +1,12 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 数据库类型 - 数据模型定义
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 
 use crate::shared::error::AppError;
 
-// NOTE: `DbError` 的权威定义在 `errors.rs`（枚举，覆盖 NotFound / ConnectionError /
-// QueryError 等多种情况）。此处不再重复定义退化的 `struct DbError`，避免类型歧义。
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 /// JSON 解码辅助函数
 ///
@@ -26,6 +28,8 @@ pub(super) fn json_encode<T: serde::Serialize>(value: &T, column: &str) -> Resul
         AppError::internal(format!("Failed to encode JSON column `{}`: {}", column, e))
     })
 }
+
+// ── 工作空间 ────────────────────────────────────────────────────────────────
 
 /// 工作空间
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +70,8 @@ pub struct UpdateWorkspaceRequest {
     /// 工作空间路径
     pub path: Option<String>,
 }
+
+// ── Prompt 模板 ─────────────────────────────────────────────────────────────
 
 /// Prompt 模板
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +123,8 @@ pub struct UpdatePromptRequest {
     pub tags: Option<Vec<String>>,
 }
 
+// ── 趋势数据 ────────────────────────────────────────────────────────────────
+
 /// 趋势数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +142,8 @@ pub struct Trend {
     /// 扫描时间
     pub scanned_at: String,
 }
+
+// ── 小说数据 ────────────────────────────────────────────────────────────────
 
 /// 小说
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +202,8 @@ pub struct Chapter {
     /// 更新时间
     pub updated_at: String,
 }
+
+// ── Radar 扫描 ──────────────────────────────────────────────────────────────
 
 /// Radar 扫描结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,6 +273,8 @@ pub struct RadarResult {
     /// 市场摘要
     pub market_summary: String,
 }
+
+// ── 请求类型 ────────────────────────────────────────────────────────────────
 
 /// 创建小说请求
 #[derive(Debug, Clone, Serialize, Deserialize)]

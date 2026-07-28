@@ -1,14 +1,6 @@
-// 短期记忆 IPC 命令 —— 暴露 memory_short_term 表的查询能力给前端。
-//
-// 设计:
-// - 查询类:按日期 / 按 session / 按 book / 按日期范围
-// - 触发类:让用户主动重新生成 session 摘要
-// - 不暴露 upsert(由 AgentEngine.summarize_session 在 session commit 时自动触发)
-//
-// 鉴权约束(对齐 AGENTS.md):
-// - session_id / book_id 走 validate_id_component 防 ../
-// - limit 上限 500 防止大表全扫返回
-// - 日期格式校验 YYYY-MM-DD
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 短期记忆命令 - IPC 命令接口
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::Serialize;
 use tauri::State;
@@ -94,7 +86,7 @@ pub async fn short_term_memory_list_by_range(
 /// 注意：此命令已移至 application/session/commands.rs::short_term_memory_regenerate
 /// 以避免 infrastructure → core/agent 反向依赖。
 
-/// 短期记忆统计(用于 UI 展示总数 / 按日期分布)
+// --- 短期记忆统计 ---
 #[derive(Debug, Serialize)]
 pub struct ShortTermMemoryStats {
     pub total: u64,

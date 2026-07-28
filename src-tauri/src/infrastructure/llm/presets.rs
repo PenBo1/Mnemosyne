@@ -1,12 +1,16 @@
-// Provider 预设表 —— OpenAI/Anthropic 兼容协议的 provider 元数据。
-//
-// 设计目标:
-// 1. 零新增依赖 —— 所有 OpenAI 兼容 provider 复用 OpenAiProvider,Anthropic 兼容复用 AnthropicProvider。
-// 2. 二进制体积可控 —— 预设是静态表,只存必要字段(models 列表精挑代表性子集)。
-// 3. 环境变量自动注册 —— ProviderRegistry::new() 遍历 presets,有 env var 就自动注册。
-// 4. UI 可枚举 —— 通过 list_provider_presets 命令暴露给前端,供"添加模型"下拉选择。
-//
-// 收录 30+ 主流 provider,涵盖国产 / 海外 / 聚合器三类。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Provider 预设表 - OpenAI/Anthropic 兼容 Provider 元数据
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 设计目标:
+//! 1. 零新增依赖 —— 所有 OpenAI 兼容 provider 复用 OpenAiProvider,
+//!    Anthropic 兼容复用 AnthropicProvider。
+//! 2. 二进制体积可控 —— 预设是静态表,只存必要字段。
+//! 3. 环境变量自动注册 —— ProviderRegistry::new() 遍历 presets,
+//!    有 env var 就自动注册。
+//! 4. UI 可枚举 —— 通过 list_provider_presets 命令暴露给前端。
+//!
+//! 收录 40+ 主流 provider，涵盖国产/海外/聚合器三类。
 
 use super::types::ModelInfo;
 

@@ -1,9 +1,15 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 数据库命令 - Tauri 命令接口
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use tauri::State;
 use crate::shared::error::{IpcResponse, AppError};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::fs::fs_utils::validate_id_component;
 
+// ── 趋势命令 ────────────────────────────────────────────────────────────────
+
+/// 创建趋势记录
 #[tauri::command]
 pub async fn create_trend(
     state: State<'_, DbState>,
@@ -34,6 +40,7 @@ pub async fn create_trend(
     Ok(IpcResponse::created(trend))
 }
 
+/// 获取趋势列表
 #[tauri::command]
 pub async fn list_trends(
     state: State<'_, DbState>,
@@ -50,6 +57,7 @@ pub async fn list_trends(
     Ok(IpcResponse::ok(trends))
 }
 
+/// 删除趋势记录
 #[tauri::command]
 pub async fn delete_trend(
     state: State<'_, DbState>,

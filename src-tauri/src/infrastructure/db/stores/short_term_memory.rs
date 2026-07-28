@@ -1,14 +1,11 @@
-// 短期记忆 CRUD —— memory_short_term 表。
-//
-// 用途:
-// - 每次 session 结束(commit)时,AgentEngine 调用 LLM 生成摘要并 upsert 到本表
-// - 每晚 GC 任务调用 list_by_date_range() 合并到 MEMORY.md(长期记忆)
-// - 用户可在 UI 中按日期浏览短期记忆(回溯能力)
-//
-// 架构约束:
-// - infrastructure 层只依赖 shared/,不依赖 core/agent/
-// - 因此定义 ShortTermMemoryRow DTO,agent_role 用 String
-// - 业务层在 core/agent 中调用 store 并转换(类比 loop_run)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 短期记忆存储 - Session 摘要缓存
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 用途：
+//! - 每次 session 结束时，AgentEngine 调用 LLM 生成摘要并 upsert
+//! - 每晚 GC 任务调用合并到 MEMORY.md（长期记忆）
+//! - 用户可在 UI 中按日期浏览短期记忆
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -16,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::super::connection::Database;
 use super::super::connection::db_err;
 use crate::shared::error::AppError;
+
+// ── SQL 语句 ────────────────────────────────────────────────────────────────
 
 const UPSERT_SQL: &str = "\
 INSERT INTO memory_short_term (\
@@ -33,26 +32,36 @@ const SELECT_COLUMNS: &str = "\
 id, session_id, book_id, entry_date, summary, key_topics, \
 agent_role, token_count, message_count, created_at";
 
-/// 短期记忆行(对应 memory_short_term 表)
-///
-/// key_topics 为 JSON 字符串(数组),由业务层用 serde_json::to_string 序列化。
-/// 这样保持 infrastructure 层不依赖业务类型,只处理原始字符串。
+// ── 数据类型 ────────────────────────────────────────────────────────────────
+
+/// 短期记忆行
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortTermMemoryRow {
+    /// 记录 ID
     pub id: String,
+    /// 会话 ID
     pub session_id: String,
+    /// 书籍 ID
     pub book_id: Option<String>,
-    /// YYYY-MM-DD
+    /// 日期（YYYY-MM-DD）
     pub entry_date: String,
+    /// 摘要内容
     pub summary: String,
-    /// JSON 数组字符串,如 `["chapter-3","dialogue"]`
+    /// 关键主题 JSON
     pub key_topics: String,
+    /// Agent 角色
     pub agent_role: Option<String>,
+    /// Token 数
     pub token_count: u64,
+    /// 消息数
     pub message_count: u32,
+    /// 创建时间
     pub created_at: String,
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/// 映射数据库行到短期记忆行
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<ShortTermMemoryRow> {
     Ok(ShortTermMemoryRow {
         id: row.get(0)?,
@@ -68,11 +77,10 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<ShortTermMemoryRow> {
     })
 }
 
+// ── 数据库操作 ──────────────────────────────────────────────────────────────
+
 impl Database {
-    /// 插入或更新短期记忆。
-    ///
-    /// UNIQUE(session_id, entry_date) 约束保证同 session 同一天只保留最新摘要。
-    /// 当天 session 持续追加消息时,每次 commit 会覆盖当天记录。
+    /// 插入或更新短期记忆
     pub fn upsert_short_term_memory(&self, row: &ShortTermMemoryRow) -> Result<(), AppError> {
         let conn = self.conn()?;
         let book_id = row.book_id.as_deref();
@@ -95,9 +103,7 @@ impl Database {
         Ok(())
     }
 
-    /// 按 session_id 获取最新摘要(若有)
-    ///
-    /// 用于 session 恢复时回填"上次进展"上下文。
+    /// 获取会话的最新摘要
     pub fn get_short_term_for_session(
         &self,
         session_id: &str,
@@ -116,9 +122,7 @@ impl Database {
         }
     }
 
-    /// 按日期获取所有 session 摘要(用于每日回顾 UI)
-    ///
-    /// entry_date 格式:YYYY-MM-DD
+    /// 按日期获取所有摘要
     pub fn list_short_term_by_date(
         &self,
         entry_date: &str,
@@ -133,9 +137,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 按日期范围列出(用于每晚合并短期→长期)
-    ///
-    /// start_date / end_date 格式:YYYY-MM-DD(闭区间)
+    /// 按日期范围列出摘要
     pub fn list_short_term_by_date_range(
         &self,
         start_date: &str,
@@ -152,7 +154,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// 按 book_id 获取该书的 session 摘要(用于小说创作的上下文回顾)
+    /// 按书籍列出摘要
     pub fn list_short_term_by_book(
         &self,
         book_id: &str,
@@ -169,7 +171,7 @@ impl Database {
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
-    /// GC:删除 created_at 早于 cutoff_iso 的短期记忆(30 天滚动保留)
+    /// 删除指定时间之前的摘要
     pub fn delete_short_term_before(&self, cutoff_iso: &str) -> Result<u64, AppError> {
         let conn = self.conn()?;
         let affected = conn.execute(
@@ -179,9 +181,7 @@ impl Database {
         Ok(affected as u64)
     }
 
-    /// 统计 memory_short_term 表总行数(用于 stats 命令的 total 字段)。
-    ///
-    /// SQLite COUNT(*) 走索引,性能足够(表本身有 30 天 GC 收缩)。
+    /// 统计总行数
     pub fn count_all_short_term(&self) -> Result<u64, AppError> {
         let conn = self.conn()?;
         let count: i64 = conn
@@ -190,6 +190,8 @@ impl Database {
         Ok(count as u64)
     }
 }
+
+// ── 测试模块 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -224,7 +226,6 @@ mod tests {
         assert!(fetched.is_some());
         assert_eq!(fetched.unwrap().summary, "first summary");
 
-        // 同 session 同天再次 upsert → 覆盖
         let mut row2 = row1.clone();
         row2.id = "id-2".to_string();
         row2.summary = "updated summary".to_string();
@@ -233,7 +234,6 @@ mod tests {
         let fetched = db.get_short_term_for_session("sess-1").unwrap();
         assert_eq!(fetched.unwrap().summary, "updated summary");
 
-        // 应该只有 1 条记录(UPSERT 覆盖)
         let all = db.list_short_term_by_date("2026-07-13").unwrap();
         assert_eq!(all.len(), 1);
     }
@@ -262,7 +262,7 @@ mod tests {
         db.upsert_short_term_memory(&make_row("id-3", "sess-3", "2026-07-15", "d3")).unwrap();
 
         let range = db.list_short_term_by_date_range("2026-07-10", "2026-07-13").unwrap();
-        assert_eq!(range.len(), 2); // 7-10 和 7-13 都在区间
+        assert_eq!(range.len(), 2);
     }
 
     #[test]
@@ -274,7 +274,6 @@ mod tests {
 
         let book_entries = db.list_short_term_by_book("book-1", 10).unwrap();
         assert_eq!(book_entries.len(), 3);
-        // 最新在前
         assert_eq!(book_entries[0].entry_date, "2026-07-15");
     }
 
