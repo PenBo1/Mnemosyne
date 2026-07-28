@@ -1,4 +1,8 @@
 ﻿
+//! ═══════════════════════════════════════════════════════════════════════════
+//! State - 技能状态管理
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use tokio::sync::Mutex;
 use super::discovery::SkillManager;
 use crate::infrastructure::fs::data_dir::DataDir;

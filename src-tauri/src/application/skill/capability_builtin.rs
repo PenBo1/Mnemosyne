@@ -1,12 +1,11 @@
-// Builtin Capability Skills + PromptPacks + Prompts
-//
-// 内容:
-// - 3 个 builtin capability skills:
-//   1. longform-writing —— 长篇连载小说创作
-//   2. open-world-play —— 开放世界互动小说
-//   3. interactive-film-authoring —— 互动影游编剧
-// - 3 个 builtin prompt packs:longform / play / interactive-film
-// - 12 个 builtin prompts
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Capability Builtin - 内置能力技能定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 定义 3 个内置能力技能：
+//! - longform-writing：长篇连载小说创作
+//! - open-world-play：开放世界互动小说
+//! - interactive-film-authoring：互动影游编剧
 
 use super::capability_types::*;
 
@@ -142,7 +141,7 @@ pub fn builtin_prompts() -> Vec<BuiltinPrompt> {
     ]
 }
 
-// ── 3 个 builtin capability skills ──────────────────────────────
+// ── 3 个内置能力技能 ────────────────────────────────────────────────────────
 
 fn longform_writing_skill() -> CapabilitySkillManifest {
     CapabilitySkillManifest {
@@ -359,7 +358,7 @@ fn interactive_film_authoring_skill() -> CapabilitySkillManifest {
     }
 }
 
-// ── 测试 ─────────────────────────────────────────────────────
+// ── 测试 ────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

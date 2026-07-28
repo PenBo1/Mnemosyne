@@ -1,15 +1,12 @@
-// Loop-Engineering 内置模式 —— 4 个 builtin pattern 的声明式定义。
-//
-// 设计参考:core/agent/loop_engine/types.rs (LoopPatternId 枚举 + BUILTIN_PATTERNS)
-// - ChapterWriteLoop:章节写作循环(Plan→Compose→Write)
-// - AuditReviseLoop:审计-修订循环(Audit→Revise→Re-audit,带 attempt cap)
-// - ObservationLoop:事实观察循环(observer 提取事实 → memory)
-// - ConsolidationLoop:章节归档循环(consolidator 压缩历史章节)
-//
-// 与 core/agent/loop_engine/types.rs::LoopPattern 的关系:
-// - core 层的 LoopPattern 是运行时预算配置(用于 check_budget)
-// - 本模块的 LoopPatternDto 是前端展示用的完整模式定义(含 phases / cost_config)
-// - 二者通过 pattern_id(LoopPatternId::as_str())关联
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Builtin Patterns - 内置循环模式定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 定义 4 个内置循环模式：
+//! - ChapterWriteLoop：章节写作循环（Plan → Compose → Write）
+//! - AuditReviseLoop：审计-修订循环（Audit → Revise → Re-audit）
+//! - ObservationLoop：事实观察循环（observer 提取事实 → memory）
+//! - ConsolidationLoop：章节归档循环（consolidator 压缩历史章节）
 
 use crate::infrastructure::db::stores::loop_pattern::LoopPatternRow;
 

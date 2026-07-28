@@ -1,4 +1,15 @@
 
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Commands - 工作区 IPC 命令
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供工作区管理的 IPC 命令实现：
+//! - create_workspace：创建工作区
+//! - list_workspaces：列出工作区
+//! - get_workspace：获取工作区
+//! - delete_workspace：删除工作区
+//! - touch_workspace：更新工作区访问时间
+
 use tauri::State;
 use crate::shared::error::{IpcResponse, AppError};
 use crate::infrastructure::db::state::DbState;
@@ -6,6 +17,7 @@ use crate::infrastructure::db::types::CreateWorkspaceRequest;
 use crate::infrastructure::fs::fs_utils::validate_id_component;
 use crate::infrastructure::project_memory::state::ProjectMemoryState;
 use crate::infrastructure::workspace::registry::WorkspaceRegistry;
+use std::time::Instant;
 
 #[tauri::command]
 pub async fn create_workspace(
@@ -13,15 +25,25 @@ pub async fn create_workspace(
     registry: State<'_, WorkspaceRegistry>,
     req: CreateWorkspaceRequest,
 ) -> Result<IpcResponse<crate::infrastructure::db::types::Workspace>, AppError> {
+    let start = Instant::now();
+    tracing::info!(
+        name = %req.name,
+        path = ?req.path,
+        "create_workspace: enter"
+    );
+    
     if req.name.trim().is_empty() {
+        tracing::error!("create_workspace: Workspace name cannot be empty");
         return Err(AppError::invalid_input("Workspace name cannot be empty"));
     }
     if req.name.len() > 255 {
+        tracing::error!(len = req.name.len(), "create_workspace: Workspace name too long");
         return Err(AppError::invalid_input("Workspace name too long (max 255 chars)"));
     }
 
     let path = req.path.clone().unwrap_or_default();
     if path.is_empty() {
+        tracing::error!("create_workspace: Path is missing");
         return Err(AppError::missing_field("path"));
     }
 
@@ -30,6 +52,7 @@ pub async fn create_workspace(
     let path_buf = std::path::PathBuf::from(&path);
     use std::path::Component;
     if path_buf.components().any(|c| matches!(c, Component::ParentDir)) {
+        tracing::error!(path = %path, "create_workspace: Path traversal detected");
         return Err(AppError::path_traversal());
     }
     // 多个 create_dir_all 卸载到阻塞线程池一次性完成
@@ -51,14 +74,28 @@ pub async fn create_workspace(
         Ok(())
     })
     .await
-    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
+    .map_err(|e| {
+        tracing::error!(error = %e, "create_workspace: spawn_blocking join failed");
+        AppError::internal(format!("spawn_blocking join failed: {}", e))
+    })??;
 
     // 创建后自动授权工作空间根路径，使 fs_* 命令立即可用
     registry.authorize(&path_buf)
-        .map_err(|e| AppError::internal(format!("Failed to authorize workspace: {}", e)))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "create_workspace: Failed to authorize workspace");
+            AppError::internal(format!("Failed to authorize workspace: {}", e))
+        })?;
 
-    let workspace = state.db.create_workspace(req)?;
-    tracing::info!(workspace_id = %workspace.id, "Workspace created and authorized");
+    let workspace = state.db.create_workspace(req).map_err(|e| {
+        tracing::error!(error = %e, "create_workspace: Failed to create workspace in DB");
+        e
+    })?;
+    
+    tracing::info!(
+        workspace_id = %workspace.id,
+        duration_ms = start.elapsed().as_millis(),
+        "create_workspace: exit"
+    );
     Ok(IpcResponse::created(workspace))
 }
 
@@ -66,9 +103,19 @@ pub async fn create_workspace(
 pub async fn list_workspaces(
     state: State<'_, DbState>,
 ) -> Result<IpcResponse<Vec<crate::infrastructure::db::types::Workspace>>, AppError> {
-    tracing::debug!("list_workspaces");
-    let workspaces = state.db.list_workspaces()?;
-    tracing::debug!(count = workspaces.len(), "Workspaces listed");
+    let start = Instant::now();
+    tracing::info!("list_workspaces: enter");
+    
+    let workspaces = state.db.list_workspaces().map_err(|e| {
+        tracing::error!(error = %e, "list_workspaces: Failed to list workspaces");
+        e
+    })?;
+    
+    tracing::info!(
+        count = workspaces.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "list_workspaces: exit"
+    );
     Ok(IpcResponse::ok(workspaces))
 }
 
@@ -77,13 +124,24 @@ pub async fn get_workspace(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<IpcResponse<crate::infrastructure::db::types::Workspace>, AppError> {
+    let start = Instant::now();
+    tracing::info!(workspace_id = %id, "get_workspace: enter");
+    
     validate_id_component(&id, "workspace_id")?;
-    tracing::debug!(workspace_id = %id, "get_workspace");
-    let workspace = state.db.get_workspace(&id)?
-        .ok_or_else(|| {
-            tracing::warn!(workspace_id = %id, "Workspace not found");
-            AppError::workspace_not_found()
-        })?;
+    
+    let workspace = state.db.get_workspace(&id).map_err(|e| {
+        tracing::error!(workspace_id = %id, error = %e, "get_workspace: Failed to get workspace");
+        e
+    })?.ok_or_else(|| {
+        tracing::error!(workspace_id = %id, "get_workspace: Workspace not found");
+        AppError::workspace_not_found()
+    })?;
+    
+    tracing::info!(
+        workspace_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "get_workspace: exit"
+    );
     Ok(IpcResponse::ok(workspace))
 }
 
@@ -93,9 +151,15 @@ pub async fn delete_workspace(
     pm_state: State<'_, ProjectMemoryState>,
     id: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    let start = Instant::now();
+    tracing::info!(workspace_id = %id, "delete_workspace: enter");
+    
     validate_id_component(&id, "workspace_id")?;
-    tracing::info!(workspace_id = %id, "delete_workspace");
-    let deleted = state.db.delete_workspace(&id)?;
+    
+    let deleted = state.db.delete_workspace(&id).map_err(|e| {
+        tracing::error!(workspace_id = %id, error = %e, "delete_workspace: Failed to delete workspace");
+        e
+    })?;
 
     // 级联清理 workspace 级 project_memory 文件(失败不阻塞 workspace 删除,
     // 仅记录警告 —— DB 已删除,文件残留可在后续 GC 中清理)
@@ -109,7 +173,12 @@ pub async fn delete_workspace(
         }
     }
 
-    tracing::info!(workspace_id = %id, deleted, "Workspace deleted (cascade sessions + project_memory)");
+    tracing::info!(
+        workspace_id = %id,
+        deleted,
+        duration_ms = start.elapsed().as_millis(),
+        "delete_workspace: exit"
+    );
     Ok(IpcResponse::ok(deleted))
 }
 
@@ -118,7 +187,20 @@ pub async fn touch_workspace(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<IpcResponse<()>, AppError> {
+    let start = Instant::now();
+    tracing::info!(workspace_id = %id, "touch_workspace: enter");
+    
     validate_id_component(&id, "workspace_id")?;
-    state.db.touch_workspace(&id)?;
+    
+    state.db.touch_workspace(&id).map_err(|e| {
+        tracing::error!(workspace_id = %id, error = %e, "touch_workspace: Failed to touch workspace");
+        e
+    })?;
+    
+    tracing::info!(
+        workspace_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "touch_workspace: exit"
+    );
     Ok(IpcResponse::ok(()))
 }

@@ -1,14 +1,11 @@
-// PromptPack 三层覆盖加载器。
-//
-// 加载顺序(project > user > builtin):
-// 1. project: <project_root>/prompt/<parts...>/<last>.md
-// 2. user:    <user_root>/prompt/<parts...>/<last>.md
-// 3. builtin: builtin_prompts() 中的对应条目
-//
-// promptId 形如 "longform.writer",拆分为 ["longform", "writer"],
-// 路径形如 prompt/longform/writer.md。
-//
-// append_prompt_pack_guidance: 把 prompt 内容追加到 base_prompt 末尾。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Prompt Pack - 提示包三层覆盖加载器
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 加载顺序（project > user > builtin）：
+//! 1. project：<project_root>/prompt/<parts...>/<last>.md
+//! 2. user：<user_root>/prompt/<parts...>/<last>.md
+//! 3. builtin：builtin_prompts() 中的对应条目
 
 use super::capability_builtin::builtin_prompts;
 use super::capability_types::{BuiltinPrompt, LoadedPromptPackPrompt, PromptSource};
@@ -127,7 +124,7 @@ impl PromptPackLoader {
     }
 }
 
-// ── 内部辅助 ─────────────────────────────────────────────────
+// ── 内部辅助函数 ────────────────────────────────────────────────────────
 
 fn normalize_prompt_id(prompt_id: &str) -> String {
     prompt_id.trim().to_lowercase()
@@ -158,7 +155,7 @@ fn read_text_if_exists(path: &Path) -> Result<Option<String>, AppError> {
     }
 }
 
-// ── 测试 ─────────────────────────────────────────────────────
+// ── 测试 ────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

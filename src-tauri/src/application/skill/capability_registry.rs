@@ -1,12 +1,10 @@
-// Capability Skill Registry。
-//
-// 职责:
-// 1. 合并 builtin + project + user + external 四源,按 id 去重
-// 2. 提供 listSkills / getSkill / resolveSkills 三个 API
-// 3. resolveSkills 三阶段解析:
-//    - forced:    requested_skills 中的 id 强制启用(忽略匹配)
-//    - candidate: candidate_skills 中的 id 经校验后自动启用
-//    - auto:      通过 sessionKind / instruction triggers 自动匹配
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Capability Registry - 能力技能注册表
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 合并 builtin + project + user + external 四源技能，按 id 去重。
+//! 提供 listSkills / getSkill / resolveSkills 三个 API。
+//! resolveSkills 三阶段解析：forced / candidate / auto。
 
 use super::capability_builtin::builtin_capability_skills;
 use super::capability_types::*;
@@ -123,7 +121,7 @@ impl CapabilitySkillRegistry {
     }
 }
 
-// ── 内部辅助 ─────────────────────────────────────────────────
+// ── 内部辅助函数 ────────────────────────────────────────────────────────
 
 fn dedupe_skills(skills: Vec<CapabilitySkillManifest>) -> Vec<CapabilitySkillManifest> {
     let mut by_id: HashMap<String, CapabilitySkillManifest> = HashMap::new();
@@ -192,7 +190,7 @@ fn matches_skill(skill: &CapabilitySkillManifest, input: &SkillResolutionInput) 
     })
 }
 
-// ── 测试 ─────────────────────────────────────────────────────
+// ── 测试 ────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

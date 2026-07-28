@@ -1,10 +1,8 @@
-// Capability Skill 类型定义。
-//
-// 与现有 SkillManager(SKILL.md + frontmatter 用户技能)并行存在,用于:
-// 1. 内置能力声明(longform-writing / open-world-play / interactive-film-authoring)
-// 2. contextNeeds 模型(protected/compressible tier + retrieval 策略)
-// 3. PromptPack 系统(project > user > builtin 三层覆盖)
-// 4. resolveSkills 三阶段解析(forced / candidate / auto-match)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Capability Types - 能力技能类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 用于内置能力声明、上下文需求模型、PromptPack 系统和技能解析。
 
 use serde::{Deserialize, Serialize};
 

@@ -1,22 +1,18 @@
-// Loop-Engineering IPC 命令 —— 前端 loop_* 命令的后端实现。
-//
-// 命令清单(与前端 src/features/loop/services/index.ts 对齐):
-// - loop_create_state:创建 loop state
-// - loop_get_states:列出 novel 的所有 loop states
-// - loop_get_state:获取单个 loop state
-// - loop_update_state:更新 loop state
-// - loop_delete_state:删除 loop state
-// - loop_pause:暂停 loop(设置 status=paused)
-// - loop_resume:恢复 loop(设置 status=idle)
-// - loop_get_run_logs:获取 loop_runs 列表(按 state_id 过滤)
-// - loop_get_patterns:获取所有 loop_patterns
-// - loop_upsert_pattern:创建或更新 pattern
-// - loop_delete_pattern:删除 user-defined pattern(builtin 不可删)
-//
-// 架构约束(AGENTS.md):
-// - IPC 层只做参数提取、校验、委托,不含业务逻辑
-// - 所有输入必须校验(类型、长度、格式、路径遍历)
-// - 返回 IpcResponse<T> 信封
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Commands - 循环引擎 IPC 命令
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供前端 loop_* 命令的后端实现：
+//! - loop_create_state：创建循环状态
+//! - loop_get_states：列出所有循环状态
+//! - loop_get_state：获取单个循环状态
+//! - loop_update_state：更新循环状态
+//! - loop_delete_state：删除循环状态
+//! - loop_pause/loop_resume：暂停/恢复循环
+//! - loop_get_run_logs：获取运行日志
+//! - loop_get_patterns：获取所有模式
+//! - loop_upsert_pattern：创建或更新模式
+//! - loop_delete_pattern：删除用户定义模式
 
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::db::stores::loop_pattern::LoopPatternRow;
@@ -33,7 +29,7 @@ use super::types::{
     LoopRunResultDto, LoopStateDto,
 };
 
-// ── 校验辅助 ────────────────────────────────────────────
+// ── 校验辅助函数 ────────────────────────────────────────────────────────
 
 fn validate_loop_status(status: &str) -> Result<(), AppError> {
     match status {
@@ -65,7 +61,7 @@ fn validate_risk_level(level: &str) -> Result<(), AppError> {
     }
 }
 
-// ── Row ↔ DTO 转换 ──────────────────────────────────────
+// ── Row 与 DTO 转换 ────────────────────────────────────────────────────────
 
 fn default_config() -> LoopConfigDto {
     LoopConfigDto {
@@ -214,7 +210,7 @@ fn run_row_to_log_dto(row: LoopRunRow) -> LoopRunLogDto {
     }
 }
 
-// ── IPC 命令 ────────────────────────────────────────────
+// ── IPC 命令实现 ────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn loop_create_state(
@@ -471,7 +467,6 @@ pub async fn loop_upsert_pattern(
     human_gates: Option<Vec<String>>,
     cost_config: Option<CostConfigDto>,
     skills_required: Option<Vec<String>>,
-    state_schema: Option<serde_json::Value>,
     is_active: Option<bool>,
 ) -> Result<IpcResponse<LoopPatternDto>, AppError> {
     // 校验
@@ -505,16 +500,6 @@ pub async fn loop_upsert_pattern(
     let human_gates_json = human_gates.map(|h| serde_json::to_string(&h).unwrap_or_else(|_| "[]".to_string()));
     let cost_config_json = cost_config.map(|c| serde_json::to_string(&c).unwrap_or_else(|_| "{}".to_string()));
     let skills_json = skills_required.map(|s| serde_json::to_string(&s).unwrap_or_else(|_| "[]".to_string()));
-    // TODO: state_schema 参数当前未持久化（loop_patterns 表无对应列）。
-    // 前端可传入但被显式丢弃，避免 unused 警告。未来加列后需序列化为 JSON 存入。
-    // 不用 `let _ = state_schema;` 静默吞掉——这里显式 log 便于排查"为何传入却不生效"。
-    if let Some(schema) = &state_schema {
-        tracing::warn!(
-            schema_keys = ?schema.as_object().map(|o| o.len()),
-            "state_schema provided but not yet persisted (unimplemented)"
-        );
-    }
-    let _ = state_schema;
 
     let row = LoopPatternRow {
         id: pattern_id.clone(),

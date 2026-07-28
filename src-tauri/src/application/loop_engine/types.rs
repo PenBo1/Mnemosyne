@@ -1,14 +1,9 @@
-// Loop-Engineering 应用层类型 —— 与前端 src/features/loop/types/loop.ts 对齐。
-//
-// 设计原则:
-// - 所有 DTO 使用 #[serde(rename_all = "camelCase")] 序列化为 camelCase
-// - 前端 types/loop.ts 使用 camelCase 字段名,与本文档对齐
-// - DB Row 类型(infrastructure/db/stores/)使用 snake_case,由本模块负责转换
-//
-// 类型映射:
-// - LoopStateDto ↔ LoopStateRow(DB) ↔ LoopState(前端)
-// - LoopPatternDto ↔ LoopPatternRow(DB) ↔ LoopPattern(前端)
-// - LoopRunLogDto ↔ LoopRunRow(DB) ↔ LoopRunLog(前端)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Types - 循环引擎类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 与前端类型对齐的 DTO 定义，使用 camelCase 序列化。
+//! DB Row 类型使用 snake_case，由本模块负责转换。
 
 use serde::{Deserialize, Serialize};
 
@@ -127,7 +122,7 @@ pub struct PhaseResultDto {
     pub duration_ms: u64,
 }
 
-// ── IPC 请求类型 ──────────────────────────────────────────
+// ── IPC 请求类型 ────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

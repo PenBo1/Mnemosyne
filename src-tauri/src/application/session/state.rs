@@ -1,5 +1,16 @@
 
+//! ═══════════════════════════════════════════════════════════════════════════
+//! State - 运行时状态管理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供书籍运行时状态的管理功能，包括：
+//! - 钩子状态管理
+//! - 事实状态管理
+//! - 章节摘要管理
+//! - 状态快照保存与回滚
+
 use std::path::PathBuf;
+use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::shared::error::AppError;
@@ -188,54 +199,111 @@ impl StateManager {
     }
 
     pub fn create_book(&self, config: &BookConfig) -> Result<(), AppError> {
+        let start = Instant::now();
+        tracing::info!(book_id = %config.id, "Creating book");
+
         let dir = self.book_dir(&config.id);
         std::fs::create_dir_all(dir.join("chapters"))
-            .map_err(|e| AppError::internal(format!("Failed to create chapters dir: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %config.id, error = %e, "Failed to create chapters dir");
+                AppError::internal(format!("Failed to create chapters dir: {}", e))
+            })?;
         std::fs::create_dir_all(dir.join("story/state"))
-            .map_err(|e| AppError::internal(format!("Failed to create story dir: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %config.id, error = %e, "Failed to create story dir");
+                AppError::internal(format!("Failed to create story dir: {}", e))
+            })?;
         std::fs::create_dir_all(dir.join("story/snapshots"))
-            .map_err(|e| AppError::internal(format!("Failed to create snapshots dir: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %config.id, error = %e, "Failed to create snapshots dir");
+                AppError::internal(format!("Failed to create snapshots dir: {}", e))
+            })?;
         std::fs::create_dir_all(dir.join("control"))
-            .map_err(|e| AppError::internal(format!("Failed to create control dir: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %config.id, error = %e, "Failed to create control dir");
+                AppError::internal(format!("Failed to create control dir: {}", e))
+            })?;
 
         let config_path = dir.join("book.json");
         let json = serde_json::to_string_pretty(config)
-            .map_err(|e| AppError::internal(format!("Failed to serialize config: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %config.id, error = %e, "Failed to serialize config");
+                AppError::internal(format!("Failed to serialize config: {}", e))
+            })?;
         std::fs::write(&config_path, json)
-            .map_err(|e| AppError::internal(format!("Failed to write config: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %config.id, path = %config_path.display(), error = %e, "Failed to write config");
+                AppError::internal(format!("Failed to write config: {}", e))
+            })?;
 
         let state = StoryState::default();
         self.save_state(&config.id, &state)?;
+
+        tracing::info!(
+            book_id = %config.id,
+            duration_ms = start.elapsed().as_millis() as u64,
+            "Book created"
+        );
         Ok(())
     }
 
     pub fn load_book_config(&self, book_id: &str) -> Result<BookConfig, AppError> {
+        tracing::debug!(book_id = %book_id, "Loading book config");
+
         let path = self.book_dir(book_id).join("book.json");
         let content = std::fs::read_to_string(&path)
-            .map_err(|e| AppError::internal(format!("Failed to read book config: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, path = %path.display(), error = %e, "Failed to read book config");
+                AppError::internal(format!("Failed to read book config: {}", e))
+            })?;
         serde_json::from_str(&content)
-            .map_err(|e| AppError::internal(format!("Failed to parse book config: {}", e)))
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, error = %e, "Failed to parse book config");
+                AppError::internal(format!("Failed to parse book config: {}", e))
+            })
     }
 
     pub fn load_state(&self, book_id: &str) -> Result<StoryState, AppError> {
+        tracing::debug!(book_id = %book_id, "Loading story state");
+
         let path = self.state_file(book_id);
-        if !path.exists() { return Ok(StoryState::default()); }
+        if !path.exists() {
+            tracing::debug!(book_id = %book_id, "State file not found, returning default");
+            return Ok(StoryState::default());
+        }
         let content = std::fs::read_to_string(&path)
-            .map_err(|e| AppError::internal(format!("Failed to read state: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, path = %path.display(), error = %e, "Failed to read state");
+                AppError::internal(format!("Failed to read state: {}", e))
+            })?;
         serde_json::from_str(&content)
-            .map_err(|e| AppError::internal(format!("Failed to parse state: {}", e)))
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, error = %e, "Failed to parse state");
+                AppError::internal(format!("Failed to parse state: {}", e))
+            })
     }
 
     pub fn save_state(&self, book_id: &str, state: &StoryState) -> Result<(), AppError> {
+        tracing::debug!(book_id = %book_id, "Saving story state");
+
         let path = self.state_file(book_id);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| AppError::internal(format!("Failed to create state dir: {}", e)))?;
+                .map_err(|e| {
+                    tracing::error!(book_id = %book_id, path = %path.display(), error = %e, "Failed to create state dir");
+                    AppError::internal(format!("Failed to create state dir: {}", e))
+                })?;
         }
         let json = serde_json::to_string_pretty(state)
-            .map_err(|e| AppError::internal(format!("Failed to serialize state: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, error = %e, "Failed to serialize state");
+                AppError::internal(format!("Failed to serialize state: {}", e))
+            })?;
         std::fs::write(&path, json)
-            .map_err(|e| AppError::internal(format!("Failed to write state: {}", e)))
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, path = %path.display(), error = %e, "Failed to write state");
+                AppError::internal(format!("Failed to write state: {}", e))
+            })
     }
 
     pub fn apply_and_save_delta(
@@ -244,6 +312,9 @@ impl StateManager {
         chapter: u32,
         delta: &RuntimeStateDelta,
     ) -> Result<StoryState, AppError> {
+        let start = Instant::now();
+        tracing::debug!(book_id = %book_id, chapter = chapter, "Applying delta");
+
         let mut state = self.load_state(book_id)?;
         for op in &delta.hook_ops {
             match op.op {
@@ -326,18 +397,36 @@ impl StateManager {
         }
         state.current_chapter = chapter;
         self.save_state(book_id, &state)?;
+
+        tracing::debug!(
+            book_id = %book_id,
+            chapter = chapter,
+            duration_ms = start.elapsed().as_millis() as u64,
+            "Delta applied"
+        );
         Ok(state)
     }
 
     pub fn save_snapshot(&self, book_id: &str, chapter: u32, state: &StoryState) -> Result<(), AppError> {
+        tracing::debug!(book_id = %book_id, chapter = chapter, "Saving snapshot");
+
         let dir = self.snapshots_dir(book_id);
         std::fs::create_dir_all(&dir)
-            .map_err(|e| AppError::internal(format!("Failed to create snapshots dir: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, path = %dir.display(), error = %e, "Failed to create snapshots dir");
+                AppError::internal(format!("Failed to create snapshots dir: {}", e))
+            })?;
         let path = dir.join(format!("chapter_{:04}.json", chapter));
         let json = serde_json::to_string_pretty(state)
-            .map_err(|e| AppError::internal(format!("Failed to serialize snapshot: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, chapter = chapter, error = %e, "Failed to serialize snapshot");
+                AppError::internal(format!("Failed to serialize snapshot: {}", e))
+            })?;
         std::fs::write(&path, json)
-            .map_err(|e| AppError::internal(format!("Failed to write snapshot: {}", e)))
+            .map_err(|e| {
+                tracing::error!(book_id = %book_id, path = %path.display(), error = %e, "Failed to write snapshot");
+                AppError::internal(format!("Failed to write snapshot: {}", e))
+            })
     }
 
     pub fn rollback_to_chapter(&self, book_id: &str, chapter: u32) -> Result<StoryState, AppError> {
