@@ -1,3 +1,11 @@
+// 全局 clippy 抑制配置
+// - IPC 命令和数据库操作常有 8-12 个参数（Tauri 命令模式）
+// - rusqlite 映射函数返回复杂元组类型
+// - 预留的 from_str 方法命名
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::should_implement_trait)]
+
 pub mod application;
 pub mod core;
 pub mod domain;
@@ -38,6 +46,7 @@ pub fn run() {
 
             crate::infrastructure::fs::fs_utils::init_logging(&data_dir.logs_dir());
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Mnemosyne starting");
+            tracing::info!("[agent] chat pipeline v2 initialized");
             tracing::info!(root = %data_dir.root().display(), "App data directory");
 
             // 先创建 DbState,以便克隆 Database 给 AgentEngine 与 SecurityKernel 持有
@@ -116,27 +125,54 @@ pub fn run() {
                     tracing::warn!(error = %e, "current_dir() failed, falling back to app data dir");
                     data_dir.root().to_path_buf()
                 });
-                crate::core::agent::engine::AgentEngine::new(
+                let engine = crate::core::agent::engine::AgentEngine::new(
                     registry,
                     db_for_agent,
                     data_dir.clone(),
                     workspace_root,
                     Some(hook_engine_arc),
-                )
+                );
+                // I1.5/I1.6：注入真实的 tool ops 实现（application/bridges 桥接 domain），
+                // 使 core/agent 工具不直接依赖 domain（架构约束）。
+                use crate::application::bridges::{
+                    BookEditOpsImpl, PipelineDelegateOpsImpl, ResearchOpsImpl,
+                };
+                use crate::core::agent::tools::book_ops::{
+                    BookEditOps, PipelineDelegateOps, ResearchOps,
+                };
+                let book_edit_ops: std::sync::Arc<dyn BookEditOps> =
+                    std::sync::Arc::new(BookEditOpsImpl::new(data_dir.clone()));
+                let pipeline_delegate_ops: std::sync::Arc<dyn PipelineDelegateOps> =
+                    std::sync::Arc::new(PipelineDelegateOpsImpl::new(data_dir.clone()));
+                let research_ops: std::sync::Arc<dyn ResearchOps> =
+                    std::sync::Arc::new(ResearchOpsImpl::new(data_dir.clone()));
+                engine.with_tool_ops(book_edit_ops, pipeline_delegate_ops, research_ops)
             };
 
-            // Pipeline SchedulerState（需要 AgentEngine + DataDir.books_dir）
+            // Pipeline SchedulerState（需要 AgentEngine + DataDir.books_dir + RadarScanOps）
             let scheduler_config = crate::domain::pipeline::scheduler::SchedulerConfig::default();
             let pipeline_config = crate::domain::pipeline::runner::PipelineConfig {
                 books_dir: data_dir.books_dir(),
                 ..Default::default()
             };
+            // I2.2：注入 RadarScanOps 真实实现，消除 pipeline → radar 横向依赖
+            let radar_ops: std::sync::Arc<dyn crate::domain::pipeline::radar_ops::RadarScanOps> =
+                std::sync::Arc::new(crate::application::bridges::RadarScanOpsImpl::new());
             let scheduler_state = crate::domain::pipeline::scheduler::SchedulerState::new(
                 pipeline_config,
                 scheduler_config,
                 agent_engine.clone(),
+                radar_ops,
             );
             app.manage(scheduler_state);
+
+            // I2.1：注入 InteractionPipelineOps 真实实现（application/bridges 桥接 domain::pipeline），
+            // 使 domain/interaction/runtime 不直接依赖 domain::pipeline（架构约束）。
+            app.manage(crate::domain::interaction::pipeline_ops::InteractionPipelineOpsState {
+                ops: std::sync::Arc::new(
+                    crate::application::bridges::InteractionPipelineOpsImpl::new(data_dir.clone()),
+                ),
+            });
 
             // 每日摘要任务 State(默认不启动,需用户在设置页开启)
             app.manage(crate::core::agent::daily_summary::DailySummaryState::new(
@@ -145,7 +181,14 @@ pub fn run() {
                 data_dir.clone(),
             ));
 
-            app.manage(crate::core::agent::commands::AgentState::new(agent_engine));
+            // 用户画像提供者：application/ 层读取 domain::user 并转换为 core/agent 快照，
+            // 注入 AgentState，使 core/agent 不直接依赖 domain::user（架构约束）。
+            let user_profile_provider =
+                crate::application::init::build_user_profile_provider(data_dir.clone());
+            app.manage(crate::core::agent::commands::AgentState::new(
+                agent_engine,
+                Some(user_profile_provider),
+            ));
 
             // Agent Registry —— 统一 Agent 元数据注册表（main + 15 pipeline + 3 subagent + 3 loopskill）
             app.manage(crate::core::agent::registry::AgentRegistryState::new());
@@ -153,12 +196,17 @@ pub fn run() {
             // SecurityKernel 定期清理（每 5 分钟清理过期的 policy/rate_limiter/audit/approval 条目）
             // 防止 RateStore / ApprovalStore 等无限增长导致内存泄漏
             //
-            // 注：此任务为 fire-and-forget，无 shutdown signal。Tauri 桌面应用退出时
-            // tokio runtime 会被 Builder::Drop 终止，所有 spawn 的任务随之丢弃。
+            // 注：setup 闭包在主线程同步执行，不在 Tokio runtime context 内，
+            // 直接 tokio::spawn 会 panic（"no reactor running"）。
+            // 必须用 tauri::async_runtime::spawn —— 它内部走 Tauri 管理的 runtime，
+            // 可在任意线程调用。
+            //
+            // 此任务为 fire-and-forget，无 shutdown signal。Tauri 桌面应用退出时
+            // runtime 会被 Builder::Drop 终止，所有 spawn 的任务随之丢弃。
             // cleanup 是幂等的纯内存操作，被强行中断不会留下不一致状态。
             {
                 let kernel_state = app.state::<SecurityKernelState>().inner().clone();
-                tokio::spawn(async move {
+                tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
                     interval.tick().await; // 跳过首次立即触发
                     loop {
@@ -201,6 +249,7 @@ pub fn run() {
             crate::infrastructure::stats::get_stats,
             crate::infrastructure::stats::get_daily_activity,
             crate::infrastructure::stats::get_ai_stats,
+            crate::infrastructure::stats::get_usage_stats,
             crate::security_kernel::commands::audit_events_query,
             crate::security_kernel::commands::audit_event_stats,
             crate::security_kernel::commands::audit_events_query_filtered,
@@ -211,6 +260,12 @@ pub fn run() {
             crate::security_kernel::commands::approval_grant,
             crate::security_kernel::commands::approval_reject,
             crate::security_kernel::commands::approval_cleanup_expired,
+            // PVE 命令（Prompt Validator Executor）
+            crate::security_kernel::commands::pve_validate_tool_call,
+            crate::security_kernel::commands::pve_get_injection_patterns,
+            crate::security_kernel::commands::pve_get_sensitive_surfaces,
+            crate::security_kernel::commands::pve_check_sensitive_path,
+            crate::security_kernel::commands::pve_scan_content,
             // Hook 系统命令（配置型 hook 管理 + 测试派发）
             crate::security_kernel::hooks::commands::hook_list,
             crate::security_kernel::hooks::commands::hook_register,
@@ -222,11 +277,13 @@ pub fn run() {
             crate::application::workspace::commands::delete_workspace,
             crate::application::workspace::commands::touch_workspace,
             crate::application::session::commands::session_create,
+            crate::application::session::commands::session_split,
             crate::application::session::commands::session_list,
             crate::application::session::commands::session_get,
             crate::application::session::commands::session_delete,
             crate::application::session::commands::session_messages,
             crate::application::session::commands::message_create,
+            crate::application::session::commands::session_search,
             crate::domain::user::commands::user_get_profile,
             crate::domain::user::commands::user_update_profile,
             crate::domain::user::learned_commands::learned_preferences_list,
@@ -321,26 +378,21 @@ pub fn run() {
             crate::domain::version::commands::version_diff,
             crate::domain::version::commands::version_diff_latest,
             crate::domain::version::commands::version_restore,
-            crate::infrastructure::memory::commands::memory_list,
-            crate::infrastructure::memory::commands::memory_search,
-            crate::infrastructure::memory::commands::memory_stats,
-            crate::infrastructure::memory::commands::memory_format_context,
-            crate::infrastructure::memory::commands::memory_create,
-            crate::infrastructure::memory::commands::memory_update,
-            crate::infrastructure::memory::commands::memory_delete,
-            crate::infrastructure::memory::commands::memory_retrieve_selection,
-            crate::infrastructure::memory::commands::memory_retrieve_for_chapter,
-            crate::infrastructure::memory::commands::memory_list_archives,
-            crate::infrastructure::memory::commands::memory_list_all_archives,
-            crate::infrastructure::memory::commands::memory_search_archives,
-            crate::infrastructure::memory::commands::memory_read_archive,
-            crate::infrastructure::memory::commands::memory_delete_archive,
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_date,
             crate::infrastructure::memory::short_term_commands::short_term_memory_for_session,
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_book,
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_range,
             crate::application::session::commands::short_term_memory_regenerate,
             crate::infrastructure::memory::short_term_commands::short_term_memory_stats,
+            crate::infrastructure::memory::commands_v2::core_memory_append,
+            crate::infrastructure::memory::commands_v2::core_memory_replace,
+            crate::infrastructure::memory::commands_v2::core_memory_load,
+            crate::infrastructure::memory::commands_v2::recall_memory_insert,
+            crate::infrastructure::memory::commands_v2::recall_memory_search,
+            crate::infrastructure::memory::commands_v2::archival_memory_insert,
+            crate::infrastructure::memory::commands_v2::archival_memory_search,
+            crate::infrastructure::memory::commands_v2::archival_memory_get,
+            crate::infrastructure::memory::commands_v2::archival_memory_delete,
             crate::infrastructure::project_memory::commands::project_memory_get,
             crate::infrastructure::project_memory::commands::project_memory_update,
             crate::infrastructure::project_memory::commands::project_memory_append,
@@ -357,17 +409,19 @@ pub fn run() {
             crate::infrastructure::fs::commands::fs_delete_file,
             crate::infrastructure::fs::commands::fs_exists,
             crate::infrastructure::fs::commands::fs_copy_file,
-            crate::domain::git::commands::git_check_installed,
-            crate::domain::git::commands::git_install,
+            crate::infrastructure::fs::commands::editor_read_file,
+            crate::infrastructure::fs::commands::editor_write_file,
             crate::domain::git::commands::git_init,
             crate::domain::git::commands::git_status,
             crate::domain::git::commands::git_log,
             crate::domain::git::commands::git_diff,
             crate::domain::git::commands::git_stage,
+            crate::domain::git::commands::git_unstage,
             crate::domain::git::commands::git_commit,
             crate::domain::git::commands::git_rollback,
             crate::domain::git::commands::git_get_config,
             crate::domain::git::commands::git_set_config,
+            crate::domain::git::commands::git_branches,
             crate::infrastructure::net::lm_ping,
             crate::core::agent::commands::chat_send_message,
             crate::core::agent::commands::chat_stop,
@@ -463,6 +517,9 @@ pub fn run() {
             crate::domain::pipeline::interactive_film::commands::film_export_html,
             crate::domain::pipeline::interactive_film::commands::film_export_ink,
             crate::domain::pipeline::interactive_film::commands::film_apply_delta,
+            // Process Monitor 命令
+            crate::infrastructure::process_monitor::commands::process_monitor_list,
+            crate::infrastructure::process_monitor::commands::process_monitor_summary,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

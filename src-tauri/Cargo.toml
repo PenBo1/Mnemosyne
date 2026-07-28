@@ -29,7 +29,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 tracing-appender = "0.2"
 rusqlite = { version = "0.31", features = ["bundled"] }
-rusqlite_migration = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 async-trait = "0.1"
@@ -49,26 +48,18 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
-similar = "2.4"
 sysinfo = "0.38"
-rig = { package = "rig-core", version = "0.39", default-features = false }
 thiserror = "2"
-schemars = "1"
+git2 = "0.19"
 dashmap = "6"
+lazy_static = "1"
+ignore = "0.4"
 # 文档解析: PDF / EPUB (HTML 用已有的 scraper)
 pdf-extract = "0.12"
 zip = "2"
 
 [dev-dependencies]
 tempfile = "3"
-
-# keyring: 跨平台密钥存储 (macOS Keychain / Windows Credential Manager)
-# Linux 走文件回退 (mode 0600), 不依赖 keyring crate
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", default-features = false, features = ["apple-native"] }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-keyring = { version = "3", default-features = false, features = ["windows-native"] }
 
 # 体积优化: LTO + 单 codegen-unit + 体积优先 + 去 unwind 表 + 剥离符号
 [profile.release]

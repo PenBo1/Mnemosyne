@@ -1,625 +1,488 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Git 操作 - 基于 git2 库实现
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::path::Path;
+use std::collections::HashMap;
 
+use git2::{
+    Repository, Oid, Signature, StatusOptions, ResetType,
+    BranchType,
+};
+use tracing::info;
+
+use super::types::*;
 use crate::shared::error::AppError;
 
-use super::detector::git_executable;
-use super::types::{
-    Commit, Diff, FileChange, FileDiff, GitConfig, GitInitResult, GitStatus, RollbackMode,
-};
+// ── 仓库初始化 ────────────────────────────────────────────────────────────────
 
-pub struct GitOperations;
-
-const MESSAGE_PLACEHOLDER: &str = "{message}";
-
-impl GitOperations {
-    pub async fn init(path: &Path) -> Result<GitInitResult, AppError> {
-        if path.join(".git").exists() {
-            return Ok(GitInitResult {
-                initialized: false,
-                path: path.to_string_lossy().to_string(),
-            });
-        }
-        run_git(path, &["init"]).await?;
-        tracing::info!(path = %path.display(), "Git repository initialized");
-        Ok(GitInitResult {
-            initialized: true,
+/// 初始化 Git 仓库
+pub fn init_repository(path: &Path) -> Result<GitInitResult, AppError> {
+    info!(path = %path.display(), "初始化 Git 仓库");
+    
+    if path.join(".git").exists() {
+        return Ok(GitInitResult {
+            initialized: false,
             path: path.to_string_lossy().to_string(),
-        })
+        });
     }
+    
+    Repository::init(path)
+        .map_err(|e| AppError::internal(format!("初始化仓库失败: {}", e)))?;
+    
+    info!(path = %path.display(), "Git 仓库初始化成功");
+    Ok(GitInitResult {
+        initialized: true,
+        path: path.to_string_lossy().to_string(),
+    })
+}
 
-    pub async fn status(path: &Path) -> Result<GitStatus, AppError> {
-        let output = run_git(path, &["status", "--porcelain=v1", "-b"]).await?;
-        Ok(parse_status(&output))
-    }
+/// 打开现有仓库
+fn open_repository(path: &Path) -> Result<Repository, AppError> {
+    Repository::discover(path)
+        .map_err(|e| AppError::not_found(format!("未找到 Git 仓库: {}", e)))
+}
 
-    pub async fn log(path: &Path, limit: u32) -> Result<Vec<Commit>, AppError> {
-        let limit_clamped = limit.clamp(1, 1000);
-        let limit_arg = format!("-n{}", limit_clamped);
-        let pretty_arg = "--pretty=format:%H\x1f%h\x1f%an\x1f%ae\x1f%aI\x1f%s";
-        let args: [&str; 3] = ["log", limit_arg.as_str(), pretty_arg];
-        let output = run_git(path, &args).await?;
-        Ok(parse_log(&output))
-    }
+// ── 状态查询 ────────────────────────────────────────────────────────────────
 
-    pub async fn diff(path: &Path, commit_hash: Option<&str>) -> Result<Diff, AppError> {
-        let numstat = if let Some(hash) = commit_hash {
-            run_git(path, &["show", "--numstat", "--pretty=format:", hash]).await?
-        } else {
-            run_git(path, &["diff", "--numstat", "HEAD"]).await?
-        };
-
-        let patch = if let Some(hash) = commit_hash {
-            let full = run_git(path, &["show", hash]).await?;
-            match full.find("diff --git") {
-                Some(idx) => full[idx..].to_string(),
-                None => String::new(),
-            }
-        } else {
-            run_git(path, &["diff", "HEAD"]).await?
-        };
-
-        Ok(parse_diff(&numstat, &patch))
-    }
-
-    pub async fn stage(path: &Path, files: &[String]) -> Result<(), AppError> {
-        if files.is_empty() {
-            return Err(AppError::invalid_input("No files to stage"));
+/// 获取仓库状态
+pub fn get_status(path: &Path) -> Result<GitStatus, AppError> {
+    let repo = open_repository(path)?;
+    
+    // 获取当前分支
+    let branch = get_current_branch(&repo)?;
+    
+    // 获取文件状态
+    let mut status_options = StatusOptions::new();
+    status_options
+        .include_untracked(true)
+        .include_ignored(false)
+        .include_unmodified(false)
+        .exclude_submodules(false)
+        .recurse_untracked_dirs(true);
+    
+    let statuses = repo.statuses(Some(&mut status_options))
+        .map_err(|e| AppError::internal(format!("获取状态失败: {}", e)))?;
+    
+    let mut files = Vec::new();
+    for entry in statuses.iter() {
+        let file_path = entry.path().unwrap_or("").to_string();
+        let status = status_from_git2(entry.status());
+        
+        // 跳过未修改的文件
+        if status == FileStatusType::Unmodified {
+            continue;
         }
-        let mut args: Vec<String> = vec!["add".to_string(), "--".to_string()];
-        args.extend(files.iter().cloned());
-        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        run_git(path, &arg_refs).await?;
-        Ok(())
+        
+        files.push(FileChange {
+            path: file_path,
+            status,
+        });
     }
+    
+    // 统计
+    let staged = files.iter().filter(|f| matches!(f.status, 
+        FileStatusType::Added | FileStatusType::Modified | FileStatusType::Deleted
+    )).count();
+    let unstaged = files.len() - staged;
+    
+    Ok(GitStatus {
+        branch,
+        files,
+        ahead: 0,
+        behind: 0,
+        staged,
+        unstaged,
+    })
+}
 
-    pub async fn commit(path: &Path, message: &str) -> Result<String, AppError> {
-        let config = Self::get_config(path).await?;
+/// 获取当前分支名
+fn get_current_branch(repo: &Repository) -> Result<String, AppError> {
+    let head = repo.head()
+        .map_err(|e| AppError::internal(format!("获取 HEAD 失败: {}", e)))?;
+    
+    let branch_name = head.shorthand()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "HEAD".to_string());
+    
+    Ok(branch_name)
+}
 
-        if config.auto_stage {
-            run_git(path, &["add", "-A"]).await?;
+/// 将 git2 状态转换为自定义状态
+fn status_from_git2(status: git2::Status) -> FileStatusType {
+    if status.is_index_new() { FileStatusType::Added }
+    else if status.is_index_modified() { FileStatusType::Modified }
+    else if status.is_index_deleted() { FileStatusType::Deleted }
+    else if status.is_wt_new() { FileStatusType::Untracked }
+    else if status.is_wt_modified() { FileStatusType::Modified }
+    else if status.is_wt_deleted() { FileStatusType::Deleted }
+    else if status.is_conflicted() { FileStatusType::Conflicted }
+    else { FileStatusType::Unmodified }
+}
+
+// ── 提交历史 ────────────────────────────────────────────────────────────────
+
+/// 获取提交历史
+pub fn get_log(path: &Path, limit: usize, skip: usize) -> Result<Vec<Commit>, AppError> {
+    let repo = open_repository(path)?;
+    
+    let mut revwalk = repo.revwalk()
+        .map_err(|e| AppError::internal(format!("创建 revwalk 失败: {}", e)))?;
+    
+    revwalk.push_head()
+        .map_err(|e| AppError::internal(format!("推送 HEAD 失败: {}", e)))?;
+    
+    let mut commits = Vec::new();
+    for (idx, oid_result) in revwalk.enumerate() {
+        if idx >= skip + limit {
+            break;
         }
-
-        let actual_message = match &config.commit_message_template {
-            Some(template) if template.contains(MESSAGE_PLACEHOLDER) => {
-                template.replace(MESSAGE_PLACEHOLDER, message)
-            }
-            Some(template) if !template.is_empty() => template.clone(),
-            _ => message.to_string(),
-        };
-
-        run_git(path, &["commit", "-m", &actual_message]).await?;
-
-        let hash = run_git(path, &["rev-parse", "HEAD"]).await?;
-        let hash = hash.trim().to_string();
-        tracing::info!(hash = %hash, "Commit created");
-        Ok(hash)
+        if idx < skip {
+            continue;
+        }
+        
+        let oid = oid_result
+            .map_err(|e| AppError::internal(format!("获取 OID 失败: {}", e)))?;
+        
+        let git_commit = repo.find_commit(oid)
+            .map_err(|e| AppError::internal(format!("查找提交失败: {}", e)))?;
+        
+        commits.push(commit_to_info(&git_commit));
     }
+    
+    Ok(commits)
+}
 
-    pub async fn rollback(
-        path: &Path,
-        commit_hash: &str,
-        mode: RollbackMode,
-    ) -> Result<(), AppError> {
-        validate_commit_hash(commit_hash)?;
-
-        let flag = match mode {
-            RollbackMode::Soft => "--soft",
-            RollbackMode::Hard => {
-                tracing::warn!(
-                    commit_hash,
-                    "Performing hard rollback — working tree changes will be discarded"
-                );
-                "--hard"
-            }
-        };
-
-        run_git(path, &["reset", flag, commit_hash]).await?;
-        Ok(())
-    }
-
-    pub async fn get_config(path: &Path) -> Result<GitConfig, AppError> {
-        let user_name = run_git_optional(path, &["config", "user.name"]).await?;
-        let user_email = run_git_optional(path, &["config", "user.email"]).await?;
-
-        let auto_stage = run_git_optional(path, &["config", "--bool", "mnemosyne.autoStage"])
-            .await?
-            .map(|v| v.trim().eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
-        let commit_message_template =
-            run_git_optional(path, &["config", "mnemosyne.commitMessageTemplate"]).await?;
-
-        let enable_remote = run_git_optional(path, &["config", "--bool", "mnemosyne.enableRemote"])
-            .await?
-            .map(|v| v.trim().eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
-        Ok(GitConfig {
-            user_name,
-            user_email,
-            auto_stage,
-            commit_message_template,
-            enable_remote,
-        })
-    }
-
-    pub async fn set_config(path: &Path, config: &GitConfig) -> Result<(), AppError> {
-        if let Some(name) = &config.user_name {
-            run_git(path, &["config", "user.name", name]).await?;
-        }
-        if let Some(email) = &config.user_email {
-            run_git(path, &["config", "user.email", email]).await?;
-        }
-
-        let auto_stage_str = if config.auto_stage { "true" } else { "false" };
-        run_git(path, &["config", "mnemosyne.autoStage", auto_stage_str]).await?;
-
-        match &config.commit_message_template {
-            Some(template) if !template.is_empty() => {
-                run_git(path, &["config", "mnemosyne.commitMessageTemplate", template]).await?;
-            }
-            _ => {
-                let _ = run_git_optional(path, &["config", "--unset", "mnemosyne.commitMessageTemplate"])
-                    .await;
-            }
-        }
-
-        let enable_remote_str = if config.enable_remote { "true" } else { "false" };
-        run_git(path, &["config", "mnemosyne.enableRemote", enable_remote_str]).await?;
-
-        Ok(())
-    }
-
-    /// 读取全局 git config（git config --global，不依赖具体仓库）
-    pub async fn get_global_config() -> Result<GitConfig, AppError> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| AppError::internal("Cannot determine home directory"))?;
-        let user_name = run_git_optional(&home, &["config", "--global", "user.name"]).await?;
-        let user_email = run_git_optional(&home, &["config", "--global", "user.email"]).await?;
-        let auto_stage = run_git_optional(&home, &["config", "--global", "--bool", "mnemosyne.autoStage"])
-            .await?
-            .map(|v| v.trim().eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        let commit_message_template =
-            run_git_optional(&home, &["config", "--global", "mnemosyne.commitMessageTemplate"]).await?;
-        let enable_remote = run_git_optional(&home, &["config", "--global", "--bool", "mnemosyne.enableRemote"])
-            .await?
-            .map(|v| v.trim().eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        Ok(GitConfig {
-            user_name,
-            user_email,
-            auto_stage,
-            commit_message_template,
-            enable_remote,
-        })
-    }
-
-    /// 写入全局 git config（git config --global）
-    pub async fn set_global_config(config: &GitConfig) -> Result<(), AppError> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| AppError::internal("Cannot determine home directory"))?;
-        if let Some(name) = &config.user_name {
-            if !name.trim().is_empty() {
-                run_git(&home, &["config", "--global", "user.name", name]).await?;
-            }
-        }
-        if let Some(email) = &config.user_email {
-            if !email.trim().is_empty() {
-                run_git(&home, &["config", "--global", "user.email", email]).await?;
-            }
-        }
-        let auto_stage_str = if config.auto_stage { "true" } else { "false" };
-        run_git(&home, &["config", "--global", "mnemosyne.autoStage", auto_stage_str]).await?;
-        match &config.commit_message_template {
-            Some(template) if !template.is_empty() => {
-                run_git(&home, &["config", "--global", "mnemosyne.commitMessageTemplate", template]).await?;
-            }
-            _ => {
-                let _ = run_git_optional(&home, &["config", "--global", "--unset", "mnemosyne.commitMessageTemplate"])
-                    .await;
-            }
-        }
-        let enable_remote_str = if config.enable_remote { "true" } else { "false" };
-        run_git(&home, &["config", "--global", "mnemosyne.enableRemote", enable_remote_str]).await?;
-        Ok(())
+/// 将 git2::Commit 转换为自定义 Commit 类型
+fn commit_to_info(git_commit: &git2::Commit) -> Commit {
+    let author = git_commit.author();
+    let author_name = author.name().unwrap_or("Unknown").to_string();
+    let author_email = author.email().unwrap_or("").to_string();
+    let commit_id = git_commit.id().to_string();
+    
+    Commit {
+        id: commit_id.clone(),
+        short_id: if commit_id.len() >= 7 { commit_id[..7].to_string() } else { commit_id },
+        message: git_commit.message().unwrap_or("").to_string(),
+        author: author_name,
+        author_email,
+        time: git_commit.time().seconds(),
     }
 }
 
-async fn run_git(path: &Path, args: &[&str]) -> Result<String, AppError> {
-    let output = tokio::process::Command::new(git_executable())
-        .current_dir(path)
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to spawn git");
-            AppError::internal("Failed to execute git command")
-        })?;
+// ── 差异查看 ────────────────────────────────────────────────────────────────
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = pick_first_nonempty(&[&stderr, &stdout]);
-        tracing::warn!(
-            args = ?args,
-            exit = ?output.status.code(),
-            stderr = %detail,
-            "Git command failed"
-        );
-        let sanitized = detail.lines().next().unwrap_or("git error").to_string();
-        return Err(AppError::internal(format!("Git command failed: {}", sanitized)));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-async fn run_git_optional(path: &Path, args: &[&str]) -> Result<Option<String>, AppError> {
-    let output = tokio::process::Command::new(git_executable())
-        .current_dir(path)
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to spawn git");
-            AppError::internal("Failed to execute git command")
-        })?;
-
-    if !output.status.success() {
-        return Ok(None);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        Ok(None)
+/// 获取工作区与暂存区的差异
+pub fn get_diff(path: &Path, staged: bool) -> Result<Diff, AppError> {
+    let repo = open_repository(path)?;
+    
+    let mut diff_options = git2::DiffOptions::new();
+    
+    let diff = if staged {
+        // 暂存区与 HEAD 的差异
+        let head = repo.head()
+            .map_err(|e| AppError::internal(format!("获取 HEAD 失败: {}", e)))?;
+        let head_tree = head.peel_to_tree()
+            .map_err(|e| AppError::internal(format!("获取 HEAD 树失败: {}", e)))?;
+        let mut index = repo.index()
+            .map_err(|e| AppError::internal(format!("获取索引失败: {}", e)))?;
+        let index_tree_id = index.write_tree()
+            .map_err(|e| AppError::internal(format!("写入树失败: {}", e)))?;
+        let index_tree = repo.find_tree(index_tree_id)
+            .map_err(|e| AppError::internal(format!("查找树失败: {}", e)))?;
+        
+        repo.diff_tree_to_tree(Some(&head_tree), Some(&index_tree), Some(&mut diff_options))
+            .map_err(|e| AppError::internal(format!("获取暂存差异失败: {}", e)))?
     } else {
-        Ok(Some(trimmed.to_string()))
-    }
+        // 工作区与暂存区的差异
+        repo.diff_index_to_workdir(None, Some(&mut diff_options))
+            .map_err(|e| AppError::internal(format!("获取工作区差异失败: {}", e)))?
+    };
+    
+    let mut files = Vec::new();
+    diff.foreach(
+        &mut |delta, _| {
+            let file_path = delta.new_file().path().unwrap_or(Path::new("")).to_string_lossy().to_string();
+            
+            files.push(FileDiff {
+                path: file_path,
+                additions: 0,
+                deletions: 0,
+                binary: delta.new_file().is_binary(),
+            });
+            true
+        },
+        None,
+        None,
+        None,
+    ).map_err(|e| AppError::internal(format!("遍历差异失败: {}", e)))?;
+    
+    Ok(Diff {
+        files: files.clone(),
+        total_additions: files.iter().map(|f| f.additions).sum(),
+        total_deletions: files.iter().map(|f| f.deletions).sum(),
+    })
 }
 
-fn pick_first_nonempty<'a>(candidates: &[&'a str]) -> &'a str {
-    for c in candidates {
-        let trimmed = c.trim();
-        if !trimmed.is_empty() {
-            return c;
-        }
-    }
-    ""
+/// 获取指定提交的差异
+pub fn get_commit_diff(path: &Path, commit_id: &str) -> Result<Diff, AppError> {
+    let repo = open_repository(path)?;
+    
+    let oid = Oid::from_str(commit_id)
+        .map_err(|e| AppError::bad_request(format!("无效的提交 ID: {}", e)))?;
+    
+    let git_commit = repo.find_commit(oid)
+        .map_err(|e| AppError::not_found(format!("提交不存在: {}", e)))?;
+    
+    let tree = git_commit.tree()
+        .map_err(|e| AppError::internal(format!("获取树失败: {}", e)))?;
+    
+    let parent = git_commit.parent(0).ok();
+    let parent_tree = parent.as_ref()
+        .map(|p| p.tree())
+        .transpose()
+        .map_err(|e| AppError::internal(format!("获取父树失败: {}", e)))?;
+    
+    let mut diff_options = git2::DiffOptions::new();
+    let parent_tree_ref: Option<&git2::Tree> = parent_tree.as_ref();
+    let diff = repo.diff_tree_to_tree(parent_tree_ref, Some(&tree), Some(&mut diff_options))
+        .map_err(|e| AppError::internal(format!("获取提交差异失败: {}", e)))?;
+    
+    let mut files = Vec::new();
+    diff.foreach(
+        &mut |delta, _| {
+            let file_path = delta.new_file().path().unwrap_or(Path::new("")).to_string_lossy().to_string();
+            files.push(FileDiff {
+                path: file_path,
+                additions: 0,
+                deletions: 0,
+                binary: delta.new_file().is_binary(),
+            });
+            true
+        },
+        None,
+        None,
+        None,
+    ).map_err(|e| AppError::internal(format!("遍历差异失败: {}", e)))?;
+    
+    Ok(Diff {
+        files,
+        total_additions: 0,
+        total_deletions: 0,
+    })
 }
 
-fn validate_commit_hash(hash: &str) -> Result<(), AppError> {
-    if hash.is_empty() {
-        return Err(AppError::invalid_input("Commit hash cannot be empty"));
+// ── 暂存操作 ────────────────────────────────────────────────────────────────
+
+/// 暂存文件
+pub fn stage_files(path: &Path, files: &[String]) -> Result<(), AppError> {
+    let repo = open_repository(path)?;
+    let mut index = repo.index()
+        .map_err(|e| AppError::internal(format!("获取索引失败: {}", e)))?;
+    
+    for file in files {
+        index.add_path(Path::new(file))
+            .map_err(|e| AppError::internal(format!("暂存文件失败 {}: {}", file, e)))?;
     }
-    if hash.len() < 4 || hash.len() > 40 {
-        return Err(AppError::invalid_input("Invalid commit hash length"));
-    }
-    if !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(AppError::invalid_input("Commit hash must be hexadecimal"));
-    }
+    
+    index.write()
+        .map_err(|e| AppError::internal(format!("写入索引失败: {}", e)))?;
+    
+    info!(files = ?files, "文件暂存成功");
     Ok(())
 }
 
-fn parse_status_char(c: char) -> &'static str {
-    match c {
-        'M' => "modified",
-        'A' => "added",
-        'D' => "deleted",
-        'R' => "renamed",
-        'C' => "copied",
-        'U' => "unmerged",
-        _ => "modified",
-    }
+/// 取消暂存文件
+pub fn unstage_files(path: &Path, files: &[String]) -> Result<(), AppError> {
+    let repo = open_repository(path)?;
+    
+    let head = repo.head()
+        .map_err(|e| AppError::internal(format!("获取 HEAD 失败: {}", e)))?;
+    let head_commit = head.peel_to_commit()
+        .map_err(|e| AppError::internal(format!("获取 HEAD 提交失败: {}", e)))?;
+    let head_tree = head_commit.tree()
+        .map_err(|e| AppError::internal(format!("获取 HEAD 树失败: {}", e)))?;
+    
+    // 使用 reset_default 取消暂存，需要传入 Object 引用
+    let head_obj = head_tree.as_object();
+    repo.reset_default(Some(head_obj), files.iter().map(|s| s.as_str()))
+        .map_err(|e| AppError::internal(format!("取消暂存失败: {}", e)))?;
+    
+    info!(files = ?files, "取消暂存成功");
+    Ok(())
 }
 
-fn parse_status(output: &str) -> GitStatus {
-    let mut branch = String::new();
-    let mut staged: Vec<FileChange> = Vec::new();
-    let mut unstaged: Vec<FileChange> = Vec::new();
-    let mut untracked: Vec<String> = Vec::new();
+// ── 提交操作 ────────────────────────────────────────────────────────────────
 
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("## ") {
-            let after = rest.strip_prefix("No commits yet on ").unwrap_or(rest);
-            let name = after
-                .split("...")
-                .next()
-                .unwrap_or(after)
-                .split(' ')
-                .next()
-                .unwrap_or(after);
-            branch = name.to_string();
-            continue;
-        }
-
-        if let Some(rest) = line.strip_prefix("?? ") {
-            untracked.push(rest.to_string());
-            continue;
-        }
-
-        let bytes = line.as_bytes();
-        if bytes.len() < 3 {
-            continue;
-        }
-        let x = bytes[0] as char;
-        let y = bytes[1] as char;
-        let path_part = &line[3..];
-
-        let resolved = match path_part.find(" -> ") {
-            Some(idx) => path_part[idx + 4..].to_string(),
-            None => path_part.to_string(),
-        };
-
-        if x != ' ' && x != '?' {
-            staged.push(FileChange {
-                path: resolved.clone(),
-                status: parse_status_char(x).to_string(),
-                staged: true,
-            });
-        }
-        if y != ' ' && y != '?' {
-            unstaged.push(FileChange {
-                path: resolved,
-                status: parse_status_char(y).to_string(),
-                staged: false,
-            });
-        }
-    }
-
-    let is_clean = staged.is_empty() && unstaged.is_empty() && untracked.is_empty();
-
-    GitStatus {
-        branch,
-        staged,
-        unstaged,
-        untracked,
-        is_clean,
-    }
+/// 提交更改
+pub fn commit_changes(path: &Path, message: &str) -> Result<String, AppError> {
+    let repo = open_repository(path)?;
+    
+    // 获取签名
+    let signature = get_signature(&repo)?;
+    
+    // 获取树
+    let mut index = repo.index()
+        .map_err(|e| AppError::internal(format!("获取索引失败: {}", e)))?;
+    
+    let tree_id = index.write_tree()
+        .map_err(|e| AppError::internal(format!("写入树失败: {}", e)))?;
+    let tree = repo.find_tree(tree_id)
+        .map_err(|e| AppError::internal(format!("查找树失败: {}", e)))?;
+    
+    // 获取父提交
+    let parent = repo.head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok());
+    
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    
+    // 创建提交
+    let commit_id = repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &parents)
+        .map_err(|e| AppError::internal(format!("提交失败: {}", e)))?;
+    
+    info!(commit_id = %commit_id, message, "提交成功");
+    Ok(commit_id.to_string())
 }
 
-fn parse_log(output: &str) -> Vec<Commit> {
-    let mut commits = Vec::new();
-    for line in output.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = line.splitn(6, '\x1f').collect();
-        if parts.len() < 6 {
-            continue;
-        }
-        commits.push(Commit {
-            hash: parts[0].to_string(),
-            short_hash: parts[1].to_string(),
-            author: parts[2].to_string(),
-            email: parts[3].to_string(),
-            date: parts[4].to_string(),
-            message: parts[5].to_string(),
-        });
-    }
-    commits
+/// 获取签名（优先使用仓库配置，其次使用默认值）
+fn get_signature(repo: &Repository) -> Result<Signature<'static>, AppError> {
+    let signature = repo.signature()
+        .map_err(|e| AppError::internal(format!("获取签名失败: {}", e)))?;
+    
+    // 复制签名数据到 'static 生命周期
+    let name = signature.name().unwrap_or("Mnemosyne").to_string();
+    let email = signature.email().unwrap_or("mnemosyne@local").to_string();
+    
+    Signature::now(&name, &email)
+        .map_err(|e| AppError::internal(format!("创建签名失败: {}", e)))
 }
 
-fn parse_diff(numstat: &str, patch: &str) -> Diff {
-    let mut files: Vec<FileDiff> = Vec::new();
-    for line in numstat.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 3 {
-            continue;
-        }
-        let additions = parts[0].parse::<u32>().unwrap_or(0);
-        let deletions = parts[1].parse::<u32>().unwrap_or(0);
-        let raw_path = parts[2];
-        let path = match raw_path.find("=>") {
-            Some(idx) => raw_path[idx + 2..].trim().trim_matches('"').to_string(),
-            None => raw_path.to_string(),
-        };
-        files.push(FileDiff {
-            path,
-            additions,
-            deletions,
-            patch: String::new(),
-        });
-    }
+// ── 回滚操作 ────────────────────────────────────────────────────────────────
 
-    let mut current_path: Option<String> = None;
-    let mut current_patch = String::new();
-    for line in patch.lines() {
-        if line.starts_with("diff --git ") {
-            if let Some(p) = current_path.take() {
-                if let Some(fd) = files.iter_mut().find(|f| f.path == p) {
-                    fd.patch = std::mem::take(&mut current_patch);
+/// 回滚到指定提交
+pub fn rollback(path: &Path, commit_id: &str, mode: RollbackMode) -> Result<(), AppError> {
+    let repo = open_repository(path)?;
+    
+    let oid = Oid::from_str(commit_id)
+        .map_err(|e| AppError::bad_request(format!("无效的提交 ID: {}", e)))?;
+    
+    let git_commit = repo.find_commit(oid)
+        .map_err(|e| AppError::not_found(format!("提交不存在: {}", e)))?;
+    
+    let reset_type = match mode {
+        RollbackMode::Soft => ResetType::Soft,
+        RollbackMode::Mixed => ResetType::Mixed,
+        RollbackMode::Hard => ResetType::Hard,
+    };
+    
+    let commit_obj = git_commit.as_object();
+    repo.reset(commit_obj, reset_type, None)
+        .map_err(|e| AppError::internal(format!("回滚失败: {}", e)))?;
+    
+    info!(commit_id, mode = ?mode, "回滚成功");
+    Ok(())
+}
+
+// ── 配置操作 ────────────────────────────────────────────────────────────────
+
+/// 获取 Git 配置
+pub fn get_config(path: &Path, key: &str, global: bool) -> Result<Option<String>, AppError> {
+    let config = if global {
+        git2::Config::open_default()
+            .map_err(|e| AppError::internal(format!("打开全局配置失败: {}", e)))?
+    } else {
+        let repo = open_repository(path)?;
+        repo.config()
+            .map_err(|e| AppError::internal(format!("打开仓库配置失败: {}", e)))?
+    };
+    
+    let value = config.get_string(key).ok();
+    Ok(value)
+}
+
+/// 设置 Git 配置
+pub fn set_config(path: &Path, key: &str, value: &str, global: bool) -> Result<(), AppError> {
+    if global {
+        let mut config = git2::Config::open_default()
+            .map_err(|e| AppError::internal(format!("打开全局配置失败: {}", e)))?;
+        
+        config.set_str(key, value)
+            .map_err(|e| AppError::internal(format!("设置配置失败: {}", e)))?;
+    } else {
+        let repo = open_repository(path)?;
+        let mut config = repo.config()
+            .map_err(|e| AppError::internal(format!("打开仓库配置失败: {}", e)))?;
+        
+        config.set_str(key, value)
+            .map_err(|e| AppError::internal(format!("设置配置失败: {}", e)))?;
+    }
+    
+    info!(key, value, global, "配置设置成功");
+    Ok(())
+}
+
+/// 获取所有配置
+pub fn get_all_config(path: &Path) -> Result<GitConfig, AppError> {
+    let repo = open_repository(path)?;
+    let config = repo.config()
+        .map_err(|e| AppError::internal(format!("打开仓库配置失败: {}", e)))?;
+    
+    let mut result = HashMap::new();
+    
+    // 获取常用配置项
+    if let Ok(name) = config.get_string("user.name") {
+        result.insert("user.name".to_string(), name);
+    }
+    if let Ok(email) = config.get_string("user.email") {
+        result.insert("user.email".to_string(), email);
+    }
+    
+    // 尝试获取其他配置项
+    let entries = config.entries(None)
+        .map_err(|e| AppError::internal(format!("获取配置条目失败: {}", e)))?;
+    
+    // 手动迭代 ConfigEntries
+    let mut iter = entries;
+    while let Some(entry_result) = iter.next() {
+        match entry_result {
+            Ok(entry) => {
+                if let Some(name) = entry.name() {
+                    if let Some(value) = entry.value() {
+                        result.insert(name.to_string(), value.to_string());
+                    }
                 }
             }
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            let b_part = parts.get(3).or_else(|| parts.get(2));
-            if let Some(b_raw) = b_part {
-                let b_path = b_raw.strip_prefix("b/").unwrap_or(b_raw);
-                current_path = Some(b_path.to_string());
+            Err(e) => {
+                tracing::warn!(error = %e, "获取配置条目时出错");
+                continue;
             }
         }
-        if current_path.is_some() {
-            current_patch.push_str(line);
-            current_patch.push('\n');
-        }
     }
-    if let Some(p) = current_path.take() {
-        if let Some(fd) = files.iter_mut().find(|f| f.path == p) {
-            fd.patch = current_patch;
-        }
-    }
-
-    Diff { files }
+    
+    Ok(GitConfig {
+        user_name: result.get("user.name").cloned(),
+        user_email: result.get("user.email").cloned(),
+        custom: result,
+    })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// ── 分支操作 ────────────────────────────────────────────────────────────────
 
-    #[test]
-    fn test_validate_commit_hash_valid_short() {
-        assert!(validate_commit_hash("abc1234").is_ok());
+/// 获取所有分支
+pub fn get_branches(path: &Path) -> Result<Vec<String>, AppError> {
+    let repo = open_repository(path)?;
+    
+    let branches = repo.branches(Some(BranchType::Local))
+        .map_err(|e| AppError::internal(format!("获取分支失败: {}", e)))?;
+    
+    let mut result = Vec::new();
+    for branch_result in branches {
+        let (branch, _) = branch_result.map_err(|e| AppError::internal(format!("获取分支失败: {}", e)))?;
+        if let Some(name) = branch.name().map_err(|e| AppError::internal(format!("获取分支名失败: {}", e)))? {
+            result.push(name.to_string());
+        }
     }
-
-    #[test]
-    fn test_validate_commit_hash_valid_full() {
-        let hash = "0123456789abcdef0123456789abcdef01234567";
-        assert!(validate_commit_hash(hash).is_ok());
-    }
-
-    #[test]
-    fn test_validate_commit_hash_too_short() {
-        assert!(validate_commit_hash("ab").is_err());
-    }
-
-    #[test]
-    fn test_validate_commit_hash_too_long() {
-        let hash = "0123456789abcdef0123456789abcdef0123456789";
-        assert!(validate_commit_hash(hash).is_err());
-    }
-
-    #[test]
-    fn test_validate_commit_hash_non_hex() {
-        assert!(validate_commit_hash("xyz1234").is_err());
-    }
-
-    #[test]
-    fn test_validate_commit_hash_empty() {
-        assert!(validate_commit_hash("").is_err());
-    }
-
-    #[test]
-    fn test_parse_status_clean() {
-        let out = "## main\n";
-        let s = parse_status(out);
-        assert_eq!(s.branch, "main");
-        assert!(s.is_clean);
-    }
-
-    #[test]
-    fn test_parse_status_with_changes() {
-        let out = "## main\nM  staged_modified.txt\n M unstaged_modified.txt\nA  staged_added.txt\nD  staged_deleted.txt\n?? untracked.txt\n";
-        let s = parse_status(out);
-        assert_eq!(s.branch, "main");
-        assert!(!s.is_clean);
-        assert_eq!(s.staged.len(), 3);
-        assert_eq!(s.unstaged.len(), 1);
-        assert_eq!(s.untracked.len(), 1);
-        assert_eq!(s.untracked[0], "untracked.txt");
-        assert_eq!(s.unstaged[0].path, "unstaged_modified.txt");
-        assert_eq!(s.unstaged[0].status, "modified");
-    }
-
-    #[test]
-    fn test_parse_status_no_commits_yet() {
-        let out = "## No commits yet on main\n?? new_file.txt\n";
-        let s = parse_status(out);
-        assert_eq!(s.branch, "main");
-        assert_eq!(s.untracked.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_status_rename() {
-        let out = "## main\nR  old_name.txt -> new_name.txt\n";
-        let s = parse_status(out);
-        assert_eq!(s.staged.len(), 1);
-        assert_eq!(s.staged[0].path, "new_name.txt");
-        assert_eq!(s.staged[0].status, "renamed");
-    }
-
-    #[test]
-    fn test_parse_status_branch_with_upstream() {
-        let out = "## main...origin/main [ahead 1]\n";
-        let s = parse_status(out);
-        assert_eq!(s.branch, "main");
-    }
-
-    #[test]
-    fn test_parse_log_basic() {
-        let out = "abc123def456789abc123def456789abc123def4\x1fabc123d\x1fAlice\x1falice@example.com\x1f2024-01-15T10:30:00+08:00\x1fInitial commit";
-        let commits = parse_log(out);
-        assert_eq!(commits.len(), 1);
-        let c = &commits[0];
-        assert_eq!(c.short_hash, "abc123d");
-        assert_eq!(c.author, "Alice");
-        assert_eq!(c.email, "alice@example.com");
-        assert_eq!(c.message, "Initial commit");
-    }
-
-    #[test]
-    fn test_parse_log_message_with_separator() {
-        let out = "hash\x1fshort\x1fBob\x1fbob@example.com\x1f2024-01-15T10:30:00+08:00\x1fFix bug | important";
-        let commits = parse_log(out);
-        assert_eq!(commits.len(), 1);
-        assert_eq!(commits[0].message, "Fix bug | important");
-    }
-
-    #[test]
-    fn test_parse_log_multiple_commits() {
-        let out = "h1\x1fs1\x1fA\x1fa@x\x1f2024-01-01T00:00:00+08:00\x1fone\nh2\x1fs2\x1fB\x1fb@x\x1f2024-01-02T00:00:00+08:00\x1ftwo";
-        let commits = parse_log(out);
-        assert_eq!(commits.len(), 2);
-        assert_eq!(commits[0].message, "one");
-        assert_eq!(commits[1].message, "two");
-    }
-
-    #[test]
-    fn test_parse_diff_numstat_only() {
-        let numstat = "5\t2\tsrc/main.rs\n3\t0\tREADME.md\n";
-        let patch = "";
-        let d = parse_diff(numstat, patch);
-        assert_eq!(d.files.len(), 2);
-        assert_eq!(d.files[0].path, "src/main.rs");
-        assert_eq!(d.files[0].additions, 5);
-        assert_eq!(d.files[0].deletions, 2);
-        assert_eq!(d.files[1].path, "README.md");
-        assert_eq!(d.files[1].additions, 3);
-        assert_eq!(d.files[1].deletions, 0);
-    }
-
-    #[test]
-    fn test_parse_diff_with_patch() {
-        let numstat = "1\t1\tsrc/main.rs\n";
-        let patch = "diff --git a/src/main.rs b/src/main.rs\nindex 123..456 789\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,2 +1,2 @@\n-old line\n+new line\n";
-        let d = parse_diff(numstat, patch);
-        assert_eq!(d.files.len(), 1);
-        let f = &d.files[0];
-        assert_eq!(f.path, "src/main.rs");
-        assert!(f.patch.contains("diff --git a/src/main.rs b/src/main.rs"));
-        assert!(f.patch.contains("+new line"));
-        assert!(f.patch.contains("-old line"));
-    }
-
-    #[test]
-    fn test_parse_diff_rename_in_numstat() {
-        let numstat = "0\t0\told_name.txt => new_name.txt\n";
-        let d = parse_diff(numstat, "");
-        assert_eq!(d.files.len(), 1);
-        assert_eq!(d.files[0].path, "new_name.txt");
-    }
-
-    #[test]
-    fn test_parse_diff_binary_file() {
-        let numstat = "-\t-\timage.png\n";
-        let d = parse_diff(numstat, "");
-        assert_eq!(d.files.len(), 1);
-        assert_eq!(d.files[0].additions, 0);
-        assert_eq!(d.files[0].deletions, 0);
-    }
-
-    #[test]
-    fn test_parse_status_char_mapping() {
-        assert_eq!(parse_status_char('M'), "modified");
-        assert_eq!(parse_status_char('A'), "added");
-        assert_eq!(parse_status_char('D'), "deleted");
-        assert_eq!(parse_status_char('R'), "renamed");
-        assert_eq!(parse_status_char('C'), "copied");
-        assert_eq!(parse_status_char('U'), "unmerged");
-        assert_eq!(parse_status_char('X'), "modified");
-    }
+    
+    Ok(result)
 }

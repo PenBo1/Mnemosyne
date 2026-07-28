@@ -1,35 +1,25 @@
-use std::path::PathBuf;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Git 命令 - Git 模块 IPC 命令
+//! ═══════════════════════════════════════════════════════════════════════════
 
-use crate::domain::git::detector::detect_git;
-use crate::domain::git::installer::{install_git, installer_command};
-use crate::domain::git::operations::GitOperations;
+use std::path::PathBuf;
+use std::time::Instant;
+
+use crate::domain::git::operations::{
+    init_repository, get_status, get_log, get_diff, get_commit_diff,
+    stage_files, unstage_files, commit_changes, rollback,
+    get_config, set_config, get_all_config, get_branches,
+};
 use crate::domain::git::types::{
-    Commit, Diff, GitConfig, GitInitResult, GitStatus,
-    InstallResult, RollbackMode,
+    Commit, Diff, GitConfig, GitInitResult, GitStatus, RollbackMode,
 };
 use crate::shared::error::{AppError, IpcResponse};
-use crate::security_kernel::{
-    SecurityKernelState, OperationContext,
-    WorkspaceId, UserId, SessionId,
-};
-use crate::security_kernel::permission::{Operation, ShellScope, GitOperation};
-use tauri::State;
+
+// ── 常量定义 ────────────────────────────────────────────────────────────────
 
 const MAX_PATH_LEN: usize = 4096;
 
-fn create_operation_context(workspace_id: Option<String>) -> OperationContext {
-    let workspace = workspace_id
-        .and_then(|s| uuid::Uuid::parse_str(&s).ok())
-        .map(WorkspaceId)
-        .unwrap_or_else(|| WorkspaceId(uuid::Uuid::nil()));
-    
-    OperationContext {
-        workspace,
-        user: UserId(uuid::Uuid::nil()),
-        session: SessionId(uuid::Uuid::nil()),
-        approval_token: None,
-    }
-}
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 fn validate_workspace_path(workspace_path: &str) -> Result<PathBuf, AppError> {
     if workspace_path.trim().is_empty() {
@@ -39,7 +29,7 @@ fn validate_workspace_path(workspace_path: &str) -> Result<PathBuf, AppError> {
         return Err(AppError::invalid_input("Workspace path too long"));
     }
     let path_buf = PathBuf::from(workspace_path);
-    // 路径遍历防护:任一组件为 ParentDir 即拒绝(避免误判含 ".." 的合法路径名)
+    // 路径遍历防护
     if path_buf
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
@@ -55,150 +45,74 @@ fn validate_workspace_path(workspace_path: &str) -> Result<PathBuf, AppError> {
     Ok(path_buf)
 }
 
-#[tauri::command]
-pub async fn git_check_installed(
-    kernel_state: State<'_, SecurityKernelState>,
-) -> Result<IpcResponse<bool>, AppError> {
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git_readonly(),
-        command: "git".to_string(),
-        args: vec!["--version".to_string()],
-    };
+// ── IPC 命令 ────────────────────────────────────────────────────────────────
 
-    let kernel = kernel_state.kernel();
-    let version = kernel.execute_async("git_check_installed", &op, &ctx, || async {
-        Ok(detect_git().await)
-    }).await?;
-    Ok(IpcResponse::ok(version.is_some()))
-}
-
-#[tauri::command]
-pub async fn git_install(
-    kernel_state: State<'_, SecurityKernelState>,
-) -> Result<IpcResponse<InstallResult>, AppError> {
-    tracing::info!("Starting git installation");
-
-    let (program, args) = installer_command();
-    let ctx = create_operation_context(None);
-    // 安装 git 属于 git 相关的高风险 Shell 操作；用 Clone 语义表示“获取/建立 git”。
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Clone]),
-        command: program.to_string(),
-        args: args.iter().map(|s| s.to_string()).collect(),
-    };
-
-    let kernel = kernel_state.kernel();
-    let result = kernel.execute_async("git_install", &op, &ctx, || async {
-        Ok(install_git().await)
-    }).await?;
-
-    if result.success {
-        tracing::info!(version = ?result.version, "Git installation succeeded");
-    } else {
-        tracing::warn!(message = %result.message, "Git installation failed");
-    }
-    Ok(IpcResponse::ok(result))
-}
-
+/// 初始化 Git 仓库
 #[tauri::command]
 pub async fn git_init(
     workspace_path: String,
-    kernel_state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<GitInitResult>, AppError> {
+    let start = Instant::now();
     let path = validate_workspace_path(&workspace_path)?;
     tracing::debug!(path = %path.display(), "git_init");
 
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Clone]),
-        command: "git".to_string(),
-        args: vec!["init".to_string()],
-    };
+    let result = init_repository(&path)?;
 
-    let kernel = kernel_state.kernel();
-    let result = kernel.execute_async("git_init", &op, &ctx, || async {
-        GitOperations::init(&path).await
-    }).await?;
-
+    tracing::info!(
+        initialized = result.initialized,
+        duration_ms = start.elapsed().as_millis(),
+        "git_init: exit"
+    );
     Ok(IpcResponse::ok(result))
 }
 
+/// 获取 Git 状态
 #[tauri::command]
 pub async fn git_status(
     workspace_path: String,
-    kernel_state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<GitStatus>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
-
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Status]),
-        command: "git".to_string(),
-        args: vec!["status".to_string()],
-    };
-
-    let kernel = kernel_state.kernel();
-    let status = kernel.execute_async("git_status", &op, &ctx, || async {
-        GitOperations::status(&path).await
-    }).await?;
-
+    let status = get_status(&path)?;
     Ok(IpcResponse::ok(status))
 }
 
+/// 获取提交历史
 #[tauri::command]
 pub async fn git_log(
     workspace_path: String,
-    limit: Option<u32>,
-    kernel_state: State<'_, SecurityKernelState>,
+    limit: Option<usize>,
+    skip: Option<usize>,
 ) -> Result<IpcResponse<Vec<Commit>>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
     let limit = limit.unwrap_or(50);
-
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Log]),
-        command: "git".to_string(),
-        args: vec!["log".to_string()],
-    };
-
-    let kernel = kernel_state.kernel();
-    let commits = kernel.execute_async("git_log", &op, &ctx, || async {
-        GitOperations::log(&path, limit).await
-    }).await?;
-
+    let skip = skip.unwrap_or(0);
+    let commits = get_log(&path, limit, skip)?;
     Ok(IpcResponse::ok(commits))
 }
 
+/// 获取差异
 #[tauri::command]
 pub async fn git_diff(
     workspace_path: String,
+    staged: Option<bool>,
     commit_hash: Option<String>,
-    kernel_state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<Diff>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
-    let hash_ref = commit_hash.as_deref();
-
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Diff]),
-        command: "git".to_string(),
-        args: vec!["diff".to_string()],
+    
+    let diff = if let Some(hash) = commit_hash {
+        get_commit_diff(&path, &hash)?
+    } else {
+        get_diff(&path, staged.unwrap_or(false))?
     };
-
-    let kernel = kernel_state.kernel();
-    let diff = kernel.execute_async("git_diff", &op, &ctx, || async {
-        GitOperations::diff(&path, hash_ref).await
-    }).await?;
-
+    
     Ok(IpcResponse::ok(diff))
 }
 
+/// 暂存文件
 #[tauri::command]
 pub async fn git_stage(
     workspace_path: String,
     paths: Vec<String>,
-    kernel_state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<()>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
     if paths.is_empty() {
@@ -219,26 +133,44 @@ pub async fn git_stage(
         }
     }
 
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Commit]),
-        command: "git".to_string(),
-        args: vec!["add".to_string()],
-    };
-
-    let kernel = kernel_state.kernel();
-    kernel.execute_async("git_stage", &op, &ctx, || async {
-        GitOperations::stage(&path, &paths).await
-    }).await?;
-
+    stage_files(&path, &paths)?;
     Ok(IpcResponse::no_content())
 }
 
+/// 取消暂存文件
+#[tauri::command]
+pub async fn git_unstage(
+    workspace_path: String,
+    paths: Vec<String>,
+) -> Result<IpcResponse<()>, AppError> {
+    let path = validate_workspace_path(&workspace_path)?;
+    if paths.is_empty() {
+        return Err(AppError::invalid_input("paths cannot be empty"));
+    }
+    for p in &paths {
+        if p.is_empty() {
+            return Err(AppError::invalid_input("path entry cannot be empty"));
+        }
+        if PathBuf::from(p)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(AppError::path_traversal());
+        }
+        if p.len() > MAX_PATH_LEN {
+            return Err(AppError::invalid_input("path entry too long"));
+        }
+    }
+
+    unstage_files(&path, &paths)?;
+    Ok(IpcResponse::no_content())
+}
+
+/// 提交变更
 #[tauri::command]
 pub async fn git_commit(
     workspace_path: String,
     message: String,
-    kernel_state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<String>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
     if message.trim().is_empty() {
@@ -248,27 +180,16 @@ pub async fn git_commit(
         return Err(AppError::invalid_input("Commit message too long (max 8192 chars)"));
     }
 
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Commit]),
-        command: "git".to_string(),
-        args: vec!["commit".to_string()],
-    };
-
-    let kernel = kernel_state.kernel();
-    let hash = kernel.execute_async("git_commit", &op, &ctx, || async {
-        GitOperations::commit(&path, &message).await
-    }).await?;
-
+    let hash = commit_changes(&path, &message)?;
     Ok(IpcResponse::ok(hash))
 }
 
+/// 回滚到指定提交
 #[tauri::command]
 pub async fn git_rollback(
     workspace_path: String,
     commit_hash: String,
     mode: RollbackMode,
-    kernel_state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<()>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
     if matches!(mode, RollbackMode::Hard) {
@@ -279,73 +200,91 @@ pub async fn git_rollback(
         );
     }
 
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Reset]),
-        command: "git".to_string(),
-        args: vec!["reset".to_string()],
-    };
-
-    let kernel = kernel_state.kernel();
-    kernel.execute_async("git_rollback", &op, &ctx, || async {
-        GitOperations::rollback(&path, &commit_hash, mode).await
-    }).await?;
-
+    rollback(&path, &commit_hash, mode)?;
     Ok(IpcResponse::no_content())
 }
 
+/// 获取 Git 配置
 #[tauri::command]
 pub async fn git_get_config(
     workspace_path: String,
-    kernel_state: State<'_, SecurityKernelState>,
+    key: Option<String>,
+    global: Option<bool>,
 ) -> Result<IpcResponse<GitConfig>, AppError> {
-    // workspace_path 为空时读取全局 git config（--global），否则读仓库级 config
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Remote]),
-        command: "git".to_string(),
-        args: vec!["config".to_string()],
-    };
-    let kernel = kernel_state.kernel();
-    if workspace_path.trim().is_empty() {
-        let config = kernel.execute_async("git_get_config", &op, &ctx, || async {
-            GitOperations::get_global_config().await
-        }).await?;
+    let is_global = global.unwrap_or(false);
+    
+    if let Some(k) = key {
+        // 获取单个配置项
+        let path = if is_global {
+            std::env::current_dir().unwrap_or_default()
+        } else {
+            validate_workspace_path(&workspace_path)?
+        };
+        
+        let value = get_config(&path, &k, is_global)?;
+        
+        let config = GitConfig {
+            user_name: if k == "user.name" { value.clone() } else { None },
+            user_email: if k == "user.email" { value } else { None },
+            custom: Default::default(),
+        };
         Ok(IpcResponse::ok(config))
     } else {
-        let path = validate_workspace_path(&workspace_path)?;
-        let config = kernel.execute_async("git_get_config", &op, &ctx, || async {
-            GitOperations::get_config(&path).await
-        }).await?;
-        Ok(IpcResponse::ok(config))
+        // 获取所有配置
+        if is_global {
+            let config = GitConfig {
+                user_name: None,
+                user_email: None,
+                custom: Default::default(),
+            };
+            Ok(IpcResponse::ok(config))
+        } else {
+            let path = validate_workspace_path(&workspace_path)?;
+            let config = get_all_config(&path)?;
+            Ok(IpcResponse::ok(config))
+        }
     }
 }
 
+/// 设置 Git 配置
 #[tauri::command]
 pub async fn git_set_config(
     workspace_path: String,
-    config: GitConfig,
-    kernel_state: State<'_, SecurityKernelState>,
+    key: String,
+    value: String,
+    global: Option<bool>,
 ) -> Result<IpcResponse<()>, AppError> {
-    let ctx = create_operation_context(None);
-    let op = Operation::Shell {
-        scope: ShellScope::git(vec![GitOperation::Remote]),
-        command: "git".to_string(),
-        args: vec!["config".to_string()],
-    };
-    let kernel = kernel_state.kernel();
-    if workspace_path.trim().is_empty() {
-        kernel.execute_async("git_set_config", &op, &ctx, || async {
-            GitOperations::set_global_config(&config).await
-        }).await?;
+    let start = Instant::now();
+    tracing::info!(workspace_path, key, global, "git_set_config: enter");
+
+    let is_global = global.unwrap_or(false);
+    
+    let path = if is_global {
+        std::env::current_dir().unwrap_or_default()
     } else {
-        let path = validate_workspace_path(&workspace_path)?;
-        kernel.execute_async("git_set_config", &op, &ctx, || async {
-            GitOperations::set_config(&path, &config).await
-        }).await?;
-    }
+        validate_workspace_path(&workspace_path)?
+    };
+    
+    set_config(&path, &key, &value, is_global)?;
+
+    tracing::info!(
+        duration_ms = start.elapsed().as_millis(),
+        "git_set_config: exit"
+    );
     Ok(IpcResponse::no_content())
 }
+
+/// 获取分支列表
+#[tauri::command]
+pub async fn git_branches(
+    workspace_path: String,
+) -> Result<IpcResponse<Vec<String>>, AppError> {
+    let path = validate_workspace_path(&workspace_path)?;
+    let branches = get_branches(&path)?;
+    Ok(IpcResponse::ok(branches))
+}
+
+// ── 测试 ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
