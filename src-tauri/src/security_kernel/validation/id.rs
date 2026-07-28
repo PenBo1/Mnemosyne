@@ -1,14 +1,39 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! id - 标识符验证模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use uuid::Uuid;
 use crate::shared::error::AppError;
 
 pub fn validate_uuid(id: &str, name: &str) -> Result<Uuid, AppError> {
     if id.is_empty() {
+        tracing::error!(
+            operation = "validate_uuid",
+            decision = "Deny",
+            reason = "ID is empty",
+            id_name = name,
+            "id_validation: rejected empty id"
+        );
         return Err(AppError::missing_field(name));
     }
 
     let uuid = Uuid::parse_str(id).map_err(|_| {
+        tracing::error!(
+            operation = "validate_uuid",
+            decision = "Deny",
+            reason = "Invalid UUID format",
+            id_name = name,
+            "id_validation: rejected invalid uuid format"
+        );
         AppError::invalid_format(format!("{} is not a valid UUID: {}", name, id))
     })?;
+
+    tracing::warn!(
+        operation = "validate_uuid",
+        decision = "Allow",
+        id_name = name,
+        "id_validation: uuid validated"
+    );
 
     Ok(uuid)
 }
@@ -17,11 +42,25 @@ pub fn validate_uuid_v4(id: &str, name: &str) -> Result<Uuid, AppError> {
     let uuid = validate_uuid(id, name)?;
 
     if uuid.get_version() != Some(uuid::Version::Random) {
+        tracing::error!(
+            operation = "validate_uuid_v4",
+            decision = "Deny",
+            reason = "Not a UUID v4 (random)",
+            id_name = name,
+            "id_validation: rejected non-v4 uuid"
+        );
         return Err(AppError::invalid_format(format!(
             "{} must be a UUID v4 (random): {}",
             name, id
         )));
     }
+
+    tracing::warn!(
+        operation = "validate_uuid_v4",
+        decision = "Allow",
+        id_name = name,
+        "id_validation: uuid v4 validated"
+    );
 
     Ok(uuid)
 }
@@ -30,11 +69,25 @@ pub fn validate_uuid_v7(id: &str, name: &str) -> Result<Uuid, AppError> {
     let uuid = validate_uuid(id, name)?;
 
     if uuid.get_version() != Some(uuid::Version::SortRand) {
+        tracing::error!(
+            operation = "validate_uuid_v7",
+            decision = "Deny",
+            reason = "Not a UUID v7 (time-ordered)",
+            id_name = name,
+            "id_validation: rejected non-v7 uuid"
+        );
         return Err(AppError::invalid_format(format!(
             "{} must be a UUID v7 (time-ordered): {}",
             name, id
         )));
     }
+
+    tracing::warn!(
+        operation = "validate_uuid_v7",
+        decision = "Allow",
+        id_name = name,
+        "id_validation: uuid v7 validated"
+    );
 
     Ok(uuid)
 }

@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! workspace_override - 工作区覆盖模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -6,6 +10,8 @@ use crate::security_kernel::permission::Operation;
 use crate::security_kernel::WorkspaceId;
 
 use super::decision::PolicyDecision;
+
+// ── 工作区覆盖 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceOverride {
@@ -16,6 +22,8 @@ pub struct WorkspaceOverride {
     pub enabled: bool,
 }
 
+// ── 操作覆盖 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperationOverride {
     pub operation_pattern: String,
@@ -24,6 +32,8 @@ pub struct OperationOverride {
     pub expires_at: Option<DateTime<Utc>>,
     pub reason: String,
 }
+
+// ── 覆盖决策 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OverrideDecision {
@@ -43,6 +53,8 @@ impl OverrideDecision {
     }
 }
 
+// ── 覆盖条件 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverrideConditions {
     pub max_count: Option<u32>,
@@ -50,6 +62,8 @@ pub struct OverrideConditions {
     pub time_window: Option<TimeWindow>,
     pub path_patterns: Option<Vec<String>>,
 }
+
+// ── 时间窗口 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeWindow {
@@ -174,6 +188,8 @@ fn operation_key(op: &Operation) -> String {
         }
     }
 }
+
+// ── 工作区覆盖注册表 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceOverrideRegistry {

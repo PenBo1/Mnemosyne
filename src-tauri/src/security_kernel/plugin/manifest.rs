@@ -1,8 +1,14 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! manifest - 插件清单定义模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
 use super::PluginPermission;
+
+// ── 插件标识符 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PluginId(pub Uuid);
@@ -32,6 +38,8 @@ impl fmt::Display for PluginId {
         write!(f, "{}", self.0)
     }
 }
+
+// ── 插件清单 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
@@ -91,6 +99,7 @@ impl PluginManifest {
         self.permissions.is_empty()
     }
 
+    /// 计算插件风险等级
     pub fn risk_level(&self) -> PluginRiskLevel {
         if self.permissions.is_empty() {
             return PluginRiskLevel::Low;
@@ -113,6 +122,8 @@ impl PluginManifest {
     }
 }
 
+// ── 风险等级 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum PluginRiskLevel {
     Low,
@@ -131,6 +142,8 @@ impl fmt::Display for PluginRiskLevel {
         }
     }
 }
+
+// ── 清单文件解析 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifestFile {
@@ -160,6 +173,7 @@ pub enum PluginPermissionJson {
 }
 
 impl PluginManifestFile {
+    /// 将 JSON 格式转换为内部清单格式
     pub fn to_manifest(&self) -> Result<PluginManifest, PluginManifestError> {
         let uuid = Uuid::parse_str(&self.id)
             .map_err(|_| PluginManifestError::InvalidId(self.id.clone()))?;
@@ -184,6 +198,7 @@ impl PluginManifestFile {
 }
 
 impl PluginPermissionJson {
+    /// 将 JSON 权限转换为内部权限格式
     pub fn to_permission(&self) -> Result<PluginPermission, PluginManifestError> {
         use crate::security_kernel::permission::{FsScope, FsOperation, NetworkEndpoint};
         use super::{FsPermission, ShellPermission, NetworkPermission, ClipboardPermission, NotificationPermission};
@@ -248,6 +263,8 @@ impl PluginPermissionJson {
     }
 }
 
+// ── 错误类型 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub enum PluginManifestError {
     InvalidId(String),
@@ -261,12 +278,12 @@ pub enum PluginManifestError {
 impl fmt::Display for PluginManifestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidId(id) => write!(f, "Invalid plugin ID: {}", id),
-            Self::InvalidScope(scope) => write!(f, "Invalid filesystem scope: {}", scope),
-            Self::InvalidOperation(op) => write!(f, "Invalid operation: {}", op),
-            Self::InvalidRuntime(runtime) => write!(f, "Invalid shell runtime: {}", runtime),
-            Self::MissingField(field) => write!(f, "Missing required field: {}", field),
-            Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
+            Self::InvalidId(id) => write!(f, "无效的插件 ID: {}", id),
+            Self::InvalidScope(scope) => write!(f, "无效的文件系统范围: {}", scope),
+            Self::InvalidOperation(op) => write!(f, "无效的操作: {}", op),
+            Self::InvalidRuntime(runtime) => write!(f, "无效的 Shell 运行时: {}", runtime),
+            Self::MissingField(field) => write!(f, "缺少必填字段: {}", field),
+            Self::ParseError(msg) => write!(f, "解析错误: {}", msg),
         }
     }
 }

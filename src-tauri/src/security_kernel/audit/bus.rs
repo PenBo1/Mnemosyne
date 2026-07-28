@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! bus - 审计事件总线
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::sync::{mpsc::{self, SyncSender, TrySendError}, Arc, RwLock};
 
 use uuid::Uuid;
@@ -5,15 +9,21 @@ use uuid::Uuid;
 use super::event::{AuditEntry, AuditFilter, SecurityEvent};
 use super::store::AuditStore;
 
+// ── 事件处理器 trait ────────────────────────────────────────────────────────
+
 pub trait EventHandler: Send + Sync {
     fn handle(&self, event: &SecurityEvent, entry: &AuditEntry);
 }
 
 type HandlerList = Vec<Box<dyn EventHandler>>;
 
-/// C16: 后台派发 channel 的容量。channel 满时 emit 丢弃事件并告警,
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/// 后台派发 channel 的容量。channel 满时 emit 丢弃事件并告警,
 /// 避免审计阻塞业务主流程。
 const DISPATCH_CHANNEL_CAPACITY: usize = 1024;
+
+// ── 内部派发项 ────────────────────────────────────────────────────────────────
 
 /// 后台派发任务的事件项（event + entry 一起发送,避免后台 task 再查 store）。
 struct DispatchItem {
@@ -21,10 +31,12 @@ struct DispatchItem {
     entry: AuditEntry,
 }
 
+// ── 审计事件总线 ────────────────────────────────────────────────────────
+
 pub struct AuditEventBus {
     store: AuditStore,
     handlers: RwLock<HandlerList>,
-    // C16: 后台派发 channel sender。None 时 emit 降级为同步派发（用于无 runtime 场景如测试）。
+    // 后台派发 channel sender。None 时 emit 降级为同步派发（用于无 runtime 场景如测试）。
     dispatch_tx: RwLock<Option<SyncSender<DispatchItem>>>,
 }
 
@@ -45,7 +57,7 @@ impl AuditEventBus {
         }
     }
 
-    /// 启动后台派发 task（C16）。必须在 tokio runtime 上下文中调用。
+    /// 启动后台派发 task。必须在 tokio runtime 上下文中调用。
     /// 启动后 emit 会将事件推入 channel,由后台 spawn_blocking task 调用 handlers,
     /// 避免 handler 的同步 I/O（如 DbAuditHandler 写 SQLite）阻塞 emit 调用方。
     /// 无 runtime 时安全跳过,emit 降级为同步派发。
@@ -89,7 +101,7 @@ impl AuditEventBus {
             }
         };
 
-        // C16: 优先通过后台 channel 派发,避免 handler 同步 I/O 阻塞当前线程。
+        // 优先通过后台 channel 派发,避免 handler 同步 I/O 阻塞当前线程。
         // clone Sender 以便尽快释放 dispatch_tx 读锁。
         let tx = {
             let guard = self.dispatch_tx.read().unwrap_or_else(|e| e.into_inner());
@@ -100,12 +112,12 @@ impl AuditEventBus {
             Some(tx) => match tx.try_send(DispatchItem { event, entry }) {
                 Ok(()) => {
                     tracing::debug!(event_id = %id, "Audit event dispatched to background task");
-                    return id;
+                    id
                 }
                 Err(TrySendError::Full(_)) => {
                     // channel 满:丢弃事件,审计不应阻断业务
                     tracing::warn!(event_id = %id, "Audit dispatch channel full, event dropped");
-                    return id;
+                    id
                 }
                 Err(TrySendError::Disconnected(item)) => {
                     // channel 关闭（后台 task 已退出）:降级同步派发
@@ -117,7 +129,7 @@ impl AuditEventBus {
                     for handler in handlers.iter() {
                         handler.handle(&item.event, &item.entry);
                     }
-                    return id;
+                    id
                 }
             },
             None => {
@@ -203,6 +215,8 @@ impl Default for AuditEventBus {
     }
 }
 
+// ── 共享审计事件总线 ────────────────────────────────────────────────────────
+
 pub struct SharedAuditEventBus(Arc<AuditEventBus>);
 
 impl SharedAuditEventBus {
@@ -214,7 +228,7 @@ impl SharedAuditEventBus {
         Self(Arc::new(bus))
     }
 
-    /// 启动后台派发 task（C16）。委托给内部 AuditEventBus。
+    /// 启动后台派发 task。委托给内部 AuditEventBus。
     pub fn start_dispatch_task(&self) {
         self.0.start_dispatch_task();
     }
@@ -264,6 +278,8 @@ impl Clone for SharedAuditEventBus {
     }
 }
 
+// ── 日志处理器 ────────────────────────────────────────────────────────────────
+
 pub struct LoggingHandler;
 
 impl EventHandler for LoggingHandler {
@@ -281,6 +297,8 @@ impl EventHandler for LoggingHandler {
         }
     }
 }
+
+// ── 指标处理器 ────────────────────────────────────────────────────────────────
 
 pub struct MetricsHandler {
     denied_count: RwLock<usize>,

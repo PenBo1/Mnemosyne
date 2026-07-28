@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! layer - 验证层模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::path::{Path, PathBuf};
 use url::Url;
 use uuid::Uuid;
@@ -9,6 +13,24 @@ use super::path::{CanonicalPath, validate_path, validate_path_with_base, validat
 use super::url::{validate_url, UrlValidationConfig, validate_url_for_ssrf};
 use super::id::{validate_uuid, validate_uuid_v4, validate_uuid_v7};
 use super::endpoint::{NetworkEndpoint, validate_endpoint, create_ai_endpoint, create_strict_endpoint, create_internal_endpoint};
+
+macro_rules! log_validation_decision {
+    (allow, $operation:expr, $decision:expr) => {
+        tracing::warn!(
+            operation = $operation,
+            decision = $decision,
+            "validation_layer: operation allowed"
+        );
+    };
+    (deny, $operation:expr, $decision:expr, $reason:expr) => {
+        tracing::error!(
+            operation = $operation,
+            decision = $decision,
+            reason = $reason,
+            "validation_layer: operation denied"
+        );
+    };
+}
 
 #[derive(Debug, Clone)]
 pub struct ValidationConfig {
@@ -69,18 +91,31 @@ impl ValidationLayer {
     }
 
     pub fn validate_operation(&self, op: &Operation) -> Result<(), AppError> {
-        match op {
+        let (op_name, result) = match op {
             Operation::Filesystem { scope, operation, path } => {
-                self.validate_fs_operation(scope, operation, path)?;
+                let r = self.validate_fs_operation(scope, operation, path);
+                ("filesystem", r)
             }
             Operation::Shell { scope, command, args } => {
-                self.validate_shell_operation(scope, command, args)?;
+                let r = self.validate_shell_operation(scope, command, args);
+                ("shell", r)
             }
             Operation::Network { scope, endpoint, method } => {
-                self.validate_network_operation(scope, endpoint, method)?;
+                let r = self.validate_network_operation(scope, endpoint, method);
+                ("network", r)
+            }
+        };
+
+        match &result {
+            Ok(()) => {
+                log_validation_decision!(allow, op_name, "Allow");
+            }
+            Err(e) => {
+                log_validation_decision!(deny, op_name, "Deny", e.message.as_str());
             }
         }
-        Ok(())
+
+        result
     }
 
     fn validate_fs_operation(
@@ -162,13 +197,34 @@ impl ValidationLayer {
     }
 
     pub fn validate_path(&self, path: &Path) -> Result<CanonicalPath, AppError> {
-        if let Some(base) = &self.config.fs_base {
+        let result = if let Some(base) = &self.config.fs_base {
             validate_path_with_base(path, base)
         } else if self.config.allow_local_fs {
             validate_path(path, None)
         } else {
             Err(AppError::forbidden("Local filesystem access is not allowed"))
+        };
+
+        match &result {
+            Ok(_) => {
+                tracing::warn!(
+                    operation = "validate_path",
+                    decision = "Allow",
+                    path_nonexistent = !path.exists(),
+                    "validation_layer: path validated"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    operation = "validate_path",
+                    decision = "Deny",
+                    reason = e.message.as_str(),
+                    "validation_layer: path validation failed"
+                );
+            }
         }
+
+        result
     }
 
     pub fn validate_path_for_creation(&self, path: &Path) -> Result<CanonicalPath, AppError> {
@@ -182,7 +238,29 @@ impl ValidationLayer {
     }
 
     pub fn validate_url(&self, url: &Url) -> Result<(), AppError> {
-        validate_url(url, &self.config.url_config)
+        let result = validate_url(url, &self.config.url_config);
+
+        match &result {
+            Ok(_) => {
+                tracing::warn!(
+                    operation = "validate_url",
+                    decision = "Allow",
+                    scheme = url.scheme(),
+                    host = url.host_str().unwrap_or("unknown"),
+                    "validation_layer: url validated"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    operation = "validate_url",
+                    decision = "Deny",
+                    reason = e.message.as_str(),
+                    "validation_layer: url validation failed"
+                );
+            }
+        }
+
+        result
     }
 
     pub fn validate_url_str(&self, url_str: &str) -> Result<Url, AppError> {
@@ -198,7 +276,29 @@ impl ValidationLayer {
     }
 
     pub fn validate_id(&self, id: &str, name: &str) -> Result<Uuid, AppError> {
-        validate_uuid(id, name)
+        let result = validate_uuid(id, name);
+
+        match &result {
+            Ok(_) => {
+                tracing::warn!(
+                    operation = "validate_id",
+                    decision = "Allow",
+                    id_name = name,
+                    "validation_layer: id validated"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    operation = "validate_id",
+                    decision = "Deny",
+                    reason = e.message.as_str(),
+                    id_name = name,
+                    "validation_layer: id validation failed"
+                );
+            }
+        }
+
+        result
     }
 
     pub fn validate_id_v4(&self, id: &str, name: &str) -> Result<Uuid, AppError> {

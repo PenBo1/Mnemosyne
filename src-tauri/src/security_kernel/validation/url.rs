@@ -1,9 +1,10 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! url - URL 验证模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use url::Url;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use crate::shared::error::AppError;
-
-#[allow(dead_code)]
-const ALLOWED_SCHEMES: [&str; 2] = ["https", "http"];
 
 const PRIVATE_IPV4_RANGES: [(Ipv4Addr, Ipv4Addr); 5] = [
     (Ipv4Addr::new(10, 0, 0, 0), Ipv4Addr::new(10, 255, 255, 255)),
@@ -37,6 +38,14 @@ impl Default for UrlValidationConfig {
 pub fn validate_url(url: &Url, config: &UrlValidationConfig) -> Result<(), AppError> {
     let scheme = url.scheme();
     if !config.allowed_schemes.iter().any(|s| s == scheme) {
+        tracing::error!(
+            operation = "validate_url",
+            decision = "Deny",
+            reason = "URL scheme not allowed",
+            scheme = scheme,
+            allowed_schemes = ?config.allowed_schemes,
+            "url_validation: rejected scheme"
+        );
         return Err(AppError::invalid_input(format!(
             "URL scheme '{}' is not allowed. Allowed schemes: {}",
             scheme,
@@ -46,6 +55,12 @@ pub fn validate_url(url: &Url, config: &UrlValidationConfig) -> Result<(), AppEr
 
     let host = url.host_str();
     if host.is_none() {
+        tracing::error!(
+            operation = "validate_url",
+            decision = "Deny",
+            reason = "URL has no host",
+            "url_validation: rejected missing host"
+        );
         return Err(AppError::invalid_input("URL has no host"));
     }
 
@@ -55,6 +70,13 @@ pub fn validate_url(url: &Url, config: &UrlValidationConfig) -> Result<(), AppEr
         validate_ip_address(&ip, config)?;
     } else {
         if !config.allow_localhost && (host == "localhost" || host == "local") {
+            tracing::error!(
+                operation = "validate_url",
+                decision = "Deny",
+                reason = "localhost is not allowed",
+                host = host,
+                "url_validation: rejected localhost"
+            );
             return Err(AppError::forbidden("localhost is not allowed"));
         }
 
@@ -69,19 +91,48 @@ pub fn validate_url(url: &Url, config: &UrlValidationConfig) -> Result<(), AppEr
     let port = url.port();
     if let Some(p) = port {
         if p == 0 {
+            tracing::error!(
+                operation = "validate_url",
+                decision = "Deny",
+                reason = "Port 0 is not valid",
+                port = p,
+                "url_validation: rejected port 0"
+            );
             return Err(AppError::invalid_input("Port 0 is not valid"));
         }
     }
+
+    tracing::warn!(
+        operation = "validate_url",
+        decision = "Allow",
+        scheme = scheme,
+        host = host,
+        "url_validation: url validated"
+    );
 
     Ok(())
 }
 
 fn validate_ip_address(ip: &IpAddr, config: &UrlValidationConfig) -> Result<(), AppError> {
     if config.dns_pinned_ips.contains(ip) {
+        tracing::warn!(
+            operation = "validate_ip_address",
+            decision = "Allow",
+            reason = "IP is pinned",
+            ip = %ip,
+            "url_validation: pinned ip allowed"
+        );
         return Ok(());
     }
 
     if is_private_ip(ip) && !config.allow_private_ips {
+        tracing::error!(
+            operation = "validate_ip_address",
+            decision = "Deny",
+            reason = "Private IP address not allowed",
+            ip = %ip,
+            "url_validation: rejected private ip"
+        );
         return Err(AppError::forbidden(format!(
             "Private IP address {} is not allowed",
             ip
@@ -89,11 +140,25 @@ fn validate_ip_address(ip: &IpAddr, config: &UrlValidationConfig) -> Result<(), 
     }
 
     if is_loopback_ip(ip) && !config.allow_localhost {
+        tracing::error!(
+            operation = "validate_ip_address",
+            decision = "Deny",
+            reason = "Loopback IP address not allowed",
+            ip = %ip,
+            "url_validation: rejected loopback ip"
+        );
         return Err(AppError::forbidden(format!(
             "Loopback IP address {} is not allowed",
             ip
         )));
     }
+
+    tracing::warn!(
+        operation = "validate_ip_address",
+        decision = "Allow",
+        ip = %ip,
+        "url_validation: ip validated"
+    );
 
     Ok(())
 }

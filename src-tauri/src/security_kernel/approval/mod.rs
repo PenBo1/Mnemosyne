@@ -1,6 +1,13 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! approval - 审批管理模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 mod store;
 mod token;
 mod validator;
+mod smart;
+mod queue;
+pub mod policy;
 
 pub use store::{ApprovalStore, ApprovalStats};
 pub use token::{
@@ -8,6 +15,12 @@ pub use token::{
     calculate_action_hash,
 };
 pub use validator::{ApprovalValidator, ValidationError, ValidationResult};
+pub use smart::{SmartApproval, SmartApprovalLlm, SmartApprovalDecision, build_smart_approval_prompt, DEFAULT_SMART_APPROVAL_TIMEOUT};
+pub use queue::{ApprovalQueue, ApprovalTicket, ApprovalStatus, ApprovalResolution, QueueApprovalRequest};
+pub use policy::{
+    AskForApproval, GranularConfig, ApprovalScene, ApprovalPolicyEngine,
+    ReviewDecision, ApprovalCacheEntry,
+};
 
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +28,8 @@ use crate::shared::error::AppError;
 use crate::security_kernel::permission::Operation;
 use crate::security_kernel::policy::calculate_operation_risk;
 use crate::security_kernel::WorkspaceId;
+
+// ── 审批管理器 ────────────────────────────────────────────────────────────────
 
 pub struct ApprovalManager {
     store: Arc<Mutex<ApprovalStore>>,
@@ -35,7 +50,7 @@ impl ApprovalManager {
         let risk = calculate_operation_risk(op);
         let token = ApprovalToken::new(op, workspace, risk);
 
-        // C7: 非 Result 方法无法传播 poison,用 error 日志确保可见（非静默降级）
+        // 非 Result 方法无法传播 poison，用 error 日志确保可见（非静默降级）
         let mut store = self.store.lock().unwrap_or_else(|e| {
             tracing::error!(error = %e, "ApprovalStore mutex poisoned, continuing with recovered data");
             e.into_inner()
@@ -64,7 +79,7 @@ impl ApprovalManager {
     }
 
     pub fn approve(&self, id: ApprovalId, approved_by: impl Into<String>) -> Result<ApprovalToken, AppError> {
-        // C7: Result 方法用 map_err 传播 poison
+        // Result 方法用 map_err 传播 poison
         let mut store = self.store.lock().map_err(|e|
             AppError::internal(format!("ApprovalStore lock poisoned: {}", e))
         )?;
@@ -209,6 +224,8 @@ impl Default for ApprovalManager {
         Self::new()
     }
 }
+
+// ── 工具函数 ────────────────────────────────────────────────────────────────
 
 pub fn create_approval_request(
     op: Operation,

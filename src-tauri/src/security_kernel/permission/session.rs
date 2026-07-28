@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! session - 权限会话管理
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -8,9 +12,10 @@ use super::{Capability, FsOperation, FsScope, GitOperation, NetworkScope, ShellS
 
 pub type WorkspaceId = String;
 
-/// Medium 22: Session 默认 TTL（30 分钟,与 AGENTS.md 规范一致）。
-/// 超时 session 在 check() 中被拒绝,强制重新创建。
+/// Session 默认 TTL（30 分钟）。超时 session 在 check() 中被拒绝，强制重新创建。
 const SESSION_TTL_MINUTES: i64 = 30;
+
+// ── 权限会话 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionSession {
@@ -46,6 +51,8 @@ impl PermissionSession {
         self.capabilities.iter().any(|c| c.is_network())
     }
 }
+
+// ── 权限管理器 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct PermissionManager {
@@ -84,9 +91,7 @@ impl PermissionManager {
     }
 
     pub fn check(&self, op: &Operation, workspace: &WorkspaceId) -> Result<(), AppError> {
-        // 系统工作区（nil UUID）跳过 permission check —— 系统级操作（如 ai_http_stream）
-        // 使用 nil UUID 作为 workspace_id，无法预注册所有 LLM provider endpoint，
-        // 且这些操作已通过 PolicyEngine 的 TrustLevel::Trusted 校验
+        // 系统工作区（nil UUID）跳过 permission check
         if workspace == &uuid::Uuid::nil().to_string() {
             return Ok(());
         }
@@ -95,7 +100,7 @@ impl PermissionManager {
             AppError::workspace_not_found()
         })?;
 
-        // Medium 22: Session TTL 检查 —— 超时 session 拒绝,强制调用方重新创建
+        // Session TTL 检查 —— 超时 session 拒绝，强制调用方重新创建
         let now = Utc::now();
         if now > session.opened_at + chrono::Duration::minutes(SESSION_TTL_MINUTES) {
             return Err(AppError::forbidden(format!(
@@ -251,6 +256,8 @@ impl Default for PermissionManager {
     }
 }
 
+// ── 操作枚举 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operation {
     Filesystem {
@@ -332,6 +339,8 @@ impl Operation {
         }
     }
 }
+
+// ── 默认能力集 ────────────────────────────────────────────────────────────────
 
 pub fn default_workspace_capabilities() -> HashSet<Capability> {
     let mut caps = HashSet::new();

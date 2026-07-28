@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! kernel - 安全内核核心实现模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::future::Future;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
@@ -11,9 +15,9 @@ use super::audit::{AuditEventBus, SecurityEvent, SharedAuditEventBus, LoggingHan
 use super::hooks::{HookEngine, HookEvent, HookPayload, HookRegistry};
 use super::permission::{PermissionManager, Operation};
 use super::policy::{PolicyEngine, PolicyDecision};
+use super::pve::{PromptValidatorExecutor, ToolCallContext, PveConfig};
 use super::rate_limiter::RateLimiter;
 use super::resource_manager::ResourceManager;
-use super::secrets::SecretManager;
 use super::types::{OperationContext, WorkspaceId};
 use super::validation::ValidationLayer;
 
@@ -46,10 +50,10 @@ pub struct SecurityKernel {
     permission: Arc<Mutex<PermissionManager>>,
     approval: Arc<Mutex<ApprovalManager>>,
     validation: Arc<RwLock<ValidationLayer>>,
+    pve: Arc<RwLock<PromptValidatorExecutor>>,
     rate_limiter: Arc<RwLock<RateLimiter>>,
     resource_manager: Arc<Mutex<ResourceManager>>,
     audit_bus: SharedAuditEventBus,
-    secrets: Arc<Mutex<SecretManager>>,
     /// Hook 引擎 —— 在 execute 的关键节点派发 PreToolUse / PermissionRequest / PostToolUse。
     /// 通过 Arc 共享给需要派发 hook 的调用方（AgentEngine、SubAgentExecutor）。
     hook_engine: Arc<HookEngine>,
@@ -98,15 +102,17 @@ impl SecurityKernel {
             audit_bus_for_hooks,
         ));
 
+        let pve = PromptValidatorExecutor::with_config(PveConfig::default());
+
         Self {
             policy: Arc::new(RwLock::new(policy)),
             permission: Arc::new(Mutex::new(PermissionManager::new())),
             approval: Arc::new(Mutex::new(ApprovalManager::new())),
             validation: Arc::new(RwLock::new(ValidationLayer::new())),
+            pve: Arc::new(RwLock::new(pve)),
             rate_limiter: Arc::new(RwLock::new(rate_limiter)),
             resource_manager: Arc::new(Mutex::new(resource_manager)),
             audit_bus,
-            secrets: Arc::new(Mutex::new(SecretManager::memory_only())),
             hook_engine,
         }
     }
@@ -119,7 +125,6 @@ impl SecurityKernel {
         rate_limiter: RateLimiter,
         resource_manager: ResourceManager,
         audit_bus: AuditEventBus,
-        secret_manager: SecretManager,
     ) -> Self {
         let shared_audit_bus = SharedAuditEventBus::from(audit_bus);
         shared_audit_bus.subscribe(Box::new(LoggingHandler));
@@ -131,15 +136,17 @@ impl SecurityKernel {
             audit_bus_for_hooks,
         ));
 
+        let pve = PromptValidatorExecutor::new();
+
         Self {
             policy: Arc::new(RwLock::new(policy)),
             permission: Arc::new(Mutex::new(permission_manager)),
             approval: Arc::new(Mutex::new(approval_manager)),
             validation: Arc::new(RwLock::new(validation_layer)),
+            pve: Arc::new(RwLock::new(pve)),
             rate_limiter: Arc::new(RwLock::new(rate_limiter)),
             resource_manager: Arc::new(Mutex::new(resource_manager)),
             audit_bus: shared_audit_bus,
-            secrets: Arc::new(Mutex::new(secret_manager)),
             hook_engine,
         }
     }
@@ -158,7 +165,40 @@ impl SecurityKernel {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, AppError>>,
     {
-        self.execute_internal_async(operation_name, op, ctx, executor, true).await
+        let request_id = uuid::Uuid::new_v4();
+        tracing::info!(
+            request_id = %request_id,
+            operation = operation_name,
+            workspace = %ctx.workspace.0,
+            session = %ctx.session.0,
+            "[kernel] operation started"
+        );
+        let start_time = std::time::Instant::now();
+        let result = self.execute_internal_async(operation_name, op, ctx, executor, true).await;
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+        match &result {
+            Ok(_) => {
+                tracing::info!(
+                    request_id = %request_id,
+                    operation = operation_name,
+                    workspace = %ctx.workspace.0,
+                    status = "success",
+                    duration_ms = duration_ms,
+                    "[kernel] operation completed"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    request_id = %request_id,
+                    operation = operation_name,
+                    workspace = %ctx.workspace.0,
+                    error = %e,
+                    duration_ms = duration_ms,
+                    "[kernel] operation failed"
+                );
+            }
+        }
+        result
     }
 
     /// 阻塞执行器入口：executor 为同步 I/O（如 `std::fs`）。
@@ -222,16 +262,43 @@ impl SecurityKernel {
 
         let start = Instant::now();
 
-        // ── 阶段 1：Validation + Policy 决策（同步，守卫在块内释放）──
-        let policy_decision = {
+        // 阶段 1a：Validation 校验（同步，显式 drop）
+        {
             let validation = self.validation.read().unwrap_or_else(|e| e.into_inner());
             validation.validate_operation(op)?;
-            drop(validation);
+        }
 
+        // 阶段 1b：PVE 校验（同步，显式 drop）
+        {
+            let pve = self.pve.read().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = self.run_pve_check(&pve, operation_name, op) {
+                tracing::warn!(
+                    operation = operation_name,
+                    workspace = %ctx.workspace.0,
+                    error = %e,
+                    "[kernel] PVE validation failed"
+                );
+                self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                    operation: operation_name.to_string(),
+                    workspace: ctx.workspace,
+                    reason: format!("PVE validation failed: {}", e),
+                });
+                return Err(e);
+            }
+        }
+
+        // 阶段 1c：Policy 评估（同步，显式 drop）
+        let policy_decision = {
             let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
             let evaluation = policy.evaluate(op, ctx)?;
             match evaluation.decision {
                 PolicyDecision::Deny => {
+                    tracing::warn!(
+                        operation = operation_name,
+                        workspace = %ctx.workspace.0,
+                        reason = %evaluation.reason,
+                        "[kernel] policy denied"
+                    );
                     self.audit_bus.emit(SecurityEvent::PolicyDenied {
                         operation: operation_name.to_string(),
                         workspace: ctx.workspace,
@@ -242,10 +309,18 @@ impl SecurityKernel {
                         evaluation.reason
                     )));
                 }
-                PolicyDecision::RequireApproval => PolicyDecision::RequireApproval,
+                PolicyDecision::RequireApproval => {
+                    tracing::info!(
+                        operation = operation_name,
+                        workspace = %ctx.workspace.0,
+                        risk = ?evaluation.risk,
+                        "[kernel] approval required"
+                    );
+                    PolicyDecision::RequireApproval
+                }
                 PolicyDecision::Allow => PolicyDecision::Allow,
             }
-        }; // validation/policy 守卫已释放
+        };
 
         // ── 阶段 2：审批处理（若需审批）──
         if policy_decision == PolicyDecision::RequireApproval {
@@ -364,11 +439,22 @@ impl SecurityKernel {
 
         let start = Instant::now();
 
-        // ── 阶段 1：Validation + Policy 决策（同步，守卫在块内释放）──
+        // ── 阶段 1：Validation + PVE + Policy 决策（同步，守卫在块内释放）──
         let policy_decision = {
             let validation = self.validation.read().unwrap_or_else(|e| e.into_inner());
             validation.validate_operation(op)?;
             drop(validation);
+
+            let pve = self.pve.read().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = self.run_pve_check(&pve, operation_name, op) {
+                self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                    operation: operation_name.to_string(),
+                    workspace: ctx.workspace,
+                    reason: format!("PVE validation failed: {}", e),
+                });
+                return Err(e);
+            }
+            drop(pve);
 
             let policy = self.policy.read().unwrap_or_else(|e| e.into_inner());
             let evaluation = policy.evaluate(op, ctx)?;
@@ -611,14 +697,112 @@ impl SecurityKernel {
         &self.audit_bus
     }
 
-    pub fn secret_manager(&self) -> &Arc<Mutex<SecretManager>> {
-        &self.secrets
-    }
-
     /// Hook 引擎引用 —— 供 AgentEngine / SubAgentExecutor 派发 SessionStart / Stop / Subagent* 事件，
     /// 以及 IPC 命令通过 HookEngineState 操作 registry。
     pub fn hook_engine(&self) -> &Arc<HookEngine> {
         &self.hook_engine
+    }
+
+    /// PVE 执行器引用 —— 供外部调用参数校验/注入扫描/意图检查。
+    pub fn pve(&self) -> &Arc<RwLock<PromptValidatorExecutor>> {
+        &self.pve
+    }
+
+    /// 执行 PVE Layer 检查（参数校验 + 注入扫描 + 意图检查）。
+    ///
+    /// PVE Layer 在 Validation 之后、Policy 之前执行，用于：
+    /// - 校验工具调用参数的形状和类型
+    /// - 扫描输入内容中的 prompt injection 模式
+    /// - 检查操作是否触碰敏感文件表面（.env、secrets 等）
+    fn run_pve_check(
+        &self,
+        pve: &PromptValidatorExecutor,
+        operation_name: &str,
+        op: &Operation,
+    ) -> Result<(), AppError> {
+        let (tool_name, params, paths) = self.extract_pve_context_from_operation(op);
+
+        let ctx = ToolCallContext::new(tool_name.clone(), params.clone());
+
+        let pve_result = pve.execute(&ctx)?;
+
+        if !pve_result.passed {
+            tracing::warn!(
+                operation = operation_name,
+                errors = ?pve_result.errors,
+                "PVE validation failed"
+            );
+            return Err(AppError::forbidden(format!(
+                "PVE validation failed: {}",
+                pve_result.errors.join("; ")
+            )));
+        }
+
+        if !paths.is_empty() {
+            for path in paths {
+                let sensitive_matches = pve.intent_checker().check_sensitive_surface(&path);
+                if !sensitive_matches.is_empty() {
+                    for hit in sensitive_matches {
+                        tracing::warn!(
+                            operation = operation_name,
+                            path = %hit.matched_path,
+                            surface_type = ?hit.surface.surface_type,
+                            "PVE: sensitive surface detected"
+                        );
+                        self.audit_bus.emit(SecurityEvent::PolicyDenied {
+                            operation: operation_name.to_string(),
+                            workspace: WorkspaceId(uuid::Uuid::nil()),
+                            reason: format!(
+                                "Sensitive surface access denied: {} at {}",
+                                hit.surface.surface_type, hit.matched_path
+                            ),
+                        });
+                    }
+                    return Err(AppError::forbidden(format!(
+                        "Access to sensitive surface denied at path: {}",
+                        path
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 从 Operation 中提取 PVE 检查所需的上下文。
+    fn extract_pve_context_from_operation(
+        &self,
+        op: &Operation,
+    ) -> (String, serde_json::Value, Vec<String>) {
+        match op {
+            Operation::Filesystem { scope, operation, path } => {
+                let tool_name = format!("fs_{}", operation);
+                let params = serde_json::json!({
+                    "scope": format!("{:?}", scope),
+                    "operation": format!("{:?}", operation),
+                    "path": path,
+                });
+                (tool_name, params, vec![path.clone()])
+            }
+            Operation::Shell { scope, command, args } => {
+                let tool_name = "shell_execute".to_string();
+                let params = serde_json::json!({
+                    "scope": format!("{:?}", scope),
+                    "command": command,
+                    "args": args,
+                });
+                (tool_name, params, vec![])
+            }
+            Operation::Network { scope, endpoint, method } => {
+                let tool_name = "network_request".to_string();
+                let params = serde_json::json!({
+                    "scope": format!("{:?}", scope),
+                    "endpoint": endpoint,
+                    "method": method,
+                });
+                (tool_name, params, vec![])
+            }
+        }
     }
 
     pub fn cleanup(&self) {

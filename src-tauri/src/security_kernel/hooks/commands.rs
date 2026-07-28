@@ -1,18 +1,17 @@
-// Hook IPC 命令 —— 配置型 hook 管理 + 测试派发。
-//
-// 设计要点：
-// - IPC 仅支持配置型 hook（action = Log/Audit/Block/Custom），不支持注入函数。
-// - hook_register 接收 HookConfig，内部由 registry 映射 action → handler。
-// - hook_test_dispatch 用于调试 —— 模拟一次 hook 触发，返回每个被触发 hook 的结果。
-// - 所有命令通过 HookEngineState 访问 HookEngine。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! commands - Hook IPC 命令模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use tauri::State;
+use std::time::Instant;
 
 use crate::shared::error::{AppError, IpcResponse};
 
 use super::engine::HookEngine;
 use super::registry::HookDispatchOutcome;
 use super::types::{HookConfig, HookInfo, HookPayload, HookTestRequest, HookTestResult};
+
+// ── Tauri State 包装 ────────────────────────────────────────────────────────
 
 /// Tauri State 包装 —— 在 setup 中注入到 app.manage。
 ///
@@ -41,14 +40,24 @@ impl std::ops::Deref for HookEngineState {
     }
 }
 
-// ── IPC 命令 ──
+// ── IPC 命令 ────────────────────────────────────────────────────────────────
 
 /// 列出所有已注册 hook。
 #[tauri::command]
 pub async fn hook_list(
     state: State<'_, HookEngineState>,
 ) -> Result<IpcResponse<Vec<HookInfo>>, AppError> {
-    Ok(IpcResponse::ok(state.registry().list()))
+    let start = Instant::now();
+    tracing::info!("hook_list: enter");
+
+    let hooks = state.registry().list();
+
+    tracing::info!(
+        count = hooks.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "hook_list: exit"
+    );
+    Ok(IpcResponse::ok(hooks))
 }
 
 /// 注册配置型 hook。返回生成的 hook id。
@@ -57,19 +66,45 @@ pub async fn hook_register(
     config: HookConfig,
     state: State<'_, HookEngineState>,
 ) -> Result<IpcResponse<String>, AppError> {
-    // 校验：matcher 若提供 tool_name_pattern，必须可被 glob 解析
+    let start = Instant::now();
+    tracing::info!("hook_register: enter");
+
     if let Some(matcher) = &config.matcher {
         if let Some(pattern) = &matcher.tool_name_pattern {
-            if glob::Pattern::new(pattern).is_err() {
-                return Err(AppError::invalid_input(format!(
-                    "Invalid glob pattern in matcher.toolNamePattern: {}",
-                    pattern
-                )));
+            match pattern {
+                super::types::MatcherPattern::Glob(g) => {
+                    if glob::Pattern::new(g).is_err() {
+                        tracing::error!(pattern = %g, "hook_register: Invalid glob pattern");
+                        return Err(AppError::invalid_input(format!(
+                            "Invalid glob pattern in matcher.toolNamePattern: {}",
+                            g
+                        )));
+                    }
+                }
+                super::types::MatcherPattern::Regex(r) => {
+                    if regex::Regex::new(r).is_err() {
+                        tracing::error!(pattern = %r, "hook_register: Invalid regex pattern");
+                        return Err(AppError::invalid_input(format!(
+                            "Invalid regex pattern in matcher.toolNamePattern: {}",
+                            r
+                        )));
+                    }
+                }
+                _ => {}
             }
         }
     }
 
-    let id = state.registry().register_config(config)?;
+    let id = state.registry().register_config(config).map_err(|e| {
+        tracing::error!(error = %e, "hook_register: Failed to register hook");
+        e
+    })?;
+
+    tracing::info!(
+        hook_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "hook_register: exit"
+    );
     Ok(IpcResponse::created(id))
 }
 
@@ -79,13 +114,25 @@ pub async fn hook_unregister(
     id: String,
     state: State<'_, HookEngineState>,
 ) -> Result<IpcResponse<bool>, AppError> {
+    let start = Instant::now();
+    tracing::info!(hook_id = %id, "hook_unregister: enter");
+
     if id.trim().is_empty() {
+        tracing::error!("hook_unregister: id cannot be empty");
         return Err(AppError::missing_field("id"));
     }
+
     let removed = state.registry().unregister(&id);
     if !removed {
+        tracing::error!(hook_id = %id, "hook_unregister: Hook not found");
         return Err(AppError::not_found(format!("Hook '{}' not found", id)));
     }
+
+    tracing::info!(
+        hook_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "hook_unregister: exit"
+    );
     Ok(IpcResponse::deleted(true))
 }
 
@@ -94,14 +141,18 @@ pub async fn hook_unregister(
 ///
 /// 注意：测试场景下即使有 hook 返回 Block（FailedAbort），命令仍返回 200，
 /// 通过 `aborted: true` 字段表达拦截状态。
-///
-/// 直接调用 registry.dispatch（绕过 engine.dispatch 的 Err 转换），
-/// 以便在 abort 时仍能返回实际 triggered_ids。
 #[tauri::command]
 pub async fn hook_test_dispatch(
     request: HookTestRequest,
     state: State<'_, HookEngineState>,
 ) -> Result<IpcResponse<HookTestResult>, AppError> {
+    let start = Instant::now();
+    tracing::info!(
+        event = ?request.event,
+        tool_name = ?request.tool_name,
+        "hook_test_dispatch: enter"
+    );
+
     let mut payload = HookPayload::new(request.event);
     payload.tool_name = request.tool_name;
     payload.workspace_id = request.workspace_id;
@@ -110,6 +161,13 @@ pub async fn hook_test_dispatch(
     payload.tool_args = request.tool_args;
 
     let outcome: HookDispatchOutcome = state.registry().dispatch(request.event, &payload).await;
+    let result = HookTestResult::from(outcome);
 
-    Ok(IpcResponse::ok(HookTestResult::from(outcome)))
+    tracing::info!(
+        triggered_count = result.triggered_ids.len(),
+        aborted = result.aborted,
+        duration_ms = start.elapsed().as_millis(),
+        "hook_test_dispatch: exit"
+    );
+    Ok(IpcResponse::ok(result))
 }

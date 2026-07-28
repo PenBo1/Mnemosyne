@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! path - 路径验证模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::path::{Component, Path, PathBuf};
 use crate::shared::error::AppError;
 
@@ -32,10 +36,24 @@ pub fn validate_path(path: &Path, base: Option<&Path>) -> Result<CanonicalPath, 
     let path_str = path.to_string_lossy();
 
     if path_str.is_empty() {
+        tracing::error!(
+            operation = "validate_path",
+            decision = "Deny",
+            reason = "Path is empty",
+            "path_validation: rejected empty path"
+        );
         return Err(AppError::invalid_input("Path is empty"));
     }
 
     if path_str.len() > MAX_PATH_LENGTH {
+        tracing::error!(
+            operation = "validate_path",
+            decision = "Deny",
+            reason = "Path exceeds maximum length",
+            path_length = path_str.len(),
+            max_length = MAX_PATH_LENGTH,
+            "path_validation: rejected path too long"
+        );
         return Err(AppError::value_out_of_range(format!(
             "Path exceeds maximum length of {} characters",
             MAX_PATH_LENGTH
@@ -43,20 +61,45 @@ pub fn validate_path(path: &Path, base: Option<&Path>) -> Result<CanonicalPath, 
     }
 
     if path_str.contains("\r") || path_str.contains("\n") {
+        tracing::error!(
+            operation = "validate_path",
+            decision = "Deny",
+            reason = "Path contains CRLF characters",
+            "path_validation: rejected CRLF in path"
+        );
         return Err(AppError::invalid_input("Path contains CRLF characters"));
     }
 
     if path_str.chars().any(|c| c.is_control()) {
+        tracing::error!(
+            operation = "validate_path",
+            decision = "Deny",
+            reason = "Path contains control characters",
+            "path_validation: rejected control chars in path"
+        );
         return Err(AppError::invalid_input("Path contains control characters"));
     }
 
     // High 8: 用 Component::ParentDir 精确检测路径遍历,
     // 避免 contains("..") 误判含 ".." 的合法文件名（如 "..bar.txt"）
     if path.components().any(|c| matches!(c, Component::ParentDir)) {
+        tracing::error!(
+            operation = "validate_path",
+            decision = "Deny",
+            reason = "Path traversal detected",
+            "path_validation: rejected path traversal"
+        );
         return Err(AppError::path_traversal());
     }
 
     let canonical = path.canonicalize().map_err(|e| {
+        tracing::error!(
+            operation = "validate_path",
+            decision = "Deny",
+            reason = "Failed to canonicalize path",
+            error = ?e,
+            "path_validation: canonicalize failed"
+        );
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::file_not_found(path_str.to_string())
         } else {
@@ -66,13 +109,33 @@ pub fn validate_path(path: &Path, base: Option<&Path>) -> Result<CanonicalPath, 
 
     if let Some(base_dir) = base {
         let canonical_base = base_dir.canonicalize().map_err(|e| {
+            tracing::error!(
+                operation = "validate_path",
+                decision = "Deny",
+                reason = "Failed to canonicalize base directory",
+                error = ?e,
+                "path_validation: base canonicalize failed"
+            );
             AppError::internal(format!("Failed to canonicalize base directory: {}", e))
         })?;
 
         if !canonical.starts_with(&canonical_base) {
+            tracing::error!(
+                operation = "validate_path",
+                decision = "Deny",
+                reason = "Path escapes base directory",
+                "path_validation: rejected path escape"
+            );
             return Err(AppError::path_traversal());
         }
     }
+
+    tracing::warn!(
+        operation = "validate_path",
+        decision = "Allow",
+        has_base = base.is_some(),
+        "path_validation: path validated"
+    );
 
     Ok(CanonicalPath(canonical))
 }
@@ -85,10 +148,24 @@ pub fn validate_path_for_creation(path: &Path, base: &Path) -> Result<CanonicalP
     let path_str = path.to_string_lossy();
 
     if path_str.is_empty() {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Path is empty",
+            "path_validation: rejected empty path for creation"
+        );
         return Err(AppError::invalid_input("Path is empty"));
     }
 
     if path_str.len() > MAX_PATH_LENGTH {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Path exceeds maximum length",
+            path_length = path_str.len(),
+            max_length = MAX_PATH_LENGTH,
+            "path_validation: rejected path too long for creation"
+        );
         return Err(AppError::value_out_of_range(format!(
             "Path exceeds maximum length of {} characters",
             MAX_PATH_LENGTH
@@ -96,20 +173,45 @@ pub fn validate_path_for_creation(path: &Path, base: &Path) -> Result<CanonicalP
     }
 
     if path_str.contains("\r") || path_str.contains("\n") {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Path contains CRLF characters",
+            "path_validation: rejected CRLF in path for creation"
+        );
         return Err(AppError::invalid_input("Path contains CRLF characters"));
     }
 
     if path_str.chars().any(|c| c.is_control()) {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Path contains control characters",
+            "path_validation: rejected control chars in path for creation"
+        );
         return Err(AppError::invalid_input("Path contains control characters"));
     }
 
     // High 8: 用 Component::ParentDir 精确检测路径遍历,
     // 避免 contains("..") 误判含 ".." 的合法文件名（如 "..bar.txt"）
     if path.components().any(|c| matches!(c, Component::ParentDir)) {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Path traversal detected",
+            "path_validation: rejected path traversal for creation"
+        );
         return Err(AppError::path_traversal());
     }
 
     let canonical_base = base.canonicalize().map_err(|e| {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Failed to canonicalize base directory",
+            error = ?e,
+            "path_validation: base canonicalize failed for creation"
+        );
         AppError::internal(format!("Failed to canonicalize base directory: {}", e))
     })?;
 
@@ -124,6 +226,12 @@ pub fn validate_path_for_creation(path: &Path, base: &Path) -> Result<CanonicalP
         match component {
             Component::ParentDir => {
                 if !resolved.pop() {
+                    tracing::error!(
+                        operation = "validate_path_for_creation",
+                        decision = "Deny",
+                        reason = "Path traversal detected during normalization",
+                        "path_validation: rejected traversal during normalization"
+                    );
                     return Err(AppError::path_traversal());
                 }
             }
@@ -135,8 +243,20 @@ pub fn validate_path_for_creation(path: &Path, base: &Path) -> Result<CanonicalP
     }
 
     if !resolved.starts_with(&canonical_base) {
+        tracing::error!(
+            operation = "validate_path_for_creation",
+            decision = "Deny",
+            reason = "Normalized path escapes base directory",
+            "path_validation: rejected escaped path for creation"
+        );
         return Err(AppError::path_traversal());
     }
+
+    tracing::warn!(
+        operation = "validate_path_for_creation",
+        decision = "Allow",
+        "path_validation: path validated for creation"
+    );
 
     Ok(CanonicalPath(resolved))
 }

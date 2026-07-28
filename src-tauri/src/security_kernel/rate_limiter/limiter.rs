@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! limiter - 速率限制核心实现模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::collections::HashMap;
 
 use chrono::Duration;
@@ -82,6 +86,13 @@ impl RateLimiter {
         let policy = self.policies.get(operation);
         
         if policy.is_none() {
+            tracing::warn!(
+                operation = operation,
+                workspace = %workspace.0,
+                decision = "Allow",
+                reason = "No policy defined",
+                "rate_limiter: operation allowed (no policy)"
+            );
             return Ok(RateLimitResult {
                 allowed: true,
                 operation: operation.to_string(),
@@ -103,6 +114,35 @@ impl RateLimiter {
         let allowed = current_minute <= policy.max_per_minute
             && current_hour <= policy.max_per_hour
             && current_day <= policy.max_per_day;
+
+        if allowed {
+            tracing::warn!(
+                operation = operation,
+                workspace = %workspace.0,
+                decision = "Allow",
+                current_minute = current_minute,
+                current_hour = current_hour,
+                current_day = current_day,
+                limit_minute = policy.max_per_minute,
+                limit_hour = policy.max_per_hour,
+                limit_day = policy.max_per_day,
+                "rate_limiter: operation allowed"
+            );
+        } else {
+            tracing::error!(
+                operation = operation,
+                workspace = %workspace.0,
+                decision = "Deny",
+                reason = "Rate limit exceeded",
+                current_minute = current_minute,
+                current_hour = current_hour,
+                current_day = current_day,
+                limit_minute = policy.max_per_minute,
+                limit_hour = policy.max_per_hour,
+                limit_day = policy.max_per_day,
+                "rate_limiter: operation denied"
+            );
+        }
 
         Ok(RateLimitResult {
             allowed,
@@ -133,6 +173,12 @@ impl RateLimiter {
     }
 
     pub fn record(&self, operation: &str, workspace: WorkspaceId) {
+        tracing::warn!(
+            operation = operation,
+            workspace = %workspace.0,
+            decision = "Record",
+            "rate_limiter: operation recorded"
+        );
         self.store.add_record(workspace, operation, chrono::Utc::now());
     }
 

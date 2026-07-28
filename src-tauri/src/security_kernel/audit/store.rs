@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! store - 审计存储模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::collections::VecDeque;
 use std::sync::RwLock;
 
@@ -7,8 +11,12 @@ use uuid::Uuid;
 use super::super::WorkspaceId;
 use super::event::{AuditEntry, AuditFilter, SecurityEvent};
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
 const DEFAULT_MAX_ENTRIES: usize = 10000;
 const DEFAULT_MAX_AGE_DAYS: i64 = 7;
+
+// ── 审计存储 ────────────────────────────────────────────────────────────────
 
 pub struct AuditStore {
     entries: RwLock<VecDeque<AuditEntry>>,

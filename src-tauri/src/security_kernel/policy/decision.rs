@@ -1,9 +1,15 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! decision - 策略决策定义模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::security_kernel::permission::{FsOperation, FsScope, Operation};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// ── 策略决策 ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum PolicyDecision {
     Allow,
     RequireApproval,
@@ -19,6 +25,8 @@ impl fmt::Display for PolicyDecision {
         }
     }
 }
+
+// ── 操作风险等级 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OperationRisk {
@@ -54,6 +62,7 @@ impl OperationRisk {
     }
 }
 
+/// 计算操作风险等级
 pub fn calculate_operation_risk(op: &Operation) -> OperationRisk {
     match op {
         Operation::Filesystem { scope, operation, .. } => {
@@ -125,6 +134,8 @@ fn calculate_network_risk(method: &str) -> OperationRisk {
     }
 }
 
+// ── 策略评估结果 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyEvaluation {
     pub decision: PolicyDecision,
@@ -132,6 +143,8 @@ pub struct PolicyEvaluation {
     pub source: PolicySource,
     pub reason: String,
 }
+
+// ── 策略来源 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PolicySource {

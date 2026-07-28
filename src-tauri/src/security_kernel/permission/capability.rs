@@ -1,7 +1,13 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! capability - 权限能力定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::{FsOperation, FsScope, NetworkScope, ShellScope};
+
+// ── 权限能力枚举 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Capability {

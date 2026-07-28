@@ -1,9 +1,15 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! event - 安全事件定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::super::WorkspaceId;
 use super::super::types::RiskLevel;
+
+// ── 安全事件枚举 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SecurityEvent {
@@ -183,6 +189,8 @@ impl SecurityEvent {
     }
 }
 
+// ── 审计条目 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
     pub id: Uuid,
@@ -199,6 +207,8 @@ impl AuditEntry {
         }
     }
 }
+
+// ── 审计过滤器 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Default)]
 pub struct AuditFilter {

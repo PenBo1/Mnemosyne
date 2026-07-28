@@ -1,5 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! network_scope - 网络范围定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+// ── 网络范围 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NetworkScope {
@@ -61,6 +67,8 @@ impl fmt::Display for NetworkScope {
     }
 }
 
+// ── 网络端点 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NetworkEndpoint {
     pub host: String,
@@ -110,6 +118,8 @@ impl fmt::Display for NetworkEndpoint {
         }
     }
 }
+
+// ── 协议 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Protocol {

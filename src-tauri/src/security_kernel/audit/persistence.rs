@@ -1,13 +1,18 @@
-// DbAuditHandler:把审计事件持久化到 SQLite audit_events 表。
-//
-// 作为 EventHandler 订阅 AuditEventBus,每次 emit 都会落盘一行。
-// 写入失败时仅记录警告,不阻断主流程——审计日志不应影响业务执行。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! persistence - 审计持久化模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use super::bus::EventHandler;
 use super::event::{AuditEntry, SecurityEvent};
 use crate::infrastructure::db::connection::Database;
 use crate::infrastructure::db::stores::audit::insert_audit_event;
 
+// ── 数据库审计处理器 ────────────────────────────────────────────────────────
+
+/// 把审计事件持久化到 SQLite audit_events 表。
+///
+/// 作为 EventHandler 订阅 AuditEventBus,每次 emit 都会落盘一行。
+/// 写入失败时仅记录警告,不阻断主流程——审计日志不应影响业务执行。
 pub struct DbAuditHandler {
     db: Database,
 }

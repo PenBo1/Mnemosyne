@@ -1,8 +1,9 @@
-// SecurityKernel IPC 命令:审计事件查询、统计、过滤、直方图、kernel 状态、approval 管理。
-//
-// 供仪表盘 Violations 卡片、审计日志页面、安全拦截面板调用。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! commands - 安全内核 IPC 命令模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use tauri::State;
+use std::time::Instant;
 
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::db::stores::audit::{
@@ -31,7 +32,15 @@ pub async fn audit_events_query(
 pub async fn audit_event_stats(
     state: State<'_, DbState>,
 ) -> Result<IpcResponse<serde_json::Value>, AppError> {
+    let start = Instant::now();
+    tracing::info!("audit_event_stats: enter");
+    
     let stats = state.db.audit_event_stats()?;
+    
+    tracing::info!(
+        duration_ms = start.elapsed().as_millis(),
+        "audit_event_stats: exit"
+    );
     Ok(IpcResponse::ok(serde_json::to_value(stats)?))
 }
 
@@ -157,8 +166,19 @@ pub async fn approval_reject(
     reason: String,
     state: State<'_, SecurityKernelState>,
 ) -> Result<IpcResponse<()>, AppError> {
+    let start = Instant::now();
+    tracing::info!(approval_id = %approval_id, rejected_by = %rejected_by, "approval_reject: enter");
+    
     let id = parse_approval_id(&approval_id)?;
+    tracing::debug!(approval_id = %approval_id, "approval_reject: approval_id parsed");
+    
     state.reject_approval(id, rejected_by, reason)?;
+    
+    tracing::info!(
+        approval_id = %approval_id,
+        duration_ms = start.elapsed().as_millis(),
+        "approval_reject: exit"
+    );
     Ok(IpcResponse::ok(()))
 }
 
@@ -176,4 +196,129 @@ fn parse_approval_id(s: &str) -> Result<ApprovalId, AppError> {
     uuid::Uuid::parse_str(s)
         .map(ApprovalId)
         .map_err(|e| AppError::bad_request(format!("Invalid approval_id '{}': {}", s, e)))
+}
+
+// ── PVE（Prompt Validator Executor）命令 ──
+
+/// PVE 工具调用验证请求 DTO。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PveValidateToolCallRequest {
+    pub tool_name: String,
+    pub parameters: serde_json::Value,
+    #[serde(default)]
+    pub content_segments: Vec<ContentSegmentDto>,
+    #[serde(default)]
+    pub declared_intent: Option<String>,
+    #[serde(default)]
+    pub target_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ContentSegmentDto {
+    pub content: String,
+    pub source: String,
+}
+
+/// 验证工具调用参数（PVE Layer 检查）。
+///
+/// 执行参数校验、注入扫描、意图检查。
+#[tauri::command]
+pub async fn pve_validate_tool_call(
+    request: PveValidateToolCallRequest,
+    state: State<'_, SecurityKernelState>,
+) -> Result<IpcResponse<crate::security_kernel::pve::PveResult>, AppError> {
+    use crate::security_kernel::pve::{ToolCallContext, ContentSource};
+
+    let mut ctx = ToolCallContext::new(request.tool_name, request.parameters);
+
+    for segment in request.content_segments {
+        let source = match segment.source.to_lowercase().as_str() {
+            "retrieved" => ContentSource::Retrieved,
+            "user_message" => ContentSource::UserMessage,
+            "tool_output" => ContentSource::ToolOutput,
+            "agent_generated" => ContentSource::AgentGenerated,
+            "system_prompt" => ContentSource::SystemPrompt,
+            _ => ContentSource::UserMessage,
+        };
+        ctx = ctx.with_content(segment.content, source);
+    }
+
+    if let Some(intent) = request.declared_intent {
+        ctx = ctx.with_intent(intent);
+    }
+
+    for path in request.target_paths {
+        ctx = ctx.with_target_path(path);
+    }
+
+    let pve = state.pve().read().unwrap_or_else(|e| e.into_inner());
+    let result = pve.execute(&ctx)?;
+
+    Ok(IpcResponse::ok(result))
+}
+
+/// 获取 PVE 注入模式列表。
+#[tauri::command]
+pub async fn pve_get_injection_patterns(
+    _state: State<'_, SecurityKernelState>,
+) -> Result<IpcResponse<Vec<crate::security_kernel::pve::InjectionPattern>>, AppError> {
+    use crate::security_kernel::pve::get_default_injection_patterns;
+
+    let patterns = get_default_injection_patterns().to_vec();
+    Ok(IpcResponse::ok(patterns))
+}
+
+/// 获取 PVE 敏感表面列表。
+#[tauri::command]
+pub async fn pve_get_sensitive_surfaces(
+    _state: State<'_, SecurityKernelState>,
+) -> Result<IpcResponse<Vec<crate::security_kernel::pve::SensitiveSurface>>, AppError> {
+    use crate::security_kernel::pve::IntentChecker;
+
+    let checker = IntentChecker::new();
+    let surfaces = checker.sensitive_surfaces().to_vec();
+
+    Ok(IpcResponse::ok(surfaces))
+}
+
+/// 检查路径是否为敏感表面。
+#[tauri::command]
+pub async fn pve_check_sensitive_path(
+    path: String,
+    _state: State<'_, SecurityKernelState>,
+) -> Result<IpcResponse<Vec<crate::security_kernel::pve::SensitiveSurfaceMatch>>, AppError> {
+    use crate::security_kernel::pve::IntentChecker;
+
+    let checker = IntentChecker::new();
+    let matches = checker.check_sensitive_surface(&path);
+
+    Ok(IpcResponse::ok(matches))
+}
+
+/// 扫描内容中的注入模式。
+#[tauri::command]
+pub async fn pve_scan_content(
+    content: String,
+    source: String,
+    _state: State<'_, SecurityKernelState>,
+) -> Result<IpcResponse<Vec<crate::security_kernel::pve::InjectionMatchDto>>, AppError> {
+    use crate::security_kernel::pve::{InjectionScanner, ContentSource};
+
+    let content_source = match source.to_lowercase().as_str() {
+        "retrieved" => ContentSource::Retrieved,
+        "user_message" => ContentSource::UserMessage,
+        "tool_output" => ContentSource::ToolOutput,
+        "agent_generated" => ContentSource::AgentGenerated,
+        "system_prompt" => ContentSource::SystemPrompt,
+        _ => ContentSource::UserMessage,
+    };
+
+    let scanner = InjectionScanner::new();
+    let matches = scanner.scan(&content, content_source);
+
+    let dtos: Vec<_> = matches.iter()
+        .map(crate::security_kernel::pve::InjectionMatchDto::from)
+        .collect();
+
+    Ok(IpcResponse::ok(dtos))
 }

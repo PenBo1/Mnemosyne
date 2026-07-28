@@ -1,5 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! filesystem_scope - 文件系统范围定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+// ── 文件系统范围 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FsScope {
@@ -53,6 +59,8 @@ impl FsScope {
         }
     }
 }
+
+// ── 文件系统操作 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum FsOperation {

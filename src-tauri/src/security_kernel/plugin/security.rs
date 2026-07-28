@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! security - 插件安全管理模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -8,6 +12,8 @@ use super::{
 };
 use crate::shared::error::AppError;
 use crate::security_kernel::permission::{FsScope, FsOperation};
+
+// ── 插件安全管理器 ────────────────────────────────────────────────────────────────
 
 pub struct PluginSecurity {
     registry: Arc<Mutex<PluginRegistry>>,
@@ -32,6 +38,7 @@ impl PluginSecurity {
         self
     }
 
+    /// 从路径加载清单
     pub fn load_manifest(&self, plugin_path: &Path) -> Result<PluginManifest, PluginLoadError> {
         if !plugin_path.exists() {
             return Err(PluginLoadError::NotFound(plugin_path.to_path_buf()));
@@ -52,33 +59,37 @@ impl PluginSecurity {
             .map_err(|e| PluginLoadError::InvalidManifest(manifest_path.clone(), e.to_string()))
     }
 
+    /// 注册插件
     pub fn register_plugin(&self, manifest: PluginManifest) -> Result<(), AppError> {
         let mut registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         registry.register(manifest)
     }
 
+    /// 注销插件
     pub fn unregister_plugin(&self, plugin_id: &PluginId) -> Result<(), AppError> {
         let mut registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         registry.unregister(plugin_id)
     }
 
+    /// 请求权限审批
     pub fn request_permission(
         &self,
         plugin_id: &PluginId,
         permissions: &[PluginPermission],
     ) -> Result<PermissionApprovalResult, AppError> {
         let registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         let record = registry.get(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         let manifest = &record.manifest;
 
+        // 检查是否有未声明的权限
         let undeclared = permissions.iter()
             .filter(|p| !manifest.permissions.contains(p))
             .cloned()
@@ -86,11 +97,12 @@ impl PluginSecurity {
 
         if !undeclared.is_empty() {
             return Err(AppError::permission_denied(
-                format!("Permissions not declared: {}", 
+                format!("未声明的权限: {}", 
                     undeclared.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
             ));
         }
 
+        // 判断是否需要审批
         let risk_level = manifest.risk_level();
         let requires_approval = risk_level >= PluginRiskLevel::Medium || 
             permissions.iter().any(|p| p.is_write_operation());
@@ -99,6 +111,7 @@ impl PluginSecurity {
             return Ok(PermissionApprovalResult::AutoApproved);
         }
 
+        // 调用审批回调
         if let Some(callback) = &self.approval_callback {
             let approved = callback(manifest, permissions);
             if approved {
@@ -111,9 +124,10 @@ impl PluginSecurity {
         }
     }
 
+    /// 授予权限
     pub fn grant_permissions(&self, plugin_id: &PluginId, permissions: &[PluginPermission]) -> Result<(), AppError> {
         let mut registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         for permission in permissions {
             registry.grant_permission(plugin_id, permission.clone())?;
@@ -122,9 +136,10 @@ impl PluginSecurity {
         Ok(())
     }
 
+    /// 检查权限
     pub fn check_permission(&self, plugin_id: &PluginId, operation: &PluginOperation) -> Result<(), AppError> {
         let registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         let permission = operation.to_permission();
 
@@ -133,20 +148,21 @@ impl PluginSecurity {
         match result {
             PermissionCheckResult::Granted => Ok(()),
             PermissionCheckResult::Pending => Err(AppError::permission_denied(
-                "Permission pending approval"
+                "权限待审批"
             )),
             PermissionCheckResult::NotDeclared => Err(AppError::permission_denied(
-                format!("Permission {} not declared in manifest", permission)
+                format!("权限 {} 未在清单中声明", permission)
             )),
             PermissionCheckResult::PluginNotFound => Err(AppError::not_found(
-                format!("Plugin {} not found", plugin_id)
+                format!("未找到插件 {}", plugin_id)
             )),
             PermissionCheckResult::PluginDisabled => Err(AppError::permission_denied(
-                "Plugin is disabled"
+                "插件已禁用"
             )),
         }
     }
 
+    /// 检查文件系统操作权限
     pub fn check_fs_operation(
         &self,
         plugin_id: &PluginId,
@@ -157,19 +173,20 @@ impl PluginSecurity {
         self.check_permission(plugin_id, &PluginOperation::Filesystem { scope, operation })
     }
 
+    /// 检查网络访问权限
     pub fn check_network_access(
         &self,
         plugin_id: &PluginId,
         host: &str,
     ) -> Result<(), AppError> {
         let registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         let record = registry.get(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         if !record.enabled {
-            return Err(AppError::permission_denied("Plugin is disabled"));
+            return Err(AppError::permission_denied("插件已禁用"));
         }
 
         let has_network_perm = record.manifest.permissions.iter()
@@ -178,7 +195,7 @@ impl PluginSecurity {
 
         if !has_network_perm {
             return Err(AppError::permission_denied(
-                format!("Network access to {} not permitted", host)
+                format!("不允许访问网络 {}", host)
             ));
         }
 
@@ -186,19 +203,20 @@ impl PluginSecurity {
             .filter_map(|p| if let PluginPermission::Network(net) = p { Some(net) } else { None })
             .any(|net| net.can_access_host(host)) {
             return Err(AppError::permission_denied(
-                "Network permission pending approval"
+                "网络权限待审批"
             ));
         }
 
         Ok(())
     }
 
+    /// 获取插件信息
     pub fn get_plugin_info(&self, plugin_id: &PluginId) -> Result<PluginInfo, AppError> {
         let registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         let record = registry.get(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         Ok(PluginInfo {
             id: record.manifest.id,
@@ -212,9 +230,10 @@ impl PluginSecurity {
         })
     }
 
+    /// 列出所有插件
     pub fn list_plugins(&self) -> Result<Vec<PluginInfo>, AppError> {
         let registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         Ok(registry.list_plugins().iter().map(|r| PluginInfo {
             id: r.manifest.id,
@@ -230,10 +249,10 @@ impl PluginSecurity {
 
     pub fn enable_plugin(&self, plugin_id: &PluginId) -> Result<(), AppError> {
         let mut registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         let record = registry.get_mut(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         record.enable();
         Ok(())
@@ -241,10 +260,10 @@ impl PluginSecurity {
 
     pub fn disable_plugin(&self, plugin_id: &PluginId) -> Result<(), AppError> {
         let mut registry = self.registry.lock()
-            .map_err(|_| AppError::internal("Failed to lock registry"))?;
+            .map_err(|_| AppError::internal("无法锁定注册表"))?;
 
         let record = registry.get_mut(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         record.disable();
         Ok(())
@@ -257,6 +276,8 @@ impl Default for PluginSecurity {
     }
 }
 
+// ── 插件操作 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub enum PluginOperation {
     Filesystem { scope: FsScope, operation: FsOperation },
@@ -268,6 +289,7 @@ pub enum PluginOperation {
 }
 
 impl PluginOperation {
+    /// 转换为权限类型
     pub fn to_permission(&self) -> PluginPermission {
         match self {
             Self::Filesystem { scope, operation } => {
@@ -292,12 +314,14 @@ impl PluginOperation {
             }
             Self::Shell { command } => format!("shell:{}", command),
             Self::Network { host } => format!("network:{}", host),
-            Self::ClipboardRead => "clipboard:read".to_string(),
-            Self::ClipboardWrite => "clipboard:write".to_string(),
-            Self::Notification => "notification".to_string(),
+            Self::ClipboardRead => "剪贴板:读取".to_string(),
+            Self::ClipboardWrite => "剪贴板:写入".to_string(),
+            Self::Notification => "通知".to_string(),
         }
     }
 }
+
+// ── 插件信息 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct PluginInfo {
@@ -310,6 +334,8 @@ pub struct PluginInfo {
     pub pending_permissions: Vec<PluginPermission>,
     pub enabled: bool,
 }
+
+// ── 审批结果 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionApprovalResult {
@@ -333,6 +359,8 @@ impl PermissionApprovalResult {
     }
 }
 
+// ── 加载错误 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub enum PluginLoadError {
     NotFound(std::path::PathBuf),
@@ -345,11 +373,11 @@ pub enum PluginLoadError {
 impl std::fmt::Display for PluginLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotFound(path) => write!(f, "Plugin directory not found: {}", path.display()),
-            Self::MissingManifest(path) => write!(f, "Missing manifest.json in {}", path.display()),
-            Self::ReadError(path, err) => write!(f, "Failed to read manifest at {}: {}", path.display(), err),
-            Self::ParseError(path, err) => write!(f, "Failed to parse manifest at {}: {}", path.display(), err),
-            Self::InvalidManifest(path, err) => write!(f, "Invalid manifest at {}: {}", path.display(), err),
+            Self::NotFound(path) => write!(f, "未找到插件目录: {}", path.display()),
+            Self::MissingManifest(path) => write!(f, "缺少 manifest.json: {}", path.display()),
+            Self::ReadError(path, err) => write!(f, "读取清单失败 {}: {}", path.display(), err),
+            Self::ParseError(path, err) => write!(f, "解析清单失败 {}: {}", path.display(), err),
+            Self::InvalidManifest(path, err) => write!(f, "无效清单 {}: {}", path.display(), err),
         }
     }
 }

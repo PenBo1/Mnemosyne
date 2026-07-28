@@ -1,11 +1,6 @@
-// Hook 引擎 —— 包装 HookRegistry，提供带审计的派发接口。
-//
-// 职责：
-// - 持有 HookRegistry（Arc 共享）
-// - 持有 SharedAuditEventBus，每次派发后 emit `HookDispatched` 事件
-// - 提供 `dispatch` async 方法：派发 hook，aborted 时返回 Err
-//
-// 不持有 SecurityKernel 引用（避免循环依赖）。kernel 反向持有 hook_engine。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! engine - Hook 引擎模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::sync::Arc;
 
@@ -15,6 +10,8 @@ use crate::shared::error::AppError;
 
 use super::registry::{HookDispatchOutcome, HookRegistry};
 use super::types::HookPayload;
+
+// ── Hook 引擎 ────────────────────────────────────────────────────────────────
 
 pub struct HookEngine {
     registry: Arc<HookRegistry>,
@@ -38,15 +35,42 @@ impl HookEngine {
     ///
     /// 无论是否 aborted，都会 emit `HookDispatched` 审计事件。
     pub async fn dispatch(&self, payload: &HookPayload) -> Result<HookDispatchOutcome, AppError> {
+        tracing::warn!(
+            operation = "hook_dispatch",
+            decision = "Processing",
+            event = payload.event.as_str(),
+            tool_name = payload.tool_name.as_deref().unwrap_or("none"),
+            workspace = payload.workspace_id.as_deref().unwrap_or("none"),
+            "hook_engine: dispatching hook"
+        );
+
         let outcome = self.registry.dispatch(payload.event, payload).await;
         self.emit_audit(&outcome, payload);
+
         if outcome.aborted {
+            tracing::error!(
+                operation = "hook_dispatch",
+                decision = "Deny",
+                reason = "Hook aborted by Block action",
+                event = payload.event.as_str(),
+                dispatched_count = outcome.dispatched_count,
+                "hook_engine: hook aborted"
+            );
             return Err(AppError::forbidden(format!(
                 "Hook '{}' aborted by Block action (triggered {} hooks)",
                 payload.event.as_str(),
                 outcome.dispatched_count
             )));
         }
+
+        tracing::warn!(
+            operation = "hook_dispatch",
+            decision = "Allow",
+            event = payload.event.as_str(),
+            dispatched_count = outcome.dispatched_count,
+            "hook_engine: hook dispatch completed"
+        );
+
         Ok(outcome)
     }
 

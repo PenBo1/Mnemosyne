@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! user_override - 用户覆盖模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -6,6 +10,8 @@ use crate::security_kernel::permission::Operation;
 use crate::security_kernel::UserId;
 
 use super::workspace_override::{OverrideConditions, OverrideDecision, OperationOverride};
+
+// ── 用户覆盖 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOverride {
@@ -177,6 +183,8 @@ fn operation_pattern(op: &Operation) -> String {
         }
     }
 }
+
+// ── 用户覆盖注册表 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct UserOverrideRegistry {

@@ -1,16 +1,6 @@
-// TauriEmitHandler —— 把 SecurityEvent 实时推送到前端。
-//
-// 设计:
-// - 实现 EventHandler trait,订阅到 AuditEventBus
-// - 持有 AppHandle,在 handle() 中调用 app.emit("security://event", payload)
-// - 前端通过 listen("security://event", callback) 订阅
-//
-// payload 为 serde_json::Value,包含:
-// - event_id: Uuid(对应 AuditEntry.id)
-// - recorded_at: DateTime<Utc>(对应 AuditEntry.recorded_at)
-// - event: SecurityEvent 序列化
-//
-// 失败策略:Tauri emit 失败不影响 audit 流程(只记录 warn)。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! tauri_emit - Tauri 事件桥接模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -18,6 +8,8 @@ use uuid::Uuid;
 
 use crate::security_kernel::audit::bus::EventHandler;
 use crate::security_kernel::audit::event::{AuditEntry, SecurityEvent};
+
+// ── 安全事件载荷 ────────────────────────────────────────────────────────────────
 
 /// 推送到前端的 payload —— 包含 entry 元数据 + 完整 SecurityEvent。
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +24,8 @@ pub struct SecurityEventPayload {
     pub is_security_related: bool,
     pub event: SecurityEvent,
 }
+
+// ── Tauri 事件桥 ────────────────────────────────────────────────────────────────
 
 /// Tauri 事件桥 —— 把审计事件实时推送到前端。
 ///
@@ -69,6 +63,8 @@ impl EventHandler for TauriEmitHandler {
         }
     }
 }
+
+// ── 注册函数 ────────────────────────────────────────────────────────────────
 
 /// 在 setup 中注册 TauriEmitHandler 到 SecurityKernelState 的 audit_bus。
 ///

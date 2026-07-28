@@ -1,14 +1,22 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! registry - 插件注册表模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use super::{PluginId, PluginManifest, PluginPermission, PluginRiskLevel};
 use crate::shared::error::AppError;
 
+// ── 权限键 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GrantedPermissionKey {
     pub plugin_id: PluginId,
     pub permission: PluginPermission,
 }
+
+// ── 插件记录 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct PluginRecord {
@@ -42,16 +50,19 @@ impl PluginRecord {
         self.granted_permissions.contains(permission)
     }
 
+    /// 授予所有声明的权限
     pub fn grant_all_declared(&mut self) {
         for perm in self.manifest.permissions.iter() {
             self.granted_permissions.insert(perm.clone());
         }
     }
 
+    /// 撤销所有权限
     pub fn revoke_all(&mut self) {
         self.granted_permissions.clear();
     }
 
+    /// 获取待审批的权限列表
     pub fn pending_permissions(&self) -> Vec<PluginPermission> {
         self.manifest.permissions.iter()
             .filter(|p| !self.granted_permissions.contains(p))
@@ -59,6 +70,7 @@ impl PluginRecord {
             .collect()
     }
 
+    /// 检查是否有待审批权限
     pub fn has_pending_permissions(&self) -> bool {
         self.manifest.permissions.iter()
             .any(|p| !self.granted_permissions.contains(p))
@@ -77,6 +89,8 @@ impl PluginRecord {
     }
 }
 
+// ── 插件注册表 ────────────────────────────────────────────────────────────────
+
 pub struct PluginRegistry {
     plugins: HashMap<PluginId, PluginRecord>,
     pending_requests: HashMap<PluginId, Vec<PluginPermission>>,
@@ -90,9 +104,10 @@ impl PluginRegistry {
         }
     }
 
+    /// 注册插件
     pub fn register(&mut self, manifest: PluginManifest) -> Result<(), AppError> {
         if self.plugins.contains_key(&manifest.id) {
-            return Err(AppError::duplicate(format!("Plugin {} already registered", manifest.id)));
+            return Err(AppError::duplicate(format!("插件 {} 已注册", manifest.id)));
         }
 
         let id = manifest.id;
@@ -102,9 +117,10 @@ impl PluginRegistry {
         Ok(())
     }
 
+    /// 注销插件
     pub fn unregister(&mut self, plugin_id: &PluginId) -> Result<(), AppError> {
         if !self.plugins.contains_key(plugin_id) {
-            return Err(AppError::not_found(format!("Plugin {} not found", plugin_id)));
+            return Err(AppError::not_found(format!("未找到插件 {}", plugin_id)));
         }
 
         self.plugins.remove(plugin_id);
@@ -131,13 +147,14 @@ impl PluginRegistry {
             .unwrap_or(false)
     }
 
+    /// 授予指定权限
     pub fn grant_permission(&mut self, plugin_id: &PluginId, permission: PluginPermission) -> Result<(), AppError> {
         let record = self.plugins.get_mut(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         if !record.manifest.permissions.contains(&permission) {
             return Err(AppError::permission_denied(
-                format!("Permission {} not declared in plugin manifest", permission)
+                format!("权限 {} 未在插件清单中声明", permission)
             ));
         }
 
@@ -145,30 +162,34 @@ impl PluginRegistry {
         Ok(())
     }
 
+    /// 授予所有权限
     pub fn grant_all_permissions(&mut self, plugin_id: &PluginId) -> Result<(), AppError> {
         let record = self.plugins.get_mut(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         record.grant_all_declared();
         Ok(())
     }
 
+    /// 撤销指定权限
     pub fn revoke_permission(&mut self, plugin_id: &PluginId, permission: &PluginPermission) -> Result<(), AppError> {
         let record = self.plugins.get_mut(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         record.revoke_permission(permission);
         Ok(())
     }
 
+    /// 撤销所有权限
     pub fn revoke_all_permissions(&mut self, plugin_id: &PluginId) -> Result<(), AppError> {
         let record = self.plugins.get_mut(plugin_id)
-            .ok_or_else(|| AppError::not_found(format!("Plugin {} not found", plugin_id)))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到插件 {}", plugin_id)))?;
 
         record.revoke_all();
         Ok(())
     }
 
+    /// 检查权限状态
     pub fn check_permission(&self, plugin_id: &PluginId, permission: &PluginPermission) -> PermissionCheckResult {
         let record = self.plugins.get(plugin_id);
 
@@ -193,6 +214,7 @@ impl PluginRegistry {
         self.plugins.values().filter(|r| r.enabled).collect()
     }
 
+    /// 按风险等级列出插件
     pub fn list_by_risk(&self, level: PluginRiskLevel) -> Vec<&PluginRecord> {
         self.plugins.values()
             .filter(|r| r.manifest.risk_level() == level)
@@ -231,6 +253,8 @@ impl Default for PluginRegistry {
     }
 }
 
+// ── 权限检查结果 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionCheckResult {
     Granted,
@@ -256,13 +280,15 @@ impl PermissionCheckResult {
     pub fn error_message(&self) -> Option<String> {
         match self {
             Self::Granted => None,
-            Self::Pending => Some("Permission pending approval".to_string()),
-            Self::NotDeclared => Some("Permission not declared in manifest".to_string()),
-            Self::PluginNotFound => Some("Plugin not found".to_string()),
-            Self::PluginDisabled => Some("Plugin is disabled".to_string()),
+            Self::Pending => Some("权限待审批".to_string()),
+            Self::NotDeclared => Some("权限未在清单中声明".to_string()),
+            Self::PluginNotFound => Some("未找到插件".to_string()),
+            Self::PluginDisabled => Some("插件已禁用".to_string()),
         }
     }
 }
+
+// ── 共享类型 ────────────────────────────────────────────────────────────────
 
 pub type SharedPluginRegistry = Arc<Mutex<PluginRegistry>>;
 

@@ -1,17 +1,6 @@
-// Hook 注册表 —— 存储 ConfiguredHook，按 priority 降序派发。
-//
-// 派发语义：
-// - 同一 event 的所有 hook 按 priority 降序执行。
-// - matcher 不匹配的 hook 跳过。
-// - 任意 hook 返回 FailedAbort → 立即停止后续 hook，返回 Err。
-// - 任意 hook 返回 FailedContinue → 记录警告，继续后续。
-// - handler 内部 panic 会被 catch_unwind 捕获并视为 FailedContinue（不阻断链）。
-//
-// 内置 action → handler 映射：
-// - Log: tracing::info! 记录 payload
-// - Audit: 通过 audit_bus 发送 SecurityEvent::HookDispatched
-// - Block: 直接返回 FailedAbort
-// - Custom(_): 等同 Log
+//! ═══════════════════════════════════════════════════════════════════════════
+//! registry - Hook 注册表模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::sync::{Arc, RwLock};
 
@@ -24,6 +13,8 @@ use super::types::{
     ConfiguredHook, HookAction, HookConfig, HookEvent, HookFn, HookInfo, HookMatcher, HookPayload,
     HookResult, HookTestResult,
 };
+
+// ── Hook 派发结果 ────────────────────────────────────────────────────────────────
 
 /// Hook 派发结果（内部用）。
 #[derive(Debug, Clone)]
@@ -61,6 +52,8 @@ impl From<HookDispatchOutcome> for HookTestResult {
         }
     }
 }
+
+// ── Hook 注册表 ────────────────────────────────────────────────────────────────
 
 /// Hook 注册表 —— 线程安全（RwLock）。
 pub struct HookRegistry {
@@ -194,7 +187,7 @@ impl Default for HookRegistry {
     }
 }
 
-// ── 辅助函数 ──
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 fn matcher_matches(matcher: &Option<HookMatcher>, payload: &HookPayload) -> bool {
     match matcher {
@@ -204,10 +197,6 @@ fn matcher_matches(matcher: &Option<HookMatcher>, payload: &HookPayload) -> bool
 }
 
 /// 调用 hook handler —— 包裹 catch_unwind 以防 handler panic 阻断链。
-///
-/// handler 是 `Arc<dyn Fn(&HookPayload) -> BoxFuture<'static, HookResult>>`。
-/// 调用 handler 返回 future，await future 时若 panic 则被 `catch_unwind` 捕获，
-/// 视为 `FailedContinue`（不阻断后续 hook）。
 async fn invoke_handler(handler: &HookFn, payload: &HookPayload) -> HookResult {
     let fut = handler(payload);
     std::panic::AssertUnwindSafe(fut)
@@ -219,10 +208,9 @@ async fn invoke_handler(handler: &HookFn, payload: &HookPayload) -> HookResult {
         })
 }
 
+// ── 内置 action → handler 映射 ────────────────────────────────────────────────
+
 /// 内置 action → handler 映射。
-///
-/// 每个 handler 都是 `Arc<dyn Fn(&HookPayload) -> BoxFuture<'static, HookResult>>`。
-/// handler 内部克隆所需数据后返回 'static future。
 pub fn handler_for_action(action: &HookAction) -> HookFn {
     match action {
         HookAction::Log => Arc::new(|payload: &HookPayload| {
@@ -242,8 +230,6 @@ pub fn handler_for_action(action: &HookAction) -> HookFn {
             })
         }),
         HookAction::Audit => Arc::new(|payload: &HookPayload| {
-            // Audit 事件通过 tracing 记录（实际 audit_bus 集成在 HookEngine 中，
-            // 避免在 handler 内部持有 audit_bus 引用造成循环依赖）。
             let event = payload.event;
             let tool = payload.tool_name.clone();
             let ws = payload.workspace_id.clone();

@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! token - 审批令牌模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -6,6 +10,8 @@ use uuid::Uuid;
 use crate::security_kernel::permission::Operation;
 use crate::security_kernel::policy::OperationRisk;
 use crate::security_kernel::WorkspaceId;
+
+// ── 审批 ID ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ApprovalId(pub Uuid);
@@ -21,6 +27,8 @@ impl Default for ApprovalId {
         Self::new()
     }
 }
+
+// ── 审批令牌 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApprovalToken {
@@ -92,6 +100,8 @@ impl ApprovalToken {
     }
 }
 
+// ── 操作哈希计算 ────────────────────────────────────────────────────────────────
+
 pub fn calculate_action_hash(op: &Operation) -> String {
     let mut hasher = Sha256::new();
 
@@ -106,7 +116,7 @@ pub fn calculate_action_hash(op: &Operation) -> String {
             hasher.update("shell");
             hasher.update(scope.to_string().as_bytes());
             hasher.update(command.as_bytes());
-            // Medium 13: 序列化失败时记录警告（非静默）,Vec<String> 序列化实际不会失败
+            // 序列化失败时记录警告（非静默）,Vec<String> 序列化实际不会失败
             let args_json = serde_json::to_string(args).unwrap_or_else(|e| {
                 tracing::warn!(error = %e, "Failed to serialize shell args for action hash, using empty string");
                 String::new()
@@ -125,6 +135,8 @@ pub fn calculate_action_hash(op: &Operation) -> String {
     hex::encode(result)
 }
 
+// ── 审批请求与结果 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     pub token: ApprovalToken,
@@ -140,6 +152,8 @@ pub struct ApprovalResult {
     pub approved_by: Option<String>,
     pub message: String,
 }
+
+// ── 单元测试 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

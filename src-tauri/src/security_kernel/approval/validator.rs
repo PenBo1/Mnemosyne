@@ -1,8 +1,14 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! validator - 审批验证模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use crate::shared::error::{AppError, status};
 use crate::security_kernel::permission::Operation;
 use crate::security_kernel::WorkspaceId;
 
 use super::token::{ApprovalId, ApprovalToken, calculate_action_hash};
+
+// ── 验证错误 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
@@ -55,6 +61,8 @@ impl From<ValidationError> for AppError {
         }
     }
 }
+
+// ── 审批验证器 ────────────────────────────────────────────────────────────────
 
 pub struct ApprovalValidator;
 
@@ -109,6 +117,8 @@ impl ApprovalValidator {
         token.matches_operation(op)
     }
 }
+
+// ── 验证结果 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct ValidationResult {

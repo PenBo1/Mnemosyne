@@ -1,7 +1,13 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! shell_scope - Shell 范围定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+
+// ── Shell 范围 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShellScope {
@@ -109,6 +115,8 @@ impl fmt::Display for ShellScope {
     }
 }
 
+// ── Git 操作 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum GitOperation {
     Status,
@@ -193,6 +201,8 @@ impl fmt::Display for GitOperation {
         }
     }
 }
+
+// ── Cargo 操作 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum CargoOperation {

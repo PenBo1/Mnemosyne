@@ -1,15 +1,6 @@
-// HookDispatcher trait —— AgentEngine / SubAgentExecutor 通过此 trait 派发生命周期 hook。
-//
-// 设计动机：
-// - AgentEngine 与 SubAgentExecutor 需要在 SessionStart/UserPromptSubmit/Stop/
-//   SubagentStart/SubagentStop 等节点派发 hook
-// - 通过 trait 抽象，避免 AgentEngine 直接耦合 HookEngine 的具体实现
-// - 仅提供 async 派发：所有调用方均在 async 上下文，sync 派发已废弃
-//
-// 集成路径：
-// - AgentEngine 持有 Option<Arc<HookEngine>>（通过 HookDispatcher trait 使用）
-// - SubAgentExecutor 持有 Option<&dyn HookDispatcher>（借用 AgentEngine 的 dispatcher）
-// - lib.rs 在构造 AgentEngine 时注入 HookEngine（从 SecurityKernel 提取）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! dispatcher - Hook 派发器模块
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::sync::Arc;
 
@@ -19,6 +10,8 @@ use crate::shared::error::AppError;
 
 use super::engine::HookEngine;
 use super::types::{HookEvent, HookPayload};
+
+// ── Hook 派发器 trait ────────────────────────────────────────────────────────
 
 /// Hook 派发器 trait —— 抽象 hook 派发逻辑，供 AgentEngine / SubAgentExecutor 使用。
 #[async_trait]
@@ -36,10 +29,43 @@ impl HookDispatcher for HookEngine {
     async fn dispatch_hook(&self, payload: &HookPayload) -> Result<(), AppError> {
         // registry 为空时快速返回（避免无 hook 时的无谓 audit emit）
         if self.registry().count() == 0 {
+            tracing::debug!(
+                operation = "dispatch_hook",
+                decision = "Skip",
+                reason = "No hooks registered",
+                "hook_dispatcher: skipped (no hooks)"
+            );
             return Ok(());
         }
-        self.dispatch(payload).await?;
-        Ok(())
+
+        tracing::warn!(
+            operation = "dispatch_hook",
+            decision = "Processing",
+            event = payload.event.as_str(),
+            "hook_dispatcher: dispatching hook"
+        );
+
+        match self.dispatch(payload).await {
+            Ok(_) => {
+                tracing::warn!(
+                    operation = "dispatch_hook",
+                    decision = "Allow",
+                    event = payload.event.as_str(),
+                    "hook_dispatcher: hook dispatch succeeded"
+                );
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!(
+                    operation = "dispatch_hook",
+                    decision = "Deny",
+                    reason = e.message.as_str(),
+                    event = payload.event.as_str(),
+                    "hook_dispatcher: hook dispatch failed"
+                );
+                Err(e)
+            }
+        }
     }
 
     fn has_hooks(&self) -> bool {
@@ -47,10 +73,7 @@ impl HookDispatcher for HookEngine {
     }
 }
 
-// ── HookPayload 构造辅助函数 ──
-//
-// 为每个生命周期事件提供语义化的构造函数，减少调用方的样板代码。
-// 调用方仍可通过 with_*() builder 方法附加更多字段。
+// ── HookPayload 构造辅助函数 ────────────────────────────────────────────────
 
 /// 构造 SessionStart payload。
 pub fn session_start_payload(
@@ -185,6 +208,8 @@ pub fn post_compact_payload(
     payload
 }
 
+// ── 类型别名与辅助函数 ────────────────────────────────────────────────
+
 /// 类型别名：Option<Arc<HookEngine>> 作为 AgentEngine 的 hook 字段类型。
 pub type OptionalHookDispatcher = Option<Arc<HookEngine>>;
 
@@ -197,7 +222,22 @@ pub async fn try_dispatch(
     payload: &HookPayload,
 ) -> Result<(), AppError> {
     if let Some(d) = dispatcher {
+        tracing::warn!(
+            operation = "try_dispatch",
+            decision = "Processing",
+            event = payload.event.as_str(),
+            has_dispatcher = true,
+            "hook_dispatcher: trying to dispatch hook"
+        );
         d.dispatch_hook(payload).await?;
+    } else {
+        tracing::debug!(
+            operation = "try_dispatch",
+            decision = "Skip",
+            reason = "No dispatcher provided",
+            event = payload.event.as_str(),
+            "hook_dispatcher: skipped (no dispatcher)"
+        );
     }
     Ok(())
 }

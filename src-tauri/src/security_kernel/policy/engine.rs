@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! engine - 策略引擎核心模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -15,16 +19,18 @@ use super::temporary_override::{TemporaryOverride, TemporaryOverrideRegistry};
 use super::user_override::{UserOverride, UserOverrideRegistry};
 use super::workspace_override::{WorkspaceOverride, WorkspaceOverrideRegistry};
 
+// ── 策略引擎 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug)]
 pub struct PolicyEngine {
     global_policy: GlobalPolicy,
-    // C5 锁模型说明：三个 registry 各自独立 RwLock，evaluate 按优先级
-    // (temporary > user > workspace > global) 顺序加锁查询，首个命中即返回。
-    // 锁顺序约定：如需在一次调用中持有多把锁，必须按 temporary → user → workspace
-    // 顺序获取，避免死锁。当前 evaluate 实现每轮只持有一把锁（读后释放再取下一把），
-    // 因此存在 TOCTOU 窗口：两次 evaluate 之间 override 可能被注册/移除。
-    // 这对策略决策是可接受的（worst case 是用过期 override 决策一次，下次调用会刷新），
-    // 且合并为单锁会牺牲并发读性能。register_* 方法只持有一把锁，无 TOCTOU 风险。
+    /// 锁模型说明：三个 registry 各自独立 RwLock，evaluate 按优先级
+    /// (temporary > user > workspace > global) 顺序加锁查询，首个命中即返回。
+    /// 锁顺序约定：如需在一次调用中持有多把锁，必须按 temporary → user → workspace
+    /// 顺序获取，避免死锁。当前 evaluate 实现每轮只持有一把锁（读后释放再取下一把），
+    /// 因此存在 TOCTOU 窗口：两次 evaluate 之间 override 可能被注册/移除。
+    /// 这对策略决策是可接受的（worst case 是用过期 override 决策一次，下次调用会刷新），
+    /// 且合并为单锁会牺牲并发读性能。register_* 方法只持有一把锁，无 TOCTOU 风险。
     workspace_registry: Arc<RwLock<WorkspaceOverrideRegistry>>,
     user_registry: Arc<RwLock<UserOverrideRegistry>>,
     temporary_registry: Arc<RwLock<TemporaryOverrideRegistry>>,
@@ -103,6 +109,7 @@ impl PolicyEngine {
         temp_registry.cleanup_expired();
     }
 
+    /// 评估操作策略
     pub fn evaluate(&self, op: &Operation, ctx: &OperationContext) -> Result<PolicyEvaluation, AppError> {
         let risk = calculate_operation_risk(op);
 
@@ -146,7 +153,7 @@ impl PolicyEngine {
                 risk,
                 source: PolicySource::TemporaryOverride,
                 reason: format!(
-                    "Temporary override: {} (approved by {:?}, remaining: {:?})",
+                    "临时覆盖: {} (审批人: {:?}, 剩余次数: {:?})",
                     reason, approved_by, remaining
                 ),
             })
@@ -155,14 +162,14 @@ impl PolicyEngine {
                 decision: PolicyDecision::Deny,
                 risk,
                 source: PolicySource::TemporaryOverride,
-                reason: "Temporary override approval count exhausted".to_string(),
+                reason: "临时覆盖审批次数已耗尽".to_string(),
             })
         }
     }
 
-    /// 在操作执行成功后消费临时 override 的 approval（递减 remaining_count）。
+    /// 在操作执行成功后消费临时覆盖的审批（递减 remaining_count）。
     /// 由 SecurityKernel 在 executor 成功后调用，确保只有真正成功的操作才消耗授权。
-    /// 返回 true 表示成功消费，false 表示无 override / 已过期 / remaining 已耗尽。
+    /// 返回 true 表示成功消费，false 表示无覆盖 / 已过期 / 剩余次数已耗尽。
     pub fn consume_temporary_approval(&self, op: &Operation, ctx: &OperationContext) -> bool {
         let mut registry = self.temporary_registry.write().unwrap_or_else(|e| e.into_inner());
         let Some(temp_override) = registry.get_mut(&ctx.session) else {
@@ -195,7 +202,7 @@ impl PolicyEngine {
             decision,
             risk,
             source: PolicySource::UserOverride,
-            reason: format!("User override: {}", operation_override.reason),
+            reason: format!("用户覆盖: {}", operation_override.reason),
         })
     }
 
@@ -222,7 +229,7 @@ impl PolicyEngine {
             decision,
             risk,
             source: PolicySource::WorkspaceOverride,
-            reason: format!("Workspace override: {}", operation_override.reason),
+            reason: format!("工作区覆盖: {}", operation_override.reason),
         })
     }
 
@@ -237,7 +244,7 @@ impl PolicyEngine {
                 decision: PolicyDecision::Deny,
                 risk,
                 source: PolicySource::GlobalPolicy,
-                reason: "Operation blocked by global policy".to_string(),
+                reason: "操作被全局策略阻止".to_string(),
             };
         }
 
@@ -246,7 +253,7 @@ impl PolicyEngine {
                 decision: PolicyDecision::RequireApproval,
                 risk,
                 source: PolicySource::GlobalPolicy,
-                reason: "Operation requires approval by global policy".to_string(),
+                reason: "操作需要全局策略审批".to_string(),
             };
         }
 
@@ -264,7 +271,7 @@ impl PolicyEngine {
                     risk,
                     source: PolicySource::GlobalPolicy,
                     reason: format!(
-                        "Filesystem operation {} on {} for trust level {}",
+                        "文件系统操作 {} 在 {} 上，信任级别 {}",
                         operation, scope, trust_level
                     ),
                 }
@@ -280,12 +287,12 @@ impl PolicyEngine {
                     decision,
                     risk,
                     source: PolicySource::GlobalPolicy,
-                    reason: format!("Shell operation for trust level {}", trust_level),
+                    reason: format!("Shell 操作，信任级别 {}", trust_level),
                 }
             }
             PermOp::Network { .. } => {
                 let workspace_policy = self.global_policy.get_workspace_policy(trust_level);
-                // Trusted 工作区的网络操作直接 Allow（LLM API 调用是核心功能，不应触发 approval）
+                // Trusted 工作区的网络操作直接 Allow（LLM API 调用是核心功能，不应触发审批）
                 // 其他信任级别仍按 risk 评估
                 let decision = if !workspace_policy.allow_network {
                     PolicyDecision::Deny
@@ -298,7 +305,7 @@ impl PolicyEngine {
                     decision,
                     risk,
                     source: PolicySource::GlobalPolicy,
-                    reason: format!("Network operation for trust level {}", trust_level),
+                    reason: format!("网络操作，信任级别 {}", trust_level),
                 }
             }
         }
@@ -400,7 +407,7 @@ mod tests {
             .add_override(
                 fs_op_key(),
                 OverrideDecision::AlwaysAllow,
-                "Test override".to_string()
+                "测试覆盖".to_string()
             );
 
         engine.register_workspace_override(workspace_override);
@@ -420,7 +427,7 @@ mod tests {
             .add_override(
                 fs_op_key(),
                 OverrideDecision::AlwaysDeny,
-                "Workspace denies".to_string()
+                "工作区拒绝".to_string()
             );
         engine.register_workspace_override(workspace_override);
 
@@ -428,7 +435,7 @@ mod tests {
             .add_global_override(
                 user_override_pattern(),
                 OverrideDecision::AlwaysAllow,
-                "User overrides to allow".to_string()
+                "用户覆盖允许".to_string()
             );
         engine.register_user_override(user_override);
 
@@ -447,7 +454,7 @@ mod tests {
             .add_override(
                 fs_op_key(),
                 OverrideDecision::AlwaysDeny,
-                "Workspace denies".to_string()
+                "工作区拒绝".to_string()
             );
         engine.register_workspace_override(workspace_override);
 
@@ -455,12 +462,12 @@ mod tests {
             .add_global_override(
                 user_override_pattern(),
                 OverrideDecision::AlwaysDeny,
-                "User also denies".to_string()
+                "用户也拒绝".to_string()
             );
         engine.register_user_override(user_override);
 
         let temp_override = TemporaryOverride::new(ctx.session, 30)
-            .approve_operation(&op, OverrideDecision::AlwaysAllow, Some("admin".to_string()), None, "Emergency override".to_string());
+            .approve_operation(&op, OverrideDecision::AlwaysAllow, Some("admin".to_string()), None, "紧急覆盖".to_string());
         engine.register_temporary_override(temp_override);
 
         let result = engine.evaluate(&op, &ctx).unwrap();
@@ -481,7 +488,7 @@ mod tests {
             .add_override(
                 fs_op_key(),
                 OverrideDecision::AlwaysAllow,
-                "Workspace override".to_string()
+                "工作区覆盖".to_string()
             );
         engine.register_workspace_override(workspace_override);
 
@@ -492,7 +499,7 @@ mod tests {
             .add_global_override(
                 user_override_pattern(),
                 OverrideDecision::AlwaysDeny,
-                "User override".to_string()
+                "用户覆盖".to_string()
             );
         engine.register_user_override(user_override);
 
@@ -513,7 +520,7 @@ mod tests {
                 fs_op_key(),
                 OverrideDecision::AlwaysAllow,
                 expired_time,
-                "Expired override".to_string()
+                "过期覆盖".to_string()
             );
         engine.register_workspace_override(workspace_override);
 

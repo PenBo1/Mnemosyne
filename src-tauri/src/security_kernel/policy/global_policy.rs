@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! global_policy - 全局策略定义模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -5,6 +9,8 @@ use crate::security_kernel::permission::{FsOperation, FsScope, Operation};
 use crate::security_kernel::types::TrustLevel;
 
 use super::decision::{OperationRisk, PolicyDecision};
+
+// ── 全局策略 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalPolicy {
@@ -18,6 +24,8 @@ pub struct GlobalPolicy {
     pub always_require_approval: HashSet<String>,
     pub always_deny: HashSet<String>,
 }
+
+// ── 默认风险决策 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultRiskDecisions {
@@ -37,6 +45,8 @@ impl Default for DefaultRiskDecisions {
         }
     }
 }
+
+// ── 工作区策略 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspacePolicy {
@@ -66,6 +76,7 @@ impl Default for WorkspacePolicy {
 }
 
 impl WorkspacePolicy {
+    /// 受信任工作区策略
     pub fn for_trusted() -> Self {
         Self {
             allow_read: true,
@@ -79,6 +90,7 @@ impl WorkspacePolicy {
         }
     }
 
+    /// 企业工作区策略
     pub fn for_enterprise() -> Self {
         Self {
             allow_read: true,
@@ -92,6 +104,7 @@ impl WorkspacePolicy {
         }
     }
 
+    /// 只读工作区策略
     pub fn for_readonly() -> Self {
         Self {
             allow_read: true,
@@ -105,6 +118,7 @@ impl WorkspacePolicy {
         }
     }
 
+    /// 未知工作区策略
     pub fn for_unknown() -> Self {
         Self {
             allow_read: true,
@@ -118,6 +132,7 @@ impl WorkspacePolicy {
         }
     }
 
+    /// 危险工作区策略
     pub fn for_dangerous() -> Self {
         Self {
             allow_read: false,
@@ -135,7 +150,7 @@ impl WorkspacePolicy {
 impl Default for GlobalPolicy {
     fn default() -> Self {
         let mut blocked = HashSet::new();
-        // 危险 shell 命令(command-level,匹配任何 scope)
+        // 危险 shell 命令（命令级别，匹配任何 scope）
         blocked.insert("shell:rm".to_string());
         blocked.insert("shell:del".to_string());
         blocked.insert("shell:format".to_string());
@@ -145,7 +160,7 @@ impl Default for GlobalPolicy {
 
         let mut always_approve = HashSet::new();
         always_approve.insert("fs:write:workspace".to_string());
-        // git commit/push 在任何 scope 下都需审批(command-level key)
+        // git commit/push 在任何 scope 下都需审批（命令级别 key）
         always_approve.insert("shell:commit".to_string());
         always_approve.insert("shell:push".to_string());
 
@@ -192,7 +207,7 @@ impl GlobalPolicy {
         if self.blocked_operations.contains(&op_key) || self.always_deny.contains(&op_key) {
             return true;
         }
-        // 对 Shell 操作额外检查 command-level key(不含 scope,匹配任何 scope 下的危险命令)
+        // 对 Shell 操作额外检查命令级别 key（不含 scope，匹配任何 scope 下的危险命令）
         if let crate::security_kernel::permission::Operation::Shell { command, .. } = op {
             let cmd_key = format!("shell:{}", command);
             if self.blocked_operations.contains(&cmd_key) || self.always_deny.contains(&cmd_key) {
@@ -207,7 +222,7 @@ impl GlobalPolicy {
         if self.always_require_approval.contains(&op_key) {
             return true;
         }
-        // 对 Shell 操作额外检查 command-level key
+        // 对 Shell 操作额外检查命令级别 key
         if let crate::security_kernel::permission::Operation::Shell { command, .. } = op {
             let cmd_key = format!("shell:{}", command);
             if self.always_require_approval.contains(&cmd_key) {

@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! permission - 插件权限定义模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -5,6 +9,8 @@ use crate::security_kernel::permission::{
     FsScope, FsOperation, NetworkEndpoint,
     GitOperation, CargoOperation,
 };
+
+// ── 插件权限枚举 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PluginPermission {
@@ -68,6 +74,7 @@ impl PluginPermission {
         matches!(self, Self::Notification(_))
     }
 
+    /// 检查是否为写操作
     pub fn is_write_operation(&self) -> bool {
         match self {
             Self::Filesystem(fs) => fs.has_write_operations(),
@@ -78,6 +85,7 @@ impl PluginPermission {
         }
     }
 
+    /// 检查是否为关键权限
     pub fn is_critical(&self) -> bool {
         match self {
             Self::Filesystem(fs) => fs.scope == FsScope::AppData && fs.has_write_operations(),
@@ -90,13 +98,13 @@ impl PluginPermission {
 
     pub fn display_name(&self) -> String {
         match self {
-            Self::Filesystem(fs) => format!("Filesystem: {} ({})", fs.scope, fs.operations_summary()),
+            Self::Filesystem(fs) => format!("文件系统: {} ({})", fs.scope, fs.operations_summary()),
             Self::Shell(shell) => shell.display_name(),
-            Self::Network(net) => format!("Network: {} hosts", net.endpoints.len()),
-            Self::Clipboard(cb) => format!("Clipboard: {}{}", 
-                if cb.read { "read" } else { "" },
-                if cb.write { "+write" } else { "" }),
-            Self::Notification(_) => "Notification".to_string(),
+            Self::Network(net) => format!("网络: {} 个主机", net.endpoints.len()),
+            Self::Clipboard(cb) => format!("剪贴板: {}{}", 
+                if cb.read { "读取" } else { "" },
+                if cb.write { "+写入" } else { "" }),
+            Self::Notification(_) => "通知".to_string(),
         }
     }
 }
@@ -106,6 +114,8 @@ impl fmt::Display for PluginPermission {
         write!(f, "{}", self.display_name())
     }
 }
+
+// ── 文件系统权限 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FsPermission {
@@ -161,6 +171,8 @@ impl fmt::Display for FsPermission {
     }
 }
 
+// ── Shell 权限 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ShellPermission {
     Git(Vec<GitOperation>),
@@ -212,8 +224,8 @@ impl ShellPermission {
                 let ops_str: Vec<String> = ops.iter().map(|o| o.to_string()).collect();
                 format!("Cargo: [{}]", ops_str.join(","))
             }
-            Self::Python(scripts) => format!("Python: {} scripts", scripts.len()),
-            Self::Node(scripts) => format!("Node: {} scripts", scripts.len()),
+            Self::Python(scripts) => format!("Python: {} 个脚本", scripts.len()),
+            Self::Node(scripts) => format!("Node: {} 个脚本", scripts.len()),
         }
     }
 
@@ -239,6 +251,8 @@ impl fmt::Display for ShellPermission {
         write!(f, "{}", self.display_name())
     }
 }
+
+// ── 网络权限 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetworkPermission {
@@ -300,6 +314,8 @@ impl fmt::Display for NetworkPermission {
     }
 }
 
+// ── 剪贴板权限 ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ClipboardPermission {
     pub read: bool,
@@ -335,12 +351,14 @@ impl ClipboardPermission {
 impl fmt::Display for ClipboardPermission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let caps: Vec<&str> = [
-            if self.read { Some("read") } else { None },
-            if self.write { Some("write") } else { None },
+            if self.read { Some("读取") } else { None },
+            if self.write { Some("写入") } else { None },
         ].iter().filter_map(|x| *x).collect();
-        write!(f, "clipboard:[{}]", caps.join(","))
+        write!(f, "剪贴板:[{}]", caps.join(","))
     }
 }
+
+// ── 通知权限 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NotificationPermission {
@@ -365,6 +383,6 @@ impl Default for NotificationPermission {
 
 impl fmt::Display for NotificationPermission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "notification:{}", if self.enabled { "enabled" } else { "disabled" })
+        write!(f, "通知:{}", if self.enabled { "已启用" } else { "已禁用" })
     }
 }
