@@ -1,5 +1,10 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 故事模型 - 小说创作核心数据结构
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
+
+// ── 书籍配置 ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookConfig {
@@ -30,6 +35,8 @@ impl Default for BookStatus {
         Self::Drafting
     }
 }
+
+// ── 章节结构 ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterMeta {
@@ -66,6 +73,8 @@ pub struct ChapterContent {
     pub content: String,
 }
 
+// ── 钩子记录 ──────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookRecord {
     pub hook_id: String,
@@ -94,6 +103,8 @@ impl Default for HookStatus {
         Self::Open
     }
 }
+
+// ── 章节摘要与事实 ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterSummary {
@@ -128,6 +139,8 @@ pub struct StoryState {
     pub summaries: Vec<ChapterSummary>,
     pub facts: Vec<StoryFact>,
 }
+
+// ── 审计结果 ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditIssue {
@@ -164,6 +177,8 @@ pub struct AuditResult {
     #[serde(default)]
     pub parse_failed: bool,
 }
+
+// ── 上下文与结果 ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterIntent {

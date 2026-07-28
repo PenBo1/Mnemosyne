@@ -1,7 +1,12 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 知识库模型 - 知识库数据结构定义
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 
 use super::types::{WikiCategory, WikiSourceType};
+
+// ── 知识库条目 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WikiEntry {
@@ -32,6 +37,8 @@ pub struct WikiEntityLink {
     pub created_at: String,
 }
 
+// ── 知识图谱结构 ──────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WikiGraphNode {
     pub id: String,
@@ -53,6 +60,8 @@ pub struct WikiGraphView {
     pub nodes: Vec<WikiGraphNode>,
     pub edges: Vec<WikiGraphEdge>,
 }
+
+// ── 请求与响应 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWikiEntryRequest {

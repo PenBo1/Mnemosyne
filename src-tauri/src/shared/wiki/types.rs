@@ -1,6 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 知识库类型 - 知识库枚举类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+
+// ── Wiki分类 ──────────────────────────────────────────────────────────────────
 
 /// Wiki 文档分类
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +67,8 @@ impl FromStr for WikiCategory {
     }
 }
 
+// ── Wiki来源类型 ──────────────────────────────────────────────────────────────
+
 /// Wiki 文档来源类型
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -101,5 +108,3 @@ impl FromStr for WikiSourceType {
         }
     }
 }
-
-

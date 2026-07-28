@@ -1,4 +1,10 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 错误处理 - 统一错误类型与响应结构
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
+
+// ── 状态码常量 ────────────────────────────────────────────────────────────────
 
 pub mod status {
     pub const OK: u16 = 0;
@@ -65,6 +71,10 @@ pub mod status {
     pub const SANDBOX_VIOLATION: u16 = 700;
     pub const SANDBOX_TIMEOUT: u16 = 701;
     pub const RATE_LIMIT_EXCEEDED: u16 = 702;
+    pub const RATE_LIMITED: u16 = 703;
+    pub const USAGE_LIMIT_REACHED: u16 = 704;
+    pub const CIRCUIT_OPEN: u16 = 705;
+    pub const DOOM_LOOP: u16 = 706;
 
     pub const RESOURCE_QUOTA_EXCEEDED: u16 = 750;
     pub const RESOURCE_NOT_AVAILABLE: u16 = 751;
@@ -73,6 +83,8 @@ pub mod status {
     pub const TASK_FAILED: u16 = 801;
     pub const TASK_TIMEOUT: u16 = 802;
 }
+
+// ── 错误结构体 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppError {
@@ -101,6 +113,8 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
+// ── 错误构造方法 ──────────────────────────────────────────────────────────────
+
 impl AppError {
     pub fn new(status: u16, code: impl Into<String>, message: impl Into<String>) -> Self {
         Self { status, code: code.into(), message: message.into() }
@@ -125,6 +139,10 @@ impl AppError {
     pub fn provider_not_found(name: impl Into<String>) -> Self { Self::new(status::PROVIDER_NOT_FOUND, "PROVIDER_NOT_FOUND", format!("Provider '{}' not found", name.into())) }
     pub fn provider_unavailable(name: impl Into<String>) -> Self { Self::new(status::PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE", format!("Provider '{}' unavailable", name.into())) }
     pub fn model_not_found(name: impl Into<String>) -> Self { Self::new(status::MODEL_NOT_FOUND, "MODEL_NOT_FOUND", format!("Model '{}' not found", name.into())) }
+    pub fn no_active_model() -> Self {
+        Self::new(status::MODEL_NOT_FOUND, "NO_ACTIVE_MODEL", 
+            "No AI model configured. Please go to Settings → AI Models to add and activate a model before sending messages.")
+    }
     pub fn api_key_invalid() -> Self { Self::new(status::API_KEY_INVALID, "API_KEY_INVALID", "Invalid API key") }
     pub fn api_key_expired() -> Self { Self::new(status::API_KEY_EXPIRED, "API_KEY_EXPIRED", "API key expired") }
     pub fn api_quota_exceeded() -> Self { Self::new(status::API_QUOTA_EXCEEDED, "API_QUOTA_EXCEEDED", "API quota exceeded") }
@@ -169,7 +187,31 @@ impl AppError {
         Self::new(status::RATE_LIMIT_EXCEEDED, "RATE_LIMIT_EXCEEDED", 
             format!("Rate limit exceeded for '{}' in {} window: {} / {}", operation, window, current, limit))
     }
+    pub fn rate_limited(retry_after: Option<u64>, message: impl Into<String>) -> Self {
+        let msg = message.into();
+        match retry_after {
+            Some(secs) => Self::new(status::RATE_LIMITED, "RATE_LIMITED", 
+                format!("{} (retry after {}s)", msg, secs)),
+            None => Self::new(status::RATE_LIMITED, "RATE_LIMITED", msg),
+        }
+    }
+    pub fn usage_limit_reached(limit: u64, current: u64, message: impl Into<String>) -> Self {
+        Self::new(status::USAGE_LIMIT_REACHED, "USAGE_LIMIT_REACHED", 
+            format!("{} (limit: {}, current: {})", message.into(), limit, current))
+    }
     pub fn permission_denied(message: impl Into<String>) -> Self { Self::new(status::PERMISSION_DENIED, "PERMISSION_DENIED", message) }
+    pub fn permission_denied_detailed(resource: impl Into<String>, action: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(status::PERMISSION_DENIED, "PERMISSION_DENIED", 
+            format!("{}: action '{}' on resource '{}' denied", message.into(), action.into(), resource.into()))
+    }
+    pub fn circuit_open(breaker_name: impl Into<String>, retry_after_ms: u64) -> Self {
+        Self::new(status::CIRCUIT_OPEN, "CIRCUIT_OPEN", 
+            format!("Circuit breaker '{}' is open (retry after {}ms)", breaker_name.into(), retry_after_ms))
+    }
+    pub fn doom_loop(iterations: u32, message: impl Into<String>) -> Self {
+        Self::new(status::DOOM_LOOP, "DOOM_LOOP", 
+            format!("{} (detected after {} iterations)", message.into(), iterations))
+    }
 
     pub fn resource_quota_exceeded(resource: impl Into<String>) -> Self { Self::new(status::RESOURCE_QUOTA_EXCEEDED, "RESOURCE_QUOTA_EXCEEDED", format!("Resource quota exceeded: {}", resource.into())) }
     pub fn resource_not_available(resource: impl Into<String>) -> Self { Self::new(status::RESOURCE_NOT_AVAILABLE, "RESOURCE_NOT_AVAILABLE", format!("Resource not available: {}", resource.into())) }
@@ -183,6 +225,8 @@ impl AppError {
     pub fn unavailable(message: impl Into<String>) -> Self { Self::new(status::UNAVAILABLE, "UNAVAILABLE", message) }
     pub fn config_error(message: impl Into<String>) -> Self { Self::new(status::CONFIG_ERROR, "CONFIG_ERROR", message) }
 }
+
+// ── IPC响应结构 ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcResponse<T> {

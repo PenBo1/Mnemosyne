@@ -1,6 +1,11 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 版本类型 - 章节版本与差异类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+
+// ── 修订模式 ──────────────────────────────────────────────────────────────────
 
 /// 版本修订模式
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +46,8 @@ impl FromStr for RevisionMode {
         }
     }
 }
+
+// ── 章节版本 ──────────────────────────────────────────────────────────────────
 
 /// 章节版本快照
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,8 +93,7 @@ pub struct CreateVersionRequest {
     pub revision_reason: String,
 }
 
-
-// ── Diff 类型（章节版本比对） ───────────────────────────────
+// ── 差异类型 ──────────────────────────────────────────────────────────────────
 
 /// 差异行类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
