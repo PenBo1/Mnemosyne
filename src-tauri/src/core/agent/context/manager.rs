@@ -280,6 +280,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn turn_ctx(model: &str) -> TurnContextItem {
         TurnContextItem {
             turn_id: Some("turn-1".to_string()),

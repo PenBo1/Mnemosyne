@@ -14,8 +14,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path aliases */
-    "baseUrl": ".",
+    /* Path aliases (baseUrl 已移除，paths 相对于 tsconfig.json 解析) */
     "paths": {
       "@/*": ["./src/*"],
       "@/features/*": ["./src/features/*"],

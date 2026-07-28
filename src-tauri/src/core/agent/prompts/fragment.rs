@@ -255,6 +255,7 @@ mod tests {
             self
         }
 
+        #[allow(dead_code)]
         fn with_role(mut self, r: FragmentRole) -> Self {
             self.role = r;
             self

@@ -239,7 +239,6 @@ fn shares_token(a: &[String], b: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
 
     fn item(name: &str, state: SkillState, days_ago: i64) -> SkillReviewItem {
         SkillReviewItem {
@@ -463,7 +462,6 @@ mod tests {
 
     #[test]
     fn detect_similar_single_item() {
-        let now = Utc::now();
         let items = vec![item("solo", SkillState::Active, 0)];
         let groups = detect_similar_groups(&items);
         assert!(groups.is_empty());

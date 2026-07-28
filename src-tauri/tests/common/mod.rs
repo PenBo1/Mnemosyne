@@ -1,14 +1,15 @@
-//! 公共测试 fixture 模块
-//!
-//! 提供集成测试所需的测试环境：
-//! - GitRepoFixture: Git 仓库测试 fixture
-//! - FsTestFixture: 文件系统测试 fixture
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 公共测试 fixture 模块 - 提供集成测试所需的测试环境
+//! ═══════════════════════════════════════════════════════════════════════════
 
-use tempfile::TempDir;
 use std::path::PathBuf;
 
-use mnemosyne_lib::domain::git::operations::GitOperations;
+use tempfile::TempDir;
+
+use mnemosyne_lib::domain::git::operations;
 use mnemosyne_lib::domain::git::types::GitConfig;
+
+// ── Git 仓库测试 Fixture ─────────────────────────────────────────────────────
 
 /// Git 仓库测试 fixture
 ///
@@ -31,35 +32,37 @@ impl GitRepoFixture {
     ///
     /// # 返回
     /// 包含已初始化 Git 仓库的 fixture
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let tmp = TempDir::new().expect("无法创建临时目录");
         let repo_path = tmp.path().to_path_buf();
 
-        GitOperations::init(&repo_path)
-            .await
-            .expect("Git 初始化失败");
+        operations::init_repository(&repo_path).expect("Git 初始化失败");
 
-        GitOperations::set_config(&repo_path, &GitConfig {
-            user_name: Some("Test User".into()),
-            user_email: Some("test@example.com".into()),
-            auto_stage: false,
-            commit_message_template: None,
-            enable_remote: false,
-        })
-        .await
-        .expect("Git 配置失败");
+        operations::set_config(&repo_path, "user.name", "Test User", false)
+            .expect("Git 配置失败");
+        operations::set_config(&repo_path, "user.email", "test@example.com", false)
+            .expect("Git 配置失败");
 
         Self { repo_path, _tmp: tmp }
     }
 
     /// 创建带有初始文件的 fixture
-    pub async fn with_initial_file(filename: &str, content: &str) -> Self {
-        let fixture = Self::new().await;
+    ///
+    /// # 参数
+    /// - `filename`: 文件名
+    /// - `content`: 文件内容
+    ///
+    /// # 返回
+    /// 包含初始文件的 fixture
+    pub fn with_initial_file(filename: &str, content: &str) -> Self {
+        let fixture = Self::new();
         let file_path = fixture.repo_path.join(filename);
         std::fs::write(&file_path, content).expect("写入文件失败");
         fixture
     }
 }
+
+// ── 文件系统测试 Fixture ─────────────────────────────────────────────────────
 
 /// 文件系统测试 fixture
 ///
@@ -85,6 +88,12 @@ impl FsTestFixture {
     }
 
     /// 创建子目录
+    ///
+    /// # 参数
+    /// - `name`: 子目录名
+    ///
+    /// # 返回
+    /// 子目录完整路径
     pub fn create_subdir(&self, name: &str) -> PathBuf {
         let subdir = self.work_dir.join(name);
         std::fs::create_dir_all(&subdir).expect("创建子目录失败");
@@ -92,6 +101,13 @@ impl FsTestFixture {
     }
 
     /// 创建测试文件
+    ///
+    /// # 参数
+    /// - `relative_path`: 相对路径
+    /// - `content`: 文件内容
+    ///
+    /// # 返回
+    /// 文件完整路径
     pub fn create_file(&self, relative_path: &str, content: &str) -> PathBuf {
         let file_path = self.work_dir.join(relative_path);
         if let Some(parent) = file_path.parent() {

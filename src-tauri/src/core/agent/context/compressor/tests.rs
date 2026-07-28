@@ -8,11 +8,9 @@ use tokio::sync::RwLock;
 use crate::infrastructure::llm::types::Message;
 
 use super::*;
-use super::sanitize::sanitize_tool_pairs;
-use super::summary::SummaryLlm;
 use super::test_support::*;
 
-// ---------- Phase 1: tool output pruning ----------
+// ── Phase 1: tool output pruning ─────────────────────────────────────────────
 
 #[test]
 fn phase1_prunes_long_tool_output() {
