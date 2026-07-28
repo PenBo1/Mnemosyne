@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LoopPatternEditor - 循环模式编辑器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { useI18n } from "@/locales/i18n";
 import type { LoopPattern, CreateLoopStateRequest } from "@/features/loop/types";

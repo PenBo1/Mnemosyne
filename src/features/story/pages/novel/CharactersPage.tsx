@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * CharactersPage - 角色管理页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useMemo, useState } from "react";
 import { useWorkspaceStore } from "@/features/workspace/store/workspace";
 import { useI18n } from "@/locales/i18n";

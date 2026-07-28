@@ -1,10 +1,18 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * InputGroup - 输入组组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+
+// ── 输入组组件 ──────────────────────────────────────────────────────────────
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -19,6 +27,8 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 输入组附加样式变体 ──────────────────────────────────────────────────────
 
 const inputGroupAddonVariants = cva(
   "flex h-auto cursor-text items-center justify-center gap-1 py-2 text-xs/relaxed font-medium text-muted-foreground select-none group-data-[disabled=true]/input-group:opacity-50 **:data-[slot=kbd]:rounded-[calc(var(--radius-sm)-2px)] **:data-[slot=kbd]:bg-muted-foreground/10 **:data-[slot=kbd]:px-1 **:data-[slot=kbd]:text-[0.625rem] [&>svg:not([class*='size-'])]:size-3.5",
@@ -40,6 +50,8 @@ const inputGroupAddonVariants = cva(
     },
   }
 )
+
+// ── 输入组附加组件 ──────────────────────────────────────────────────────────
 
 function InputGroupAddon({
   className,
@@ -63,6 +75,8 @@ function InputGroupAddon({
   )
 }
 
+// ── 输入组按钮样式变体 ──────────────────────────────────────────────────────
+
 const inputGroupButtonVariants = cva(
   "flex items-center gap-2 rounded-md text-xs/relaxed shadow-none",
   {
@@ -79,6 +93,8 @@ const inputGroupButtonVariants = cva(
     },
   }
 )
+
+// ── 输入组按钮组件 ──────────────────────────────────────────────────────────
 
 function InputGroupButton({
   className,
@@ -99,6 +115,8 @@ function InputGroupButton({
   )
 }
 
+// ── 输入组文本组件 ──────────────────────────────────────────────────────────
+
 function InputGroupText({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
@@ -110,6 +128,8 @@ function InputGroupText({ className, ...props }: React.ComponentProps<"span">) {
     />
   )
 }
+
+// ── 输入组输入组件 ──────────────────────────────────────────────────────────
 
 function InputGroupInput({
   className,
@@ -126,6 +146,8 @@ function InputGroupInput({
     />
   )
 }
+
+// ── 输入组文本区组件 ────────────────────────────────────────────────────────
 
 function InputGroupTextarea({
   className,

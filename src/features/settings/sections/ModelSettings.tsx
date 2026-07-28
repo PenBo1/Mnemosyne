@@ -1,4 +1,10 @@
-import { useState } from "react";
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ModelSettings - AI 模型设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PlusIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
@@ -41,6 +47,14 @@ export function ModelSettings() {
   const [editingModel, setEditingModel] = useState<AiModelConfig | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<"success" | "failed" | null>(null);
+  const testResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 组件卸载时清理测试结果定时器，避免卸载后 setState
+  useEffect(() => {
+    return () => {
+      if (testResultTimerRef.current) clearTimeout(testResultTimerRef.current);
+    };
+  }, []);
 
   function openEditDialog(model: AiModelConfig) {
     setEditingModel(model);
@@ -67,20 +81,21 @@ export function ModelSettings() {
       setTestResult("failed");
     } finally {
       setTesting(null);
-      setTimeout(() => setTestResult(null), 3000);
+      if (testResultTimerRef.current) clearTimeout(testResultTimerRef.current);
+      testResultTimerRef.current = setTimeout(() => setTestResult(null), 3000);
     }
   }
 
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.modelSettings.title}</PageTitle>

@@ -1,4 +1,12 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 安全策略服务 - 提供工作区安全策略与审批流程管理
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { ipc } from "./index";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 export type TrustLevel = "unknown" | "trusted" | "enterprise" | "readonly" | "dangerous";
 
@@ -107,6 +115,8 @@ export interface WorkspaceOverride {
   expireAt: string | null;
 }
 
+// ── 工作区管理 ────────────────────────────────────────────────────────────────
+
 export async function workspaceOpen(path: string, trustLevel: TrustLevel): Promise<string> {
   return await ipc<string>("workspace_open", { path, trustLevel });
 }
@@ -135,6 +145,8 @@ export async function workspaceSetTrustLevel(workspaceId: string, trustLevel: Tr
   return await ipc<void>("workspace_set_trust_level", { workspaceId, trustLevel });
 }
 
+// ── 策略评估 ────────────────────────────────────────────────────────────────
+
 export async function policyEvaluate(operation: Operation, workspaceId: string): Promise<PolicyEvaluation> {
   return await ipc<PolicyEvaluation>("policy_evaluate", { operation, workspaceId });
 }
@@ -146,6 +158,8 @@ export async function policySetWorkspaceOverride(workspaceId: string, decision: 
 export async function policyClearWorkspaceOverride(workspaceId: string): Promise<void> {
   return await ipc<void>("policy_clear_workspace_override", { workspaceId });
 }
+
+// ── 审批流程 ────────────────────────────────────────────────────────────────
 
 export async function approvalCreate(operation: Operation, workspaceId: string, ttlSeconds?: number): Promise<ApprovalToken> {
   return await ipc<ApprovalToken>("approval_create", { operation, workspaceId, ttlSeconds });
@@ -163,9 +177,13 @@ export async function approvalReject(tokenId: string, reason?: string): Promise<
   return await ipc<ApprovalResult>("approval_reject", { tokenId, reason });
 }
 
+// ── 资源监控 ────────────────────────────────────────────────────────────────
+
 export async function resourceGetUsage(workspaceId: string): Promise<ResourceUsage> {
   return await ipc<ResourceUsage>("resource_get_usage", { workspaceId });
 }
+
+// ── 操作类型判断 ────────────────────────────────────────────────────────────────
 
 export function isOperationFilesystem(op: Operation): boolean {
   return op.type === "filesystem";
@@ -178,6 +196,8 @@ export function isOperationShell(op: Operation): boolean {
 export function isOperationNetwork(op: Operation): boolean {
   return op.type === "network";
 }
+
+// ── 操作构造器 ────────────────────────────────────────────────────────────────
 
 export function createFsOperation(scope: FsScope, operation: FsOperation, path: string): Operation {
   return { type: "filesystem", scope, operation, path };

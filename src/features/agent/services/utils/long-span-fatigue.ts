@@ -339,9 +339,14 @@ function buildSentencePatternIssue(
     return null;
   }
 
+  const [firstNorm, secondNorm, thirdNorm] = normalized;
+  // 解构后显式守卫：避免对 normalized[0/1/2] 使用非空断言
+  if (!firstNorm || !secondNorm || !thirdNorm) {
+    return null;
+  }
   const similarities = [
-    diceCoefficient(normalized[0]!, normalized[1]!),
-    diceCoefficient(normalized[1]!, normalized[2]!),
+    diceCoefficient(firstNorm, secondNorm),
+    diceCoefficient(secondNorm, thirdNorm),
   ];
   if (Math.min(...similarities) < LONG_SPAN_FATIGUE_THRESHOLDS.boundarySimilarityFloor) {
     return null;

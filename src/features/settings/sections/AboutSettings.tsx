@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AboutSettings - 关于页面设置
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +21,18 @@ import {
 } from "@/components/shared/page-layout";
 import { SettingsSection, SettingsRow } from "@/features/settings/components/settings-section";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+const APP_BUNDLE_ID = "com.admin.mnemosyne";
+const APP_LICENSE = "MIT";
+const REPO_URL = "https://github.com/admin/Mnemosyne";
+const WEBSITE_URL = "https://github.com/admin/Mnemosyne";
+
+// ── 辅助组件 ────────────────────────────────────────────────────────────────
+
+/**
+ * GitHub 图标组件
+ */
 function GithubIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
@@ -23,11 +41,11 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 
-const APP_BUNDLE_ID = "com.admin.mnemosyne";
-const APP_LICENSE = "MIT";
-const REPO_URL = "https://github.com/admin/Mnemosyne";
-const WEBSITE_URL = "https://github.com/admin/Mnemosyne";
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
 
+/**
+ * 检测操作系统平台
+ */
 function detectPlatform(): string {
   const ua = navigator.userAgent;
   if (ua.includes("Win")) return "Windows";
@@ -36,6 +54,9 @@ function detectPlatform(): string {
   return "Unknown";
 }
 
+/**
+ * 检测 CPU 架构
+ */
 function detectArch(): string {
   const ua = navigator.userAgent;
   if (ua.includes("x64") || ua.includes("Win64") || ua.includes("x86_64")) return "x86_64";
@@ -43,6 +64,11 @@ function detectArch(): string {
   return "unknown";
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 关于页面，展示应用信息、版本和源代码链接
+ */
 export function AboutSettings() {
   const { t } = useI18n();
   const [name, setName] = useState("Mnemosyne");
@@ -50,25 +76,29 @@ export function AboutSettings() {
   const [platform] = useState(detectPlatform);
   const [arch] = useState(detectArch);
 
+  // ── 初始化 ────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     let cancelled = false;
     getName()
       .then((n) => {
         if (!cancelled) setName(n);
       })
-      .catch(() => undefined);
+      .catch((err) => { console.error("[AboutSettings] get app name failed:", err); });
     getVersion()
       .then((v) => {
         if (!cancelled) setVersion(v);
       })
-      .catch(() => undefined);
+      .catch((err) => { console.error("[AboutSettings] get app version failed:", err); });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.about}</PageTitle>
@@ -76,6 +106,7 @@ export function AboutSettings() {
         </PageHeading>
       </PageHeader>
 
+      {/* ── 应用信息卡片 ────────────────────────────────────────────────────── */}
       <Card className="py-0">
         <CardContent className="p-0">
           <div className="flex items-center gap-4 px-4 py-4 border-b">
@@ -91,6 +122,7 @@ export function AboutSettings() {
         </CardContent>
       </Card>
 
+      {/* ── 版本信息 ────────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.aboutVersion}>
         <SettingsRow label={t.settings.aboutVersion}>
           <Badge variant="secondary" className="font-mono text-xs">v{version}</Badge>
@@ -112,6 +144,7 @@ export function AboutSettings() {
         </SettingsRow>
       </SettingsSection>
 
+      {/* ── 源代码链接 ──────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.aboutSourceCode}>
         <SettingsRow label={t.settings.aboutSourceCode}>
           <Button
@@ -138,6 +171,7 @@ export function AboutSettings() {
         </SettingsRow>
       </SettingsSection>
 
+      {/* ── 操作按钮 ────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={() => void openUrl(REPO_URL)}>
           <GithubIcon className="size-4" />

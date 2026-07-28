@@ -1,6 +1,14 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Message - 消息组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+
+// ── 消息组组件 ──────────────────────────────────────────────────────────────
 
 function MessageGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -11,6 +19,8 @@ function MessageGroup({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 消息组件 ────────────────────────────────────────────────────────────────
 
 function Message({
   className,
@@ -30,6 +40,8 @@ function Message({
   )
 }
 
+// ── 消息头像组件 ────────────────────────────────────────────────────────────
+
 function MessageAvatar({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -42,6 +54,8 @@ function MessageAvatar({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 消息内容组件 ────────────────────────────────────────────────────────────
 
 function MessageContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -56,6 +70,8 @@ function MessageContent({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 消息头部组件 ────────────────────────────────────────────────────────────
+
 function MessageHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -68,6 +84,8 @@ function MessageHeader({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 消息底部组件 ────────────────────────────────────────────────────────────
 
 function MessageFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (

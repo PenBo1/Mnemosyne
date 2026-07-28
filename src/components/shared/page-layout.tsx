@@ -1,8 +1,17 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PageLayout - 页面布局组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
+import { memo } from "react"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
-function PageContainer({
+// ── 页面容器组件 ────────────────────────────────────────────────────────────
+
+const PageContainer = memo(function PageContainer({
   className,
   scrollable = true,
   children,
@@ -31,9 +40,11 @@ function PageContainer({
       {children}
     </div>
   )
-}
+})
 
-function PageHeader({
+// ── 页面头部组件 ────────────────────────────────────────────────────────────
+
+const PageHeader = memo(function PageHeader({
   className,
   ...props
 }: React.ComponentProps<"div">) {
@@ -44,9 +55,11 @@ function PageHeader({
       {...props}
     />
   )
-}
+})
 
-function PageHeading({
+// ── 页面标题区域组件 ────────────────────────────────────────────────────────
+
+const PageHeading = memo(function PageHeading({
   className,
   ...props
 }: React.ComponentProps<"div">) {
@@ -57,9 +70,11 @@ function PageHeading({
       {...props}
     />
   )
-}
+})
 
-function PageTitle({
+// ── 页面标题组件 ────────────────────────────────────────────────────────────
+
+const PageTitle = memo(function PageTitle({
   className,
   ...props
 }: React.ComponentProps<"h1">) {
@@ -70,9 +85,11 @@ function PageTitle({
       {...props}
     />
   )
-}
+})
 
-function PageDescription({
+// ── 页面描述组件 ────────────────────────────────────────────────────────────
+
+const PageDescription = memo(function PageDescription({
   className,
   ...props
 }: React.ComponentProps<"p">) {
@@ -83,9 +100,11 @@ function PageDescription({
       {...props}
     />
   )
-}
+})
 
-function PageActions({
+// ── 页面操作区组件 ──────────────────────────────────────────────────────────
+
+const PageActions = memo(function PageActions({
   className,
   ...props
 }: React.ComponentProps<"div">) {
@@ -96,9 +115,11 @@ function PageActions({
       {...props}
     />
   )
-}
+})
 
-function SectionTitle({
+// ── 区块标题组件 ────────────────────────────────────────────────────────────
+
+const SectionTitle = memo(function SectionTitle({
   className,
   ...props
 }: React.ComponentProps<"h2">) {
@@ -109,9 +130,11 @@ function SectionTitle({
       {...props}
     />
   )
-}
+})
 
-function SectionHeader({
+// ── 区块头部组件 ────────────────────────────────────────────────────────────
+
+const SectionHeader = memo(function SectionHeader({
   className,
   ...props
 }: React.ComponentProps<"div">) {
@@ -122,7 +145,7 @@ function SectionHeader({
       {...props}
     />
   )
-}
+})
 
 export {
   PageContainer,

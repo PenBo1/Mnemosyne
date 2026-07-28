@@ -1,5 +1,13 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 主题管理 - 应用主题切换与管理
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { setWindowTheme } from "@/features/settings/services/general";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 type Theme = "light" | "dark" | "system";
 
@@ -9,7 +17,11 @@ interface ThemeContextValue {
   setTheme: (theme: Theme) => void;
 }
 
+// ── 常量定义 ────────────────────────────────────────────────────────────────
+
 const STORAGE_KEY_THEME = "mnemosyne-theme";
+
+// ── 工具函数 ────────────────────────────────────────────────────────────────
 
 function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -28,7 +40,11 @@ function resolveTheme(theme: Theme): "light" | "dark" {
   return theme === "system" ? getSystemTheme() : theme;
 }
 
+// ── Context 定义 ────────────────────────────────────────────────────────────────
+
 const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+// ── Provider 组件 ────────────────────────────────────────────────────────────────
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(getInitialTheme);
@@ -45,10 +61,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     void setWindowTheme(resolved);
   }, []);
 
+  // ── 应用主题 ────────────────────────────────────────────────────────────────
   useEffect(() => {
     applyTheme(theme);
   }, [applyTheme, theme]);
 
+  // ── 监听系统主题变化 ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -69,7 +87,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [applyTheme]
   );
 
-  // useMemo 稳定 context value 引用 —— 避免 theme 不变时所有 consumer 无意义重渲染
+  // 使用 useMemo 稳定 context value 引用，避免 theme 不变时所有 consumer 无意义重渲染
   const value = useMemo<ThemeContextValue>(
     () => ({ theme, resolvedTheme, setTheme }),
     [theme, resolvedTheme, setTheme],
@@ -77,6 +95,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
+
+// ── Hooks ────────────────────────────────────────────────────────────────
 
 export function useTheme() {
   const ctx = useContext(ThemeContext);

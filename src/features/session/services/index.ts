@@ -1,5 +1,5 @@
 import { ipc } from "@/services/ipc";
-import type { Session, Message } from "@/features/chat/types";
+import type { Session, Message } from "@/types/session";
 
 export async function createSession(
   novelId?: string,

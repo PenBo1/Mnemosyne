@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
-import * as sandboxService from "@/features/sandbox/services";
+import { getSandboxStatus } from "@/features/sandbox/services";
 import type { SandboxStatus } from "@/features/sandbox/types";
 
 export function useSandboxStatus() {
@@ -14,7 +14,7 @@ export function useSandboxStatus() {
     try {
       setLoading(true);
       setError(null);
-      const result = await sandboxService.getSandboxStatus();
+      const result = await getSandboxStatus();
       setStatus(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : t.common.failedToLoad;

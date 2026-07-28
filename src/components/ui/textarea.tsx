@@ -1,6 +1,14 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Textarea - 文本区组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
+
+// ── 文本区组件 ──────────────────────────────────────────────────────────────
 
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (

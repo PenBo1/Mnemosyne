@@ -1,8 +1,16 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Marker - 标记组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 样式变体 ────────────────────────────────────────────────────────────────
 
 const markerVariants = cva(
   "group/marker relative flex min-h-4 w-full items-center gap-2 text-left text-xs/relaxed text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5 [a]:underline [a]:underline-offset-3 [a]:hover:text-foreground",
@@ -17,6 +25,8 @@ const markerVariants = cva(
     },
   }
 )
+
+// ── 标记组件 ────────────────────────────────────────────────────────────────
 
 function Marker({
   className,
@@ -39,6 +49,8 @@ function Marker({
   )
 }
 
+// ── 标记图标组件 ────────────────────────────────────────────────────────────
+
 function MarkerIcon({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
@@ -52,6 +64,8 @@ function MarkerIcon({ className, ...props }: React.ComponentProps<"span">) {
     />
   )
 }
+
+// ── 标记内容组件 ────────────────────────────────────────────────────────────
 
 function MarkerContent({ className, ...props }: React.ComponentProps<"span">) {
   return (

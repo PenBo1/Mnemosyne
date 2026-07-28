@@ -1,7 +1,7 @@
-﻿import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import type { Novel } from "@/features/novel/types";
-import * as novelsService from "@/features/novel/services";
+import { fetchNovels, createNovelList, deleteNovel } from "@/features/novel/services";
 
 export function useNovels(workspaceId?: string) {
   const [novels, setNovels] = useState<Novel[]>([]);
@@ -12,7 +12,7 @@ export function useNovels(workspaceId?: string) {
     try {
       setLoading(true);
       setError(null);
-      const result = await novelsService.fetchNovels();
+      const result = await fetchNovels();
       setNovels(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load novels";
@@ -38,7 +38,7 @@ export function useNovels(workspaceId?: string) {
     }
     setError(null);
     try {
-      await novelsService.createNovelList(workspaceId, title, genre);
+      await createNovelList(workspaceId, title, genre);
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create novel";
@@ -51,7 +51,7 @@ export function useNovels(workspaceId?: string) {
   const remove = useCallback(async (id: string) => {
     setError(null);
     try {
-      await novelsService.deleteNovel(id);
+      await deleteNovel(id);
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete novel";

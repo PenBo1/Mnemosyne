@@ -4,7 +4,7 @@ import { useAgentStore } from "@/features/chat/store";
 import { useWorkspaceStore } from "@/features/workspace/store/workspace";
 import { readFile } from "@/services/storage/fs";
 import { getWikiEntry } from "@/features/wiki/services";
-import { getCustomInstructions } from "@/services/settings";
+import { getCustomInstructions, getActiveModel } from "@/services/settings";
 import {
   sendMessage as chatSendMessage,
   setCurrentWorkspacePath,
@@ -14,6 +14,14 @@ import { respondApproval } from "@/features/agent/services/approval";
 import { useAgentsStore } from "@/features/agent/store/agents-store";
 import { usePlanStore } from "@/features/agent/store/plan-store";
 import type { Message, Session, AttachmentSpec } from "@/features/chat/types";
+import {
+  createInitialPipelineState,
+  updatePipelineStep,
+  advanceToNextStep,
+  type PipelinePhase,
+} from "@/features/agent/components/PipelineProgress";
+import { listen } from "@tauri-apps/api/event";
+import { useI18n, type Translations } from "@/locales/i18n";
 
 /** 解析附件为注入 LLM 上下文的文本块。
  *  - file: 读取文件内容
@@ -24,6 +32,7 @@ import type { Message, Session, AttachmentSpec } from "@/features/chat/types";
 async function resolveAttachments(
   attachments: AttachmentSpec[],
   workspacePath: string | null,
+  t: Translations,
 ): Promise<string | undefined> {
   const blocks: string[] = [];
   for (const att of attachments) {
@@ -33,27 +42,27 @@ async function resolveAttachments(
       switch (att.kind) {
         case "file":
           text = await readFile(att.ref);
-          kindLabel = "文件";
+          kindLabel = t.chat.attachment.kind.file;
           break;
         case "wiki": {
           const entry = await getWikiEntry(att.ref);
           text = entry?.content ?? "";
-          kindLabel = "Wiki";
+          kindLabel = t.chat.attachment.kind.wiki;
           break;
         }
         case "chapter": {
           if (!workspacePath) {
-            toast.error(`无法解析章节附件：当前无活动工作区`);
+            toast.error(t.chat.attachment.noWorkspace);
             continue;
           }
-          const filePath = `${workspacePath}\\chapters\\${att.ref}.md`;
+          const filePath = `${workspacePath}/chapters/${att.ref}.md`;
           text = await readFile(filePath);
-          kindLabel = "章节";
+          kindLabel = t.chat.attachment.kind.chapter;
           break;
         }
         case "text":
           text = att.content ?? "";
-          kindLabel = "文本";
+          kindLabel = t.chat.attachment.kind.text;
           break;
         default:
           continue;
@@ -62,12 +71,16 @@ async function resolveAttachments(
         blocks.push(`【${kindLabel}：${att.label}】\n${text}`);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "未知错误";
-      toast.error(`附件「${att.label}」解析失败：${msg}`);
+      const msg = err instanceof Error ? err.message : t.chat.errors.unknown;
+      toast.error(
+        t.chat.attachment.parseFailed
+          .replace("{label}", att.label)
+          .replace("{error}", msg),
+      );
     }
   }
   if (blocks.length === 0) return undefined;
-  return `以下是用户提供的参考上下文，请结合这些内容回答用户问题：\n\n${blocks.join("\n\n")}`;
+  return `${t.chat.attachment.referenceContext}\n\n${blocks.join("\n\n")}`;
 }
 
 /**
@@ -78,6 +91,7 @@ async function resolveAttachments(
  * - sendMessage 自行实现，处理"无 session 时先创建"的流程，绑定 active workspaceId
  */
 export function useChat() {
+  const { t } = useI18n();
   const sessions = useAgentStore((s) => s.sessions);
   const currentSessionId = useAgentStore((s) => s.currentSessionId);
   const loading = useAgentStore((s) => s.loading);
@@ -122,6 +136,62 @@ export function useChat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 监听 Pipeline 子 Agent 步骤事件
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    (async () => {
+      const fn = await listen<{
+        phase: PipelinePhase;
+        subagentName: string;
+        chapter: number;
+        status: "running" | "completed" | "error";
+      }>("subagent-step", (event) => {
+        const { phase, subagentName, chapter, status } = event.payload;
+        const currentState = useAgentStore.getState().pipelineState;
+
+        if (!currentState || currentState.currentChapter !== chapter) {
+          const newState = createInitialPipelineState(chapter);
+          newState.steps[0] = {
+            phase,
+            subagentName,
+            status,
+            startedAt: status === "running" ? Date.now() : undefined,
+            completedAt: status === "completed" ? Date.now() : undefined,
+          };
+          newState.currentStepIndex = 0;
+          useAgentStore.getState().setPipelineState(newState);
+        } else {
+          const stepIndex = currentState.steps.findIndex((s) => s.phase === phase);
+          if (stepIndex >= 0) {
+            const updated = updatePipelineStep(currentState, stepIndex, {
+              status,
+              subagentName,
+              completedAt: status === "completed" ? Date.now() : undefined,
+            });
+            if (status === "completed") {
+              const next = advanceToNextStep(updated);
+              useAgentStore.getState().setPipelineState(next);
+            } else {
+              useAgentStore.getState().setPipelineState(updated);
+            }
+          }
+        }
+      });
+      if (cancelled) {
+        fn();
+        return;
+      }
+      unlisten = fn;
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // 监听 activeWorkspaceId 变化：重载该工作区下的会话列表
   useEffect(() => {
     loadSessions(undefined, activeWorkspaceId ?? undefined);
@@ -136,6 +206,20 @@ export function useChat() {
       const trimmed = content.trim();
       if (!trimmed) return;
 
+      const activeModel = await getActiveModel();
+      if (!activeModel) {
+        const msg = t.chat.errors.noModelConfigured;
+        toast.error(msg, {
+          action: {
+            label: t.chat.actions.goToSettings,
+            onClick: () => {
+              window.location.href = "#/settings?tab=ai";
+            },
+          },
+        });
+        return;
+      }
+
       // 无 session 时先创建（拿到真实 id 后再发），绑定 active workspace
       let sid = currentSessionIdRef.current;
       if (!sid) {
@@ -149,7 +233,7 @@ export function useChat() {
 
       // 解析附件为上下文文本 (失败不阻断发送)
       const contextText = attachments && attachments.length > 0
-        ? await resolveAttachments(attachments, workspacePath)
+        ? await resolveAttachments(attachments, workspacePath, t)
         : undefined;
 
       setError(null);
@@ -187,7 +271,7 @@ export function useChat() {
         toast.error(msg);
       }
     },
-    [createSession, appendMessage, clearStreamingContent, setStreaming, setError, workspacePath],
+    [createSession, appendMessage, clearStreamingContent, setStreaming, setError, workspacePath, t],
   );
 
   const handleNewSession = useCallback(() => {
@@ -230,6 +314,11 @@ export function useChat() {
   const planRemoveOne = usePlanStore((s) => s.removeOne);
   const planClear = usePlanStore((s) => s.clear);
 
+  // Pipeline 进度状态
+  const pipelineState = useAgentStore((s) => s.pipelineState);
+  const setPipelineState = useAgentStore((s) => s.setPipelineState);
+  const clearPipelineState = useAgentStore((s) => s.clearPipelineState);
+
   // P1 阶段 3: approval 响应 —— UI Approve/Deny 按钮调此方法
   const handleRespondApproval = useCallback(
     (approvalId: string, approved: boolean) => {
@@ -267,5 +356,9 @@ export function useChat() {
     planApplyAll,
     planRemoveOne,
     planClear,
+    // Pipeline 进度
+    pipelineState,
+    setPipelineState,
+    clearPipelineState,
   };
 }

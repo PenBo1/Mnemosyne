@@ -114,7 +114,7 @@ export function UserProfileSettings() {
 
   if (!draft) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
@@ -126,7 +126,7 @@ export function UserProfileSettings() {
   const wcp = draft.word_count_preference;
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{up.title}</PageTitle>

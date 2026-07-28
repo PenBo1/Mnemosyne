@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ScrollArea - 滚动区域组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 "use client"
 
 import * as React from "react"
@@ -5,9 +11,13 @@ import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 type ScrollAreaProps = React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportRef?: React.RefObject<HTMLDivElement | null>
 }
+
+// ── 滚动区域组件 ────────────────────────────────────────────────────────────
 
 function ScrollArea({
   className,
@@ -33,6 +43,8 @@ function ScrollArea({
     </ScrollAreaPrimitive.Root>
   )
 }
+
+// ── 滚动条组件 ──────────────────────────────────────────────────────────────
 
 function ScrollBar({
   className,

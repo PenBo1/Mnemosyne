@@ -1,14 +1,20 @@
-﻿import * as React from "react"
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SettingRow - 统一设置行组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
+import { memo } from "react"
 import { cn } from "@/lib/utils"
 
+// ── 设置行组件 ──────────────────────────────────────────────────────────────
+
 /**
- * SettingRow — 统一设置行
- *
- * 替代 settings/ 8 个文件中重复的
- * `CardContent + flex items-center justify-between border-b py-3` 模式。
- * 左侧 label + description，右侧 control。
+ * 统一设置行
+ * 左侧 label + description，右侧 control
  */
-function SettingRow({
+const SettingRow = memo(function SettingRow({
   label,
   description,
   children,
@@ -35,6 +41,6 @@ function SettingRow({
       {children && <div className="shrink-0">{children}</div>}
     </div>
   )
-}
+})
 
 export { SettingRow }

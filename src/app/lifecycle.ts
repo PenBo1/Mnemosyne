@@ -1,7 +1,8 @@
-﻿//! 应用生命周期管理
+//! 应用生命周期管理
 
 import { useEffect, useRef, type RefObject } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { stopAllLoopRunners } from "@/features/agent/services/loop/loop-runner";
 
 export interface LifecycleHandlers {
   onWindowClose?: () => void;
@@ -23,6 +24,7 @@ export function useLifecycle(handlers: LifecycleHandlers): LifecycleState {
     let cancelled = false;
 
     listen("window-close", () => {
+      stopAllLoopRunners();
       if (handlers.onWindowClose && mounted.current) {
         handlers.onWindowClose();
       }

@@ -30,3 +30,19 @@ export interface StoredSummary {
   readonly mood: string;
   readonly chapterType: string;
 }
+
+/**
+ * Fact —— 当前状态事实三元组（subject-predicate-object）。
+ *
+ * 与后端 RetrievedFact DTO（camelCase 序列化）对齐；可选 id 主键服务于
+ * MemoryDB 风格的运行时类型，Mnemosyne 实际用 Rust rusqlite 替代。
+ */
+export interface Fact {
+  readonly id?: number;
+  readonly subject: string;
+  readonly predicate: string;
+  readonly object: string;
+  readonly validFromChapter: number;
+  readonly validUntilChapter: number | null;
+  readonly sourceChapter: number;
+}

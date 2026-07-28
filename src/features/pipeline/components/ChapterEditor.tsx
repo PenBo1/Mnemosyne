@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ChapterEditor - 章节编辑器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useEffect } from "react";
 import { useI18n } from "@/locales/i18n";
 import { Button } from "@/components/ui/button";
@@ -38,18 +44,27 @@ export function ChapterEditor({
   const [fetching, setFetching] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     if (chapter && chapter.number) {
       setFetching(true);
       pipelineService
         .getChapter(bookId, chapter.number)
         .then((ch) => {
-          setContent(ch.content ?? "");
+          if (!cancelled) setContent(ch.content ?? "");
         })
-        .catch(() => {
-          setContent("");
+        .catch((err) => {
+          if (!cancelled) {
+            console.error("[ChapterEditor] load content failed", err);
+            setContent("");
+          }
         })
-        .finally(() => setFetching(false));
+        .finally(() => {
+          if (!cancelled) setFetching(false);
+        });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [bookId, chapter?.number]);
 
   const handleSave = async () => {

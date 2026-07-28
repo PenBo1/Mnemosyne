@@ -1,4 +1,12 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Kbd - 键盘按键组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { cn } from "@/lib/utils"
+
+// ── 键盘按键组件 ────────────────────────────────────────────────────────────
 
 function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
   return (
@@ -12,6 +20,8 @@ function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
     />
   )
 }
+
+// ── 键盘按键组组件 ──────────────────────────────────────────────────────────
 
 function KbdGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

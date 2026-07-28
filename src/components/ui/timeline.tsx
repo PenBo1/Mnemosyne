@@ -1,5 +1,13 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Timeline - 时间线组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 import { cn } from "@/lib/utils"
+
+// ── 时间线组件 ──────────────────────────────────────────────────────────────
 
 function Timeline({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -11,6 +19,8 @@ function Timeline({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 时间线项组件 ────────────────────────────────────────────────────────────
+
 function TimelineItem({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -21,6 +31,8 @@ function TimelineItem({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 时间线分隔符组件 ────────────────────────────────────────────────────────
+
 function TimelineSeparator({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -30,6 +42,8 @@ function TimelineSeparator({ className, ...props }: React.ComponentProps<"div">)
     />
   )
 }
+
+// ── 时间线圆点组件 ──────────────────────────────────────────────────────────
 
 function TimelineDot({
   className,
@@ -59,6 +73,8 @@ function TimelineDot({
   )
 }
 
+// ── 时间线连接线组件 ────────────────────────────────────────────────────────
+
 function TimelineConnector({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -72,6 +88,8 @@ function TimelineConnector({ className, ...props }: React.ComponentProps<"div">)
   )
 }
 
+// ── 时间线内容组件 ──────────────────────────────────────────────────────────
+
 function TimelineContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -81,6 +99,8 @@ function TimelineContent({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 时间线头部组件 ──────────────────────────────────────────────────────────
 
 function TimelineHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -92,6 +112,8 @@ function TimelineHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 时间线标题组件 ──────────────────────────────────────────────────────────
+
 function TimelineTitle({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
@@ -102,6 +124,8 @@ function TimelineTitle({ className, ...props }: React.ComponentProps<"span">) {
   )
 }
 
+// ── 时间线描述组件 ──────────────────────────────────────────────────────────
+
 function TimelineDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <p
@@ -111,6 +135,8 @@ function TimelineDescription({ className, ...props }: React.ComponentProps<"p">)
     />
   )
 }
+
+// ── 时间线日期组件 ──────────────────────────────────────────────────────────
 
 function TimelineDate({ className, ...props }: React.ComponentProps<"span">) {
   return (

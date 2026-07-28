@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LoopPage - 循环任务管理页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useCallback } from "react";
 import { useI18n } from "@/locales/i18n";
 import { useLoopEngine } from "@/features/loop/hooks/useLoopEngine";

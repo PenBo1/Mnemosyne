@@ -1,5 +1,12 @@
-import { useState, useEffect } from "react";
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ChatPage - Agent 聊天主页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { listen } from "@tauri-apps/api/event";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useAgentStore } from "@/features/chat/store";
 import { useI18n } from "@/locales/i18n";
@@ -9,9 +16,17 @@ import { ChatInput } from "@/features/chat/components/chat-input";
 import { ContextPanel } from "@/features/chat/components/context-panel";
 import { ApprovalCard } from "@/features/agent/components/ApprovalCard";
 import { PlanDiffReview } from "@/features/agent/components/PlanDiffReview";
+import { MemoryPanel } from "@/features/agent/components/MemoryPanel";
+import { LoopPanel } from "@/features/agent/components/LoopPanel";
+import { FailureReport, type FailurePattern } from "@/features/agent/components/FailureReport";
 import { SLASH_COMMANDS, type SlashCommand } from "@/features/chat/components/slash-commands";
 import type { AttachmentSpec } from "@/features/chat/types";
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Agent 聊天主页面，整合消息列表、输入框、侧边面板等组件
+ */
 export default function ChatPage() {
   const { t } = useI18n();
   const {
@@ -36,10 +51,35 @@ export default function ChatPage() {
     planClear,
   } = useChat();
 
+  // ── 状态管理 ──────────────────────────────────────────────────────────────
+
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AttachmentSpec[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [loopPanelOpen, setLoopPanelOpen] = useState(false);
   const [activeCommand, setActiveCommand] = useState<SlashCommand | null>(null);
+  const [failures, setFailures] = useState<FailurePattern[]>([]);
+  
+  // ── 事件监听 ──────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    listen<FailurePattern[]>("agent:failure", (event) => {
+      setFailures((prev) => [...prev, ...event.payload].slice(-50));
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const title = activeSession?.title || t.agentChat.title;
 
@@ -52,7 +92,13 @@ export default function ChatPage() {
     return () => window.removeEventListener("chat:prompt", handler);
   }, []);
 
-  const executeCommand = (stem: string, args?: string) => {
+  // ── 命令处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 执行本地 slash 命令
+   * 返回 true 表示已在本地处理完成，返回 false 表示需要发送给 AI agent
+   */
+  const executeCommand = useCallback((stem: string, _args?: string): boolean => {
     switch (stem) {
       case "/new":
         void handleNewSession();
@@ -60,51 +106,56 @@ export default function ChatPage() {
       case "/clear":
         useAgentStore.getState().replaceMessages([]);
         return true;
-      case "/write":
-        if (!args) {
-          toast.warning(t.agentChat.slashWriteNoArgs);
-        } else {
-          toast.info(t.agentChat.slashWriteWIP);
-        }
-        return true;
       case "/help":
-        toast.info("/new - 新建会话\n/clear - 清空消息\n/write - 写作模式\n/help - 显示帮助\n/status - 查看状态\n/depth - 设置思考深度\n/wiki - 打开 Wiki\n/memory - 打开记忆");
+        toast.info(t.agentChat.slashHelpText);
         return true;
       case "/status":
-        toast.info("状态功能开发中");
-        return true;
-      case "/depth":
-        toast.info(`思考深度设置功能开发中，参数: ${args || "未提供"}`);
-        return true;
-      case "/character":
-      case "/world":
-      case "/plot":
-        toast.info(`${stem.slice(1)} 模式功能开发中`);
+        toast.info(t.agentChat.slashStatusWip);
         return true;
       case "/wiki":
       case "/memory":
-        toast.info(`导航功能开发中: ${stem}`);
+        toast.info(t.agentChat.slashNavWip.replace("{command}", stem));
         return true;
+      case "/write":
+      case "/character":
+      case "/world":
+      case "/plot":
+      case "/depth":
       case "/export":
-        toast.info(`导出功能开发中，参数: ${args || "未提供"}`);
-        return true;
+        return false;
       default:
-        toast.error(`命令 ${stem} 未实现`);
+        toast.error(t.agentChat.slashNotImplemented.replace("{command}", stem));
         return true;
     }
-  };
+  }, [t, handleNewSession]);
 
-  const handleSubmit = () => {
+  // ── 消息提交 ──────────────────────────────────────────────────────────────
+
+  const handleSubmit = useCallback(() => {
     const trimmed = input.trim();
     if ((!trimmed && !activeCommand) || streaming) return;
 
+    let messageText = trimmed;
+    let localAttachments = attachments;
+
     if (activeCommand) {
-      const success = executeCommand(activeCommand.stem, trimmed);
-      if (success) {
+      // 有 activeCommand 时，组合命令词干 + 参数作为消息
+      const stem = activeCommand.stem;
+      const args = trimmed;
+      const handled = executeCommand(stem, args);
+      if (handled) {
+        // 本地命令已处理，不需要发送给 AI
         setActiveCommand(null);
         setInput("");
         setAttachments([]);
+        return;
       }
+      // 需要发送给 AI：组合消息内容
+      messageText = args ? `${stem} ${args}` : stem;
+      setActiveCommand(null);
+      setInput("");
+      setAttachments([]);
+      void sendMessage(messageText, localAttachments.length > 0 ? localAttachments : undefined);
       return;
     }
 
@@ -116,40 +167,65 @@ export default function ChatPage() {
       const matchedCommand = SLASH_COMMANDS.find((cmd) => cmd.stem === stem);
 
       if (matchedCommand) {
-        executeCommand(stem, args);
+        const handled = executeCommand(stem, args);
+        if (handled) {
+          // 本地命令已处理
+          setInput("");
+          setAttachments([]);
+          return;
+        }
+        // 需要发送给 AI：使用原始输入
+        messageText = trimmed;
       } else {
-        toast.error(`未知命令: ${stem}\n输入 /help 查看可用命令`);
+        // 未知命令，直接作为普通消息发送给 AI
+        messageText = trimmed;
       }
-      setInput("");
-      setAttachments([]);
-      return;
     }
 
     setInput("");
     setAttachments([]);
-    void sendMessage(trimmed, attachments.length > 0 ? attachments : undefined);
-  };
+    void sendMessage(messageText, localAttachments.length > 0 ? localAttachments : undefined);
+  }, [input, activeCommand, streaming, attachments, executeCommand, sendMessage]);
 
-  const handleActiveCommandChange = (cmd: SlashCommand | null) => {
+  const handleActiveCommandChange = useCallback((cmd: SlashCommand | null) => {
     if (cmd && !cmd.hasArgs) {
-      executeCommand(cmd.stem);
-      setActiveCommand(null);
+      const handled = executeCommand(cmd.stem);
+      if (handled) {
+        setActiveCommand(null);
+      } else {
+        // 命令需要发送给 AI，设置 activeCommand 让用户输入参数
+        setActiveCommand(cmd);
+      }
     } else {
       setActiveCommand(cmd);
     }
-  };
+  }, [executeCommand]);
 
-  const handleAttachFile = (filePath: string) => {
+  // ── 附件处理 ──────────────────────────────────────────────────────────────
+
+  const handleAttachFile = useCallback((filePath: string) => {
     const parts = filePath.split(/[\\/]/);
     const label = parts[parts.length - 1] || filePath;
     setAttachments((prev) => [...prev, { kind: "file", ref: filePath, label }]);
-  };
+  }, []);
 
-  const handleRemoveAttachment = (index: number) => {
+  const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
+
+  // ── 面板控制 ──────────────────────────────────────────────────────────────
+
+  const togglePanel = useCallback(() => setPanelOpen((v) => !v), []);
+  const toggleMemoryPanel = useCallback(() => setMemoryPanelOpen((v) => !v), []);
+  const toggleLoopPanel = useCallback(() => setLoopPanelOpen((v) => !v), []);
+  const closeMemoryPanel = useCallback(() => setMemoryPanelOpen(false), []);
+  const closeLoopPanel = useCallback(() => setLoopPanelOpen(false), []);
+  const dismissFailures = useCallback(() => setFailures([]), []);
+  const handleApplyAll = useCallback(async () => { await planApplyAll(); }, [planApplyAll]);
 
   const totalTokens = (activeSession?.input_tokens ?? 0) + (activeSession?.output_tokens ?? 0);
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-full bg-background">
@@ -160,10 +236,14 @@ export default function ChatPage() {
           hasSession={!!activeSession}
           planModeActive={planModeActive}
           panelOpen={panelOpen}
+          memoryPanelOpen={memoryPanelOpen}
+          loopPanelOpen={loopPanelOpen}
           onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
-          onTogglePanel={() => setPanelOpen((v) => !v)}
+          onTogglePanel={togglePanel}
           onTogglePlanMode={togglePlanMode}
+          onToggleMemoryPanel={toggleMemoryPanel}
+          onToggleLoopPanel={toggleLoopPanel}
         />
 
         <MessageList
@@ -179,6 +259,15 @@ export default function ChatPage() {
               confirmation={pendingConfirmation}
               submitting={submittingConfirmation}
               onRespond={respondApproval}
+            />
+          </div>
+        )}
+
+        {failures.length > 0 && (
+          <div className="px-4 pb-2">
+            <FailureReport
+              failures={failures}
+              onDismiss={dismissFailures}
             />
           </div>
         )}
@@ -204,10 +293,22 @@ export default function ChatPage() {
         totalTokens={totalTokens}
       />
 
+      <MemoryPanel
+        open={memoryPanelOpen}
+        sessionId={activeSession?.id ?? null}
+        onClose={closeMemoryPanel}
+      />
+
+      <LoopPanel
+        open={loopPanelOpen}
+        sessionId={activeSession?.id ?? null}
+        onClose={closeLoopPanel}
+      />
+
       {planQueue.length > 0 && (
         <PlanDiffReview
           queue={planQueue}
-          onApplyAll={async () => { await planApplyAll(); }}
+          onApplyAll={handleApplyAll}
           onRejectOne={planRemoveOne}
           onDiscardAll={planClear}
         />

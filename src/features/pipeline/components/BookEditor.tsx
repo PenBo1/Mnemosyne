@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BookEditor - 书籍编辑器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { useI18n } from "@/locales/i18n";
 import { Button } from "@/components/ui/button";

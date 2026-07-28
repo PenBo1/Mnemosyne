@@ -3,7 +3,12 @@ import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { PlotPoint, PlotPointType } from "@/features/story/types";
 import { ipc } from "@/services/ipc";
-import * as plotService from "@/features/story/services";
+import {
+  listPlotPoints,
+  createPlotPoint,
+  updatePlotPoint,
+  deletePlotPoint,
+} from "@/features/story/services";
 
 export function usePlotPoints(workspaceId: string | null) {
   const { t } = useI18n();
@@ -17,7 +22,7 @@ export function usePlotPoints(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) { setPoints([]); return; }
-      const data = await plotService.listPlotPoints(novel.id);
+      const data = await listPlotPoints(novel.id);
       setPoints(data);
     } catch {
       setPoints([]);
@@ -45,7 +50,7 @@ export function usePlotPoints(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) return;
-      await plotService.createPlotPoint({ ...params, novelId: novel.id });
+      await createPlotPoint({ ...params, novelId: novel.id });
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -65,7 +70,7 @@ export function usePlotPoints(workspaceId: string | null) {
     outcome: string;
   }) => {
     try {
-      await plotService.updatePlotPoint(params);
+      await updatePlotPoint(params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -75,7 +80,7 @@ export function usePlotPoints(workspaceId: string | null) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await plotService.deletePlotPoint(id);
+      await deletePlotPoint(id);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {

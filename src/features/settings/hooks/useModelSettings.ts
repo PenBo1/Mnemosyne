@@ -2,8 +2,17 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { AiModelConfig } from "@/services/settings";
-import * as settingsStore from "@/services/settings";
-import * as providerService from "@/features/settings/services";
+import {
+  loadSettings,
+  addModel as addModelSetting,
+  removeModel as removeModelSetting,
+  updateModel as updateModelSetting,
+  setActiveModel as setActiveModelSetting,
+} from "@/services/settings";
+import {
+  refreshProviders,
+  testConnection as testProviderConnection,
+} from "@/features/settings/services";
 
 export function useModelSettings() {
   const { t } = useI18n();
@@ -16,7 +25,7 @@ export function useModelSettings() {
     try {
       setLoading(true);
       setError(null);
-      const settings = await settingsStore.loadSettings();
+      const settings = await loadSettings();
       setModels(settings.ai.models);
       setActiveModelId(settings.ai.active_model_id);
     } catch (err) {
@@ -32,8 +41,8 @@ export function useModelSettings() {
 
   const addModel = useCallback(async (config: Omit<AiModelConfig, "id">) => {
     try {
-      await settingsStore.addModel(config);
-      await providerService.refreshProviders();
+      await addModelSetting(config);
+      await refreshProviders();
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch (err) {
@@ -43,8 +52,8 @@ export function useModelSettings() {
 
   const removeModel = useCallback(async (id: string) => {
     try {
-      await settingsStore.removeModel(id);
-      await providerService.refreshProviders();
+      await removeModelSetting(id);
+      await refreshProviders();
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch (err) {
@@ -54,8 +63,8 @@ export function useModelSettings() {
 
   const updateModel = useCallback(async (id: string, updates: Partial<Omit<AiModelConfig, "id">>) => {
     try {
-      await settingsStore.updateModel(id, updates);
-      await providerService.refreshProviders();
+      await updateModelSetting(id, updates);
+      await refreshProviders();
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch (err) {
@@ -65,8 +74,8 @@ export function useModelSettings() {
 
   const setActiveModel = useCallback(async (id: string) => {
     try {
-      await settingsStore.setActiveModel(id);
-      await providerService.refreshProviders();
+      await setActiveModelSetting(id);
+      await refreshProviders();
       setActiveModelId(id);
       toast.success(t.common.updatedSuccessfully);
     } catch (err) {
@@ -81,7 +90,7 @@ export function useModelSettings() {
     model: string;
   }) => {
     try {
-      const result = await providerService.testConnection(params);
+      const result = await testProviderConnection(params);
       return result;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t.common.error);

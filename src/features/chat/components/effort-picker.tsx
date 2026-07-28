@@ -1,17 +1,8 @@
-// Effort Picker —— Agent 投入程度选择器。
-//
-// - Model 决定"能力"(会不会),Effort 决定"态度"(愿不愿意努力做)
-// - 小模型 + 高 Effort 可能比大模型 + 低 Effort 效果更好
-//
-// 四档(对齐 Rust 的 EffortLevel enum):
-// - low:快速回复,最小工具调用(5 轮/10 文件/2k tokens)
-// - medium:默认,平衡(20 轮/50 文件/8k tokens)
-// - high:深度分析,多轮验证(50 轮/200 文件/16k tokens)
-// - ultra:ultracode,多 agent 并行(100 轮/1000 文件/32k tokens)
-//
-// 自包含:
-// - 从 chat-runtime 读取/写入 currentEffort
-// - localStorage 持久化(跨 session 保留)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EffortPicker - Agent 投入程度选择器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 import { memo, useState, useEffect } from "react";
 import { GaugeIcon } from "lucide-react";
@@ -31,6 +22,8 @@ import {
 } from "@/features/agent/services/llm/chat-runtime";
 import { EFFORT_OPTIONS, type EffortLevel } from "@/types/effort";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
 const EFFORT_COLOR: Record<EffortLevel, string> = {
   low: "text-emerald-500",
   medium: "text-blue-500",
@@ -38,11 +31,19 @@ const EFFORT_COLOR: Record<EffortLevel, string> = {
   ultra: "text-violet-500",
 };
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
 /**
- * Effort 选择器:下拉选择 Agent 投入程度。
- *
- * 选择后立即通过 `setCurrentEffort` 写入 chat-runtime 模块状态,
- * 下次 sendMessage 时会读取最新值传给 Rust。
+ * 检查是否为有效的投入程度值
+ */
+function isEffortValue(s: string): boolean {
+  return s === "low" || s === "medium" || s === "high" || s === "ultra";
+}
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Agent 投入程度选择器，下拉选择 Agent 的工作投入级别
  */
 export const EffortPicker = memo(function EffortPicker() {
   const { t } = useI18n();
@@ -55,6 +56,9 @@ export const EffortPicker = memo(function EffortPicker() {
     return () => window.removeEventListener("storage", sync);
   }, []);
 
+  /**
+   * 处理投入程度变更
+   */
   const handleChange = (value: string) => {
     if (!isEffortValue(value)) return;
     const next = value as EffortLevel;
@@ -91,7 +95,3 @@ export const EffortPicker = memo(function EffortPicker() {
     </Select>
   );
 });
-
-function isEffortValue(s: string): boolean {
-  return s === "low" || s === "medium" || s === "high" || s === "ultra";
-}

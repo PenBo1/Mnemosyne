@@ -1,6 +1,14 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Card - 卡片组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
+
+// ── 卡片组件 ────────────────────────────────────────────────────────────────
 
 function Card({
   className,
@@ -20,6 +28,8 @@ function Card({
   )
 }
 
+// ── 卡片头部组件 ────────────────────────────────────────────────────────────
+
 function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -33,6 +43,8 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 卡片标题组件 ────────────────────────────────────────────────────────────
+
 function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -43,6 +55,8 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 卡片描述组件 ────────────────────────────────────────────────────────────
+
 function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -52,6 +66,8 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 卡片操作组件 ────────────────────────────────────────────────────────────
 
 function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -66,6 +82,8 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 卡片内容组件 ────────────────────────────────────────────────────────────
+
 function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -75,6 +93,8 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 卡片底部组件 ────────────────────────────────────────────────────────────
 
 function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (

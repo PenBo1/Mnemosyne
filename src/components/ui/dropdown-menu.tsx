@@ -1,4 +1,10 @@
-﻿"use client"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DropdownMenu - 下拉菜单组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+"use client"
 
 import * as React from "react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
@@ -6,11 +12,15 @@ import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronRightIcon } from "lucide-react"
 
+// ── 下拉菜单组件 ────────────────────────────────────────────────────────────
+
 function DropdownMenu({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
 }
+
+// ── 下拉菜单门户组件 ────────────────────────────────────────────────────────
 
 function DropdownMenuPortal({
   ...props
@@ -19,6 +29,8 @@ function DropdownMenuPortal({
     <DropdownMenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
   )
 }
+
+// ── 下拉菜单触发器组件 ──────────────────────────────────────────────────────
 
 function DropdownMenuTrigger({
   ...props
@@ -30,6 +42,8 @@ function DropdownMenuTrigger({
     />
   )
 }
+
+// ── 下拉菜单内容组件 ────────────────────────────────────────────────────────
 
 function DropdownMenuContent({
   className,
@@ -50,6 +64,8 @@ function DropdownMenuContent({
   )
 }
 
+// ── 下拉菜单分组组件 ────────────────────────────────────────────────────────
+
 function DropdownMenuGroup({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Group>) {
@@ -57,6 +73,8 @@ function DropdownMenuGroup({
     <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
   )
 }
+
+// ── 下拉菜单项组件 ──────────────────────────────────────────────────────────
 
 function DropdownMenuItem({
   className,
@@ -80,6 +98,8 @@ function DropdownMenuItem({
     />
   )
 }
+
+// ── 下拉菜单复选项组件 ──────────────────────────────────────────────────────
 
 function DropdownMenuCheckboxItem({
   className,
@@ -115,6 +135,8 @@ function DropdownMenuCheckboxItem({
   )
 }
 
+// ── 下拉菜单单选组组件 ──────────────────────────────────────────────────────
+
 function DropdownMenuRadioGroup({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
@@ -125,6 +147,8 @@ function DropdownMenuRadioGroup({
     />
   )
 }
+
+// ── 下拉菜单单选项组件 ──────────────────────────────────────────────────────
 
 function DropdownMenuRadioItem({
   className,
@@ -158,6 +182,8 @@ function DropdownMenuRadioItem({
   )
 }
 
+// ── 下拉菜单标签组件 ────────────────────────────────────────────────────────
+
 function DropdownMenuLabel({
   className,
   inset,
@@ -178,6 +204,8 @@ function DropdownMenuLabel({
   )
 }
 
+// ── 下拉菜单分隔符组件 ──────────────────────────────────────────────────────
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -190,6 +218,8 @@ function DropdownMenuSeparator({
     />
   )
 }
+
+// ── 下拉菜单快捷键组件 ──────────────────────────────────────────────────────
 
 function DropdownMenuShortcut({
   className,
@@ -207,11 +237,15 @@ function DropdownMenuShortcut({
   )
 }
 
+// ── 下拉菜单子菜单组件 ──────────────────────────────────────────────────────
+
 function DropdownMenuSub({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>) {
   return <DropdownMenuPrimitive.Sub data-slot="dropdown-menu-sub" {...props} />
 }
+
+// ── 下拉菜单子菜单触发器组件 ────────────────────────────────────────────────
 
 function DropdownMenuSubTrigger({
   className,
@@ -236,6 +270,8 @@ function DropdownMenuSubTrigger({
     </DropdownMenuPrimitive.SubTrigger>
   )
 }
+
+// ── 下拉菜单子菜单内容组件 ──────────────────────────────────────────────────
 
 function DropdownMenuSubContent({
   className,

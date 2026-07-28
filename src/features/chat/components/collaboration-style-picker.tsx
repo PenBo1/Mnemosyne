@@ -1,16 +1,8 @@
-// Collaboration Style Picker —— 协作风格选择器。
-//
-// 四档(对齐 Rust 的 CollaborationStyle enum):
-// - efficient:高效极简 —— 简洁直接,聚焦解决问题
-// - thoughtful:深思熟虑 —— 充分分析,权衡取舍
-// - patient:温和耐心 —— 循序渐进,解释原理
-// - decisive:果断执行 —— 行动导向,快速决策
-//
-// 与 Effort 正交:Effort 控制"做多少",Style 控制"怎么做"
-//
-// 自包含:
-// - 从 chat-runtime 读取/写入 currentCollaborationStyle
-// - localStorage 持久化(跨 session 保留)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * CollaborationStylePicker - 协作风格选择器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 import { memo, useState, useEffect } from "react";
 import { SparklesIcon } from "lucide-react";
@@ -33,6 +25,8 @@ import {
   type CollaborationStyle,
 } from "@/types/collaboration-style";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
 const STYLE_COLOR: Record<CollaborationStyle, string> = {
   efficient: "text-emerald-500",
   thoughtful: "text-blue-500",
@@ -40,11 +34,24 @@ const STYLE_COLOR: Record<CollaborationStyle, string> = {
   decisive: "text-rose-500",
 };
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
 /**
- * 协作风格选择器:下拉选择 Agent 的回复风格。
- *
- * 选择后立即通过 `setCurrentCollaborationStyle` 写入 chat-runtime 模块状态,
- * 下次 sendMessage 时会读取最新值传给 Rust。
+ * 检查是否为有效的协作风格值
+ */
+function isStyleValue(s: string): boolean {
+  return (
+    s === "efficient" ||
+    s === "thoughtful" ||
+    s === "patient" ||
+    s === "decisive"
+  );
+}
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 协作风格选择器，下拉选择 Agent 的回复风格
  */
 export const CollaborationStylePicker = memo(function CollaborationStylePicker() {
   const { t } = useI18n();
@@ -57,6 +64,9 @@ export const CollaborationStylePicker = memo(function CollaborationStylePicker()
     return () => window.removeEventListener("storage", sync);
   }, []);
 
+  /**
+   * 处理风格变更
+   */
   const handleChange = (value: string) => {
     if (!isStyleValue(value)) return;
     const next = value as CollaborationStyle;
@@ -93,12 +103,3 @@ export const CollaborationStylePicker = memo(function CollaborationStylePicker()
     </Select>
   );
 });
-
-function isStyleValue(s: string): boolean {
-  return (
-    s === "efficient" ||
-    s === "thoughtful" ||
-    s === "patient" ||
-    s === "decisive"
-  );
-}

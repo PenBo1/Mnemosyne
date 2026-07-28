@@ -1,11 +1,35 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-import type { Session, Message, PendingConfirmation } from "@/features/chat/types";
-import * as sessionService from "@/features/session/services";
+import type { Session, Message, PendingConfirmation } from "@/types/session";
+import {
+  createSession as sessionCreate,
+  listSessions as sessionList,
+  listMessages as sessionListMessages,
+  deleteSession as sessionDelete,
+} from "@/features/session/services";
+import { getTranslations } from "@/locales/i18n-store";
+import type { PipelineState } from "@/features/agent/components/PipelineProgress";
 
 // 乐观更新辅助函数（P2 来自 AI Engineering 课程）
 function generateTempId(): string {
   return `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// messages 数组软上限：超过阈值时压缩，避免前端缓存无限增长。
+// 保留首条 system 消息（系统上下文）+ 最近 MESSAGES_KEEP_RECENT 条对话。
+const MESSAGES_SOFT_LIMIT = 500;
+const MESSAGES_KEEP_RECENT = 50;
+
+/** 超过软上限时压缩：保留首条 system 消息 + 最近 N 条。未超阈值原样返回。 */
+function compactMessagesIfNeeded(messages: Message[]): Message[] {
+  if (messages.length <= MESSAGES_SOFT_LIMIT) return messages;
+  const recent = messages.slice(-MESSAGES_KEEP_RECENT);
+  const first = messages[0];
+  // messages.length > 500 > 50，首条必不在 recent 内；仅当为 system 时保留
+  if (first && first.role === "system") {
+    return [first, ...recent];
+  }
+  return recent;
 }
 
 /** 当前 turn 进行中的工具调用（流式展示用） */
@@ -13,6 +37,11 @@ export interface ActiveToolCall {
   id: string;
   name: string;
   status: "running" | "completed" | "error";
+  /** 工具调用开始时在文本 buffer 中的位置（用于按顺序渲染） */
+  startPosition: number;
+  endPosition?: number;
+  /** 工具调用参数（流式累积，toolCallDelta 事件追加） */
+  args?: string;
   startedAt: number;
 }
 
@@ -33,6 +62,8 @@ interface AgentState {
   submittingConfirmation: boolean;
   /** 用户主动清空会话标志（点击"新建任务"后为 true，阻止自动选会话） */
   pendingClear: boolean;
+  /** Pipeline 进度状态（用于进度可视化） */
+  pipelineState: PipelineState | null;
   loadSessions: (novelId?: string, workspaceId?: string) => Promise<void>;
   createSession: (novelId?: string, title?: string, workspaceId?: string) => Promise<Session>;
   switchSession: (sessionId: string) => Promise<void>;
@@ -47,9 +78,11 @@ interface AgentState {
   updateStreamingReasoning: (delta: string) => void;
   clearStreamingReasoning: () => void;
   /** 新增一个工具调用（toolCallStart 时调用） */
-  addToolCallStart: (call: { id: string; name: string }) => void;
+  addToolCallStart: (call: { id: string; name: string; startPosition: number }) => void;
   /** 标记某个工具调用完成（toolCallEnd 时调用） */
   updateToolCallEnd: (id: string, status?: "completed" | "error") => void;
+  /** 追加工具调用参数（toolCallDelta 时调用，累积 argsDelta） */
+  appendToolCallArgs: (id: string, argsDelta: string) => void;
   /** 清空所有进行中的工具调用（turn 结束时） */
   clearActiveToolCalls: () => void;
   setStreaming: (streaming: boolean) => void;
@@ -58,6 +91,10 @@ interface AgentState {
   setSubmittingConfirmation: (submitting: boolean) => void;
   /** 用户确认/取消后清理待确认状态 */
   respondConfirmation: () => void;
+  /** 设置 Pipeline 进度状态 */
+  setPipelineState: (state: PipelineState | null) => void;
+  /** 清空 Pipeline 进度状态 */
+  clearPipelineState: () => void;
   reset: () => void;
 }
 
@@ -74,14 +111,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   pendingConfirmation: null,
   submittingConfirmation: false,
   pendingClear: false,
+  pipelineState: null,
 
   loadSessions: async (novelId?: string, workspaceId?: string) => {
     set({ loading: true, error: null });
     try {
-      const sessions = await sessionService.listSessions(novelId, workspaceId);
+      const sessions = await sessionList(novelId, workspaceId);
       set({ sessions, loading: false });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load sessions";
+      const message = err instanceof Error ? err.message : getTranslations().chat.errors.failedToLoadSessions;
       set({ error: message, loading: false });
       toast.error(message);
     }
@@ -120,7 +158,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      const session = await sessionService.createSession(novelId, title, workspaceId);
+      const session = await sessionCreate(novelId, title, workspaceId);
       // 用真实数据替换乐观数据
       set((state) => ({
         sessions: state.sessions.map((s) =>
@@ -134,9 +172,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set((state) => ({
         sessions: state.sessions.filter((s) => s.id !== tempId),
         currentSessionId: null,
-        error: err instanceof Error ? err.message : "Failed to create session",
+        error: err instanceof Error ? err.message : getTranslations().chat.errors.failedToCreateSession,
       }));
-      toast.error("Failed to create session");
+      toast.error(getTranslations().chat.errors.failedToCreateSession);
       throw err;
     }
   },
@@ -144,10 +182,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   switchSession: async (sessionId: string) => {
     set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "", activeToolCalls: [], pendingConfirmation: null, submittingConfirmation: false, pendingClear: false });
     try {
-      const messages = await sessionService.listMessages(sessionId);
+      const messages = await sessionListMessages(sessionId);
       set({ messages, loading: false });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load messages";
+      const message = err instanceof Error ? err.message : getTranslations().chat.errors.failedToLoadMessages;
       set({ error: message, loading: false });
       toast.error(message);
     }
@@ -167,24 +205,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      await sessionService.deleteSession(sessionId);
+      await sessionDelete(sessionId);
     } catch (err) {
       // 失败时回滚
       set({
         sessions: previousSessions,
         currentSessionId: previousCurrentId,
-        error: err instanceof Error ? err.message : "Failed to delete session",
+        error: err instanceof Error ? err.message : getTranslations().chat.errors.failedToDeleteSession,
       });
-      toast.error("Failed to delete session");
+      toast.error(getTranslations().chat.errors.failedToDeleteSession);
     }
   },
 
   loadMessages: async (sessionId: string) => {
     try {
-      const messages = await sessionService.listMessages(sessionId);
+      const messages = await sessionListMessages(sessionId);
       set({ messages });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load messages";
+      const message = err instanceof Error ? err.message : getTranslations().chat.errors.failedToLoadMessages;
       toast.error(message);
     }
   },
@@ -205,9 +243,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   appendMessage: (message: Message) => {
-    set((state) => ({
-      messages: [...state.messages, message],
-    }));
+    set((state) => {
+      const next = [...state.messages, message];
+      return { messages: compactMessagesIfNeeded(next) };
+    });
   },
 
   replaceMessages: (messages: Message[]) => {
@@ -238,15 +277,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((state) => ({
       activeToolCalls: [
         ...state.activeToolCalls,
-        { id: call.id, name: call.name, status: "running", startedAt: Date.now() },
+        { id: call.id, name: call.name, status: "running", startPosition: call.startPosition, startedAt: Date.now() },
       ],
     }));
   },
 
   updateToolCallEnd: (id, status = "completed") => {
+    const currentContentLength = get().streamingContent.length;
     set((state) => ({
       activeToolCalls: state.activeToolCalls.map((c) =>
-        c.id === id ? { ...c, status } : c,
+        c.id === id ? { ...c, status, endPosition: currentContentLength } : c,
+      ),
+    }));
+  },
+
+  appendToolCallArgs: (id, argsDelta) => {
+    set((state) => ({
+      activeToolCalls: state.activeToolCalls.map((c) =>
+        c.id === id ? { ...c, args: (c.args ?? "") + argsDelta } : c,
       ),
     }));
   },
@@ -275,6 +323,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ pendingConfirmation: null, submittingConfirmation: false });
   },
 
+  setPipelineState: (state) => {
+    set({ pipelineState: state });
+  },
+
+  clearPipelineState: () => {
+    set({ pipelineState: null });
+  },
+
   reset: () => {
     set({
       messages: [],
@@ -285,6 +341,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       error: null,
       pendingConfirmation: null,
       submittingConfirmation: false,
+      pipelineState: null,
     });
   },
 }));

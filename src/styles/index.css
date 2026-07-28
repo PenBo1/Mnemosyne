@@ -104,6 +104,13 @@
     --accent-violet: #BFA5FF;
     --accent-slate: #AFB9CF;
 
+    /* Trae brand-green scale (for heatmap gradients) */
+    --brand-green-300: #85FABF;
+    --brand-green-400: #5CF5A8;
+    --brand-green-500: #32F08C;
+    --brand-green-600: #0FDC78;
+    --brand-green-700: #0AB861;
+
     /* Viz */
     --viz-series-coral: #F87454;
     --viz-series-amber: #EDAA45;
@@ -115,6 +122,13 @@
     --viz-series-indigo: #B6A3FF;
     --viz-series-lime: #A6EA39;
     --viz-series-slate: #859EAD;
+
+    /* Chart colors — mapped from TRAE viz series */
+    --chart-1: var(--viz-series-mint);
+    --chart-2: var(--viz-series-sky);
+    --chart-3: var(--viz-series-coral);
+    --chart-4: var(--viz-series-amber);
+    --chart-5: var(--viz-series-violet);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -218,33 +232,7 @@
     --code-attribute: #A08020;
     --code-tag: #D04050;
 
-    /* ── Legacy aliases (for backwards compat with component code) ── */
-    --color-background: var(--bg-base-default);
-    --color-foreground: var(--text-default);
-    --color-surface: var(--bg-base-secondary);
-    --color-surface-variant: var(--bg-base-tertiary);
-    --color-overlay-1: var(--bg-overlay-l1);
-    --color-overlay-2: var(--bg-overlay-l2);
-    --color-overlay-3: var(--bg-overlay-l3);
-    --color-overlay-4: var(--bg-overlay-l4);
-    --color-card: var(--bg-base-secondary);
-    --color-tooltip: var(--bg-tooltip);
-    --color-menu: var(--bg-menu);
-    --color-primary: var(--bg-brand);
-    --color-primary-hover: var(--bg-brand-hover);
-    --color-primary-disabled: var(--bg-brand-disabled);
-    --color-primary-soft: var(--bg-brand-popup);
-    --color-accent: var(--bg-brand);
-    --color-on-primary: var(--text-onbrand);
-    --color-on-surface: var(--text-default);
-    --color-on-surface-variant: var(--text-secondary);
-    --color-muted-foreground: var(--text-secondary);
-    --color-disabled-foreground: var(--text-disabled);
-    --color-border: var(--border-neutral-l1);
-    --color-border-strong: var(--border-neutral-l2);
-    --color-border-stronger: var(--border-neutral-l3);
-    --color-border-contrast: var(--border-contrast);
-    --color-outline: var(--border-neutral-l1);
+    /* ── Legacy aliases（仅保留仍被组件代码 var() 引用的变量，其余已移除） ── */
     --color-info: var(--status-primary-default);
     --color-success: var(--status-success-default);
     --color-warning: var(--status-warning-default);
@@ -463,33 +451,7 @@
     --special-black: #000000;
     --special-bgtabsoverlay: rgba(0, 0, 0, 0.2);
 
-    /* ── Legacy aliases ── */
-    --color-background: var(--bg-base-default);
-    --color-foreground: var(--text-default);
-    --color-surface: var(--bg-base-secondary);
-    --color-surface-variant: var(--bg-base-tertiary);
-    --color-overlay-1: var(--bg-overlay-l1);
-    --color-overlay-2: var(--bg-overlay-l2);
-    --color-overlay-3: var(--bg-overlay-l3);
-    --color-overlay-4: var(--bg-overlay-l4);
-    --color-card: var(--bg-base-secondary);
-    --color-tooltip: var(--bg-tooltip);
-    --color-menu: var(--bg-menu);
-    --color-primary: var(--bg-brand);
-    --color-primary-hover: var(--bg-brand-hover);
-    --color-primary-disabled: var(--bg-brand-disabled);
-    --color-primary-soft: var(--bg-brand-popup);
-    --color-accent: var(--bg-brand);
-    --color-on-primary: var(--text-onbrand);
-    --color-on-surface: var(--text-default);
-    --color-on-surface-variant: var(--text-secondary);
-    --color-muted-foreground: var(--text-secondary);
-    --color-disabled-foreground: var(--text-disabled);
-    --color-border: var(--border-neutral-l1);
-    --color-border-strong: var(--border-neutral-l2);
-    --color-border-stronger: var(--border-neutral-l3);
-    --color-border-contrast: var(--border-contrast);
-    --color-outline: var(--border-neutral-l1);
+    /* ── Legacy aliases（仅保留仍被组件代码 var() 引用的变量，其余已移除） ── */
     --color-info: var(--status-primary-default);
     --color-success: var(--status-success-default);
     --color-warning: var(--status-warning-default);

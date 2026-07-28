@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ChatInput - 聊天消息输入框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useRef, useCallback, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Paperclip, ArrowUp, Square, X, FileText, BookOpen, FileCode, Type, Terminal } from "lucide-react";
@@ -36,12 +42,21 @@ import {
 } from "./slash-commands";
 import type { AttachmentSpec, AttachmentKind } from "@/features/chat/types";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/**
+ * 输入框最大高度（px）
+ */
+const INPUT_MAX_HEIGHT_PX = 200;
+
 const ATTACHMENT_ICONS: Record<AttachmentKind, typeof FileText> = {
   file: FileCode,
   wiki: BookOpen,
   chapter: FileText,
   text: Type,
 };
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface ChatInputProps {
   value: string;
@@ -56,6 +71,11 @@ interface ChatInputProps {
   onActiveCommandChange?: (cmd: SlashCommand | null) => void;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 聊天消息输入框组件，支持文本输入、附件、斜杠命令等
+ */
 export function ChatInput({
   value,
   onChange,
@@ -80,11 +100,13 @@ export function ChatInput({
   const slashSuggestions = useMemo(() => getSlashSuggestions(value), [value]);
   const slashVisible = slashSuggestions.length > 0 && value.startsWith("/") && !activeCommand;
 
+  // ── 高度调整 ──────────────────────────────────────────────────────────────
+
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, INPUT_MAX_HEIGHT_PX)}px`;
   }, []);
 
   const updateAnchor = useCallback(() => {
@@ -92,6 +114,8 @@ export function ChatInput({
     if (!el) return;
     setAnchorRect(el.getBoundingClientRect());
   }, []);
+
+  // ── 命令处理 ──────────────────────────────────────────────────────────────
 
   const handleSelectCommand = useCallback((cmd: SlashCommand) => {
     if (cmd.hasArgs) {
@@ -107,6 +131,8 @@ export function ChatInput({
   const handleRemoveCommand = useCallback(() => {
     onActiveCommandChange?.(null);
   }, [onActiveCommandChange]);
+
+  // ── 键盘事件处理 ──────────────────────────────────────────────────────────
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (activeCommand && e.key === "Escape") {
@@ -151,11 +177,13 @@ export function ChatInput({
     }
   };
 
+  // ── 文件选择 ──────────────────────────────────────────────────────────────
+
   const handlePickFile = async () => {
     try {
       const selected = await open({
         multiple: false,
-        filters: [{ name: "文本文件", extensions: ["txt", "md", "json", "rs", "ts", "tsx", "js", "py"] }],
+        filters: [{ name: t.agentChat.textFiles, extensions: ["txt", "md", "json", "rs", "ts", "tsx", "js", "py"] }],
       });
       if (typeof selected === "string") {
         onAttachFile(selected);
@@ -164,6 +192,8 @@ export function ChatInput({
       // 用户取消或出错，静默处理
     }
   };
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   const placeholder = attachments.length > 0
     ? t.agentChat.placeholderFollowUp

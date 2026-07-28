@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ModelCard - AI 模型卡片组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +18,8 @@ import { useI18n } from "@/locales/i18n";
 import type { AiModelConfig } from "@/services/settings";
 import type { ReactNode } from "react";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface ModelCardProps {
   model: AiModelConfig;
   isActive: boolean;
@@ -23,6 +31,11 @@ interface ModelCardProps {
   onSetActive: () => void;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * AI 模型卡片，展示模型信息和操作按钮
+ */
 function ModelCard({
   model,
   isActive,
@@ -35,6 +48,11 @@ function ModelCard({
 }: ModelCardProps) {
   const { t } = useI18n();
 
+  // ── 辅助函数 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 渲染测试结果图标
+   */
   function renderTestIcon(): ReactNode {
     if (testing) {
       return <Loader2Icon className="size-3.5 animate-spin" />;
@@ -48,10 +66,13 @@ function ModelCard({
     return null;
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
     <Card className="py-0">
       <CardContent className="divide-y px-0">
         <div className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-accent">
+          {/* ── 标题栏 ──────────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{model.name}</span>
@@ -87,6 +108,7 @@ function ModelCard({
               </Button>
             </div>
           </div>
+          {/* ── 模型信息 ────────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between">
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>

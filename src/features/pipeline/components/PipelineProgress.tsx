@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PipelineProgress - 流水线进度组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useI18n } from "@/locales/i18n";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

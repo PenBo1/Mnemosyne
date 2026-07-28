@@ -1,9 +1,17 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Dialog - 对话框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+
+// ── 对话框组件 ──────────────────────────────────────────────────────────────
 
 function Dialog({
   ...props
@@ -11,11 +19,15 @@ function Dialog({
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
+// ── 对话框触发器组件 ────────────────────────────────────────────────────────
+
 function DialogTrigger({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
+
+// ── 对话框门户组件 ──────────────────────────────────────────────────────────
 
 function DialogPortal({
   ...props
@@ -23,11 +35,15 @@ function DialogPortal({
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
+// ── 对话框关闭组件 ──────────────────────────────────────────────────────────
+
 function DialogClose({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Close>) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
+
+// ── 对话框遮罩组件 ──────────────────────────────────────────────────────────
 
 function DialogOverlay({
   className,
@@ -44,6 +60,8 @@ function DialogOverlay({
     />
   )
 }
+
+// ── 对话框内容组件 ──────────────────────────────────────────────────────────
 
 function DialogContent({
   className,
@@ -83,6 +101,8 @@ function DialogContent({
   )
 }
 
+// ── 对话框头部组件 ──────────────────────────────────────────────────────────
+
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -92,6 +112,8 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 对话框底部组件 ──────────────────────────────────────────────────────────
 
 function DialogFooter({
   className,
@@ -120,6 +142,8 @@ function DialogFooter({
   )
 }
 
+// ── 对话框标题组件 ──────────────────────────────────────────────────────────
+
 function DialogTitle({
   className,
   ...props
@@ -132,6 +156,8 @@ function DialogTitle({
     />
   )
 }
+
+// ── 对话框描述组件 ──────────────────────────────────────────────────────────
 
 function DialogDescription({
   className,

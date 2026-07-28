@@ -1,14 +1,24 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Select - 选择器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+
+// ── 选择器组件 ──────────────────────────────────────────────────────────────
 
 function Select({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
 }
+
+// ── 选择器分组组件 ──────────────────────────────────────────────────────────
 
 function SelectGroup({
   className,
@@ -23,11 +33,15 @@ function SelectGroup({
   )
 }
 
+// ── 选择器值组件 ────────────────────────────────────────────────────────────
+
 function SelectValue({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Value>) {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
+
+// ── 选择器触发器组件 ────────────────────────────────────────────────────────
 
 function SelectTrigger({
   className,
@@ -54,6 +68,8 @@ function SelectTrigger({
     </SelectPrimitive.Trigger>
   )
 }
+
+// ── 选择器内容组件 ──────────────────────────────────────────────────────────
 
 function SelectContent({
   className,
@@ -88,6 +104,8 @@ function SelectContent({
   )
 }
 
+// ── 选择器标签组件 ──────────────────────────────────────────────────────────
+
 function SelectLabel({
   className,
   ...props
@@ -100,6 +118,8 @@ function SelectLabel({
     />
   )
 }
+
+// ── 选择器项组件 ────────────────────────────────────────────────────────────
 
 function SelectItem({
   className,
@@ -125,6 +145,8 @@ function SelectItem({
   )
 }
 
+// ── 选择器分隔符组件 ────────────────────────────────────────────────────────
+
 function SelectSeparator({
   className,
   ...props
@@ -140,6 +162,8 @@ function SelectSeparator({
     />
   )
 }
+
+// ── 选择器向上滚动按钮组件 ──────────────────────────────────────────────────
 
 function SelectScrollUpButton({
   className,
@@ -159,6 +183,8 @@ function SelectScrollUpButton({
     </SelectPrimitive.ScrollUpButton>
   )
 }
+
+// ── 选择器向下滚动按钮组件 ────────────────────────────────────────────────
 
 function SelectScrollDownButton({
   className,

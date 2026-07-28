@@ -1,15 +1,10 @@
-// PendingApprovalsPanel —— 安全拦截实时面板。
-//
-// 展示当前 pending 的 approval tokens,用户可批准/拒绝。
-// 每个事件经 SecurityKernel 决策为 RequireApproval 且无 token 时,
-// 会通过 security://event 推送 ApprovalRequested 事件,本面板展示并允许用户操作。
-//
-// 数据来源:
-// - listPendingApprovals() —— 从 ApprovalStore 拉取当前 pending
-// - useAuditStream() —— 监听 ApprovalRequested 事件自动刷新
-// - approval_grant / approval_reject —— 执行操作
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PendingApprovalsPanel - 安全审批待处理面板组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -26,7 +21,7 @@ import { useI18n } from "@/locales/i18n";
 import {
   SettingsSection,
   SettingsRow,
-} from "@/features/settings/components/settings-section";
+} from "@/components/shared/settings-section";
 import {
   listPendingApprovals,
   getApprovalStats,
@@ -37,6 +32,85 @@ import {
 import { useAuditStream } from "../hooks/useAuditStream";
 import type { ApprovalTokenDto, ApprovalStatsDto } from "../types";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
+interface ApprovalTokenCardProps {
+  token: ApprovalTokenDto;
+  onGrant: () => void;
+  onReject: () => void;
+  labels: {
+    riskLevel: string;
+    workspace: string;
+    remaining: string;
+    approve: string;
+    reject: string;
+  };
+}
+
+// ── 子组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 审批发令卡片组件
+ */
+const ApprovalTokenCard = memo(function ApprovalTokenCard({ token, onGrant, onReject, labels }: ApprovalTokenCardProps) {
+  const riskColor =
+    token.riskLevel === "critical"
+      ? "text-rose-600"
+      : token.riskLevel === "high"
+        ? "text-rose-500"
+        : token.riskLevel === "medium"
+          ? "text-amber-500"
+          : "text-emerald-500";
+
+  const isExpiringSoon = token.remainingSeconds < 10;
+
+  return (
+    <div className="rounded-md border border-border p-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs">
+          <Badge variant="outline" className={riskColor}>
+            {labels.riskLevel}: {token.riskLevel}
+          </Badge>
+          <span className="font-mono text-muted-foreground">
+            {token.id.slice(0, 8)}…
+          </span>
+        </div>
+        <div
+          className={`flex items-center gap-1 text-xs ${
+            isExpiringSoon ? "text-rose-500" : "text-muted-foreground"
+          }`}
+        >
+          <ClockIcon className="size-3" />
+          {labels.remaining}: {token.remainingSeconds}s
+        </div>
+      </div>
+      <div className="mt-1 truncate text-xs text-muted-foreground">
+        {labels.workspace}: {token.workspace.slice(0, 8)}…
+      </div>
+      <div className="mt-2 flex gap-1">
+        <Button size="sm" variant="default" className="flex-1" onClick={onGrant}>
+          <ShieldCheckIcon className="size-3" />
+          {labels.approve}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 text-rose-500"
+          onClick={onReject}
+        >
+          <ShieldXIcon className="size-3" />
+          {labels.reject}
+        </Button>
+      </div>
+    </div>
+  );
+});
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 安全审批待处理面板，展示当前待审批的令牌并支持批准/拒绝操作
+ */
 export function PendingApprovalsPanel() {
   const { t } = useI18n();
   const [tokens, setTokens] = useState<ApprovalTokenDto[]>([]);
@@ -47,6 +121,11 @@ export function PendingApprovalsPanel() {
   // 监听实时事件 —— 收到 ApprovalRequested 时自动刷新 pending 列表
   const { events: liveEvents } = useAuditStream(true);
 
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 加载待审批数据
+   */
   const loadData = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -78,6 +157,11 @@ export function PendingApprovalsPanel() {
     }
   }, [liveEvents, loadData]);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 批准审批
+   */
   const handleGrant = async (token: ApprovalTokenDto) => {
     try {
       await grantApproval(token.id, "user");
@@ -88,6 +172,9 @@ export function PendingApprovalsPanel() {
     }
   };
 
+  /**
+   * 拒绝审批
+   */
   const handleReject = async (token: ApprovalTokenDto) => {
     try {
       await rejectApproval(token.id, "user", t.audit.rejectedByUser);
@@ -98,6 +185,9 @@ export function PendingApprovalsPanel() {
     }
   };
 
+  /**
+   * 清理过期审批
+   */
   const handleCleanup = async () => {
     try {
       const n = await cleanupExpiredApprovals();
@@ -107,6 +197,8 @@ export function PendingApprovalsPanel() {
       toast.error(`${t.audit.cleanupFailed}: ${String(e)}`);
     }
   };
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   if (loading) {
     return null;
@@ -187,72 +279,5 @@ export function PendingApprovalsPanel() {
         )}
       </div>
     </SettingsSection>
-  );
-}
-
-interface ApprovalTokenCardProps {
-  token: ApprovalTokenDto;
-  onGrant: () => void;
-  onReject: () => void;
-  labels: {
-    riskLevel: string;
-    workspace: string;
-    remaining: string;
-    approve: string;
-    reject: string;
-  };
-}
-
-function ApprovalTokenCard({ token, onGrant, onReject, labels }: ApprovalTokenCardProps) {
-  const riskColor =
-    token.riskLevel === "critical"
-      ? "text-rose-600"
-      : token.riskLevel === "high"
-        ? "text-rose-500"
-        : token.riskLevel === "medium"
-          ? "text-amber-500"
-          : "text-emerald-500";
-
-  const isExpiringSoon = token.remainingSeconds < 10;
-
-  return (
-    <div className="rounded-md border border-border p-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs">
-          <Badge variant="outline" className={riskColor}>
-            {labels.riskLevel}: {token.riskLevel}
-          </Badge>
-          <span className="font-mono text-muted-foreground">
-            {token.id.slice(0, 8)}…
-          </span>
-        </div>
-        <div
-          className={`flex items-center gap-1 text-xs ${
-            isExpiringSoon ? "text-rose-500" : "text-muted-foreground"
-          }`}
-        >
-          <ClockIcon className="size-3" />
-          {labels.remaining}: {token.remainingSeconds}s
-        </div>
-      </div>
-      <div className="mt-1 truncate text-xs text-muted-foreground">
-        {labels.workspace}: {token.workspace.slice(0, 8)}…
-      </div>
-      <div className="mt-2 flex gap-1">
-        <Button size="sm" variant="default" className="flex-1" onClick={onGrant}>
-          <ShieldCheckIcon className="size-3" />
-          {labels.approve}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="flex-1 text-rose-500"
-          onClick={onReject}
-        >
-          <ShieldXIcon className="size-3" />
-          {labels.reject}
-        </Button>
-      </div>
-    </div>
   );
 }

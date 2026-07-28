@@ -1,8 +1,13 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitSettings - Git 版本控制设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/locales/i18n";
 import { toast } from "sonner";
 import {
@@ -26,14 +31,20 @@ import {
 } from "@/features/settings/services";
 import type { GitConfig } from "@/features/git/types";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/** 默认 Git 配置 */
 const DEFAULT_CONFIG: GitConfig = {
   user_name: null,
   user_email: null,
-  auto_stage: false,
-  commit_message_template: null,
-  enable_remote: false,
+  custom: {},
 };
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Git 版本控制设置页面，配置全局 Git 选项
+ */
 export function GitSettings() {
   const { t } = useI18n();
   const [enabled, setEnabled] = useState(true);
@@ -42,7 +53,8 @@ export function GitSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // 加载全局开关 + Git 安装检测 + 全局 config
+  // ── 初始化 ────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -71,6 +83,11 @@ export function GitSettings() {
     return () => { cancelled = true; };
   }, []);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 切换功能启用状态
+   */
   const handleToggleEnabled = async (checked: boolean) => {
     setEnabled(checked);
     try {
@@ -82,6 +99,9 @@ export function GitSettings() {
     }
   };
 
+  /**
+   * 保存配置
+   */
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
@@ -95,16 +115,20 @@ export function GitSettings() {
     }
   };
 
+  // ── 加载中状态 ────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <div className="p-4 text-muted-foreground">{t.common.loading}</div>
       </PageContainer>
     );
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.gitLabel}</PageTitle>
@@ -124,7 +148,7 @@ export function GitSettings() {
         </PageActions>
       </PageHeader>
 
-      {/* 功能开关 + 安装状态 */}
+      {/* ── 功能开关和安装状态 ────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.git.featureToggle}>
         <SettingsRow
           label={t.settings.git.featureToggle}
@@ -160,7 +184,7 @@ export function GitSettings() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* 全局 Git 配置（仅在启用且已安装时显示） */}
+      {/* ── 全局 Git 配置 ──────────────────────────────────────────────────── */}
       {enabled && gitInstalled && (
         <SettingsSection title={t.settings.git.globalConfig}>
           <SettingsRow
@@ -189,48 +213,10 @@ export function GitSettings() {
               className="w-64"
             />
           </SettingsRow>
-          <SettingsRow
-            label={t.settings.git.commitTemplate}
-            description={t.settings.git.commitTemplateHint}
-          >
-            <Textarea
-              value={config.commit_message_template ?? ""}
-              placeholder="{type}: {subject}"
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  commit_message_template: e.target.value || null,
-                })
-              }
-              className="w-96 min-h-[60px]"
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t.settings.git.autoStage}
-            description={t.settings.git.autoStageHint}
-          >
-            <Switch
-              checked={config.auto_stage}
-              onCheckedChange={(checked) =>
-                setConfig({ ...config, auto_stage: checked })
-              }
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t.settings.git.enableRemote}
-            description={t.settings.git.enableRemoteHint}
-          >
-            <Switch
-              checked={config.enable_remote}
-              onCheckedChange={(checked) =>
-                setConfig({ ...config, enable_remote: checked })
-              }
-            />
-          </SettingsRow>
         </SettingsSection>
       )}
 
-      {/* 说明 */}
+      {/* ── 未启用说明 ──────────────────────────────────────────────────────── */}
       {!enabled && (
         <p className="text-xs text-muted-foreground">
           {t.settings.git.disabledHint}

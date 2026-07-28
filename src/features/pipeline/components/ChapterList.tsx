@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ChapterList - 章节列表组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useI18n } from "@/locales/i18n";
 import { usePipeline } from "@/features/pipeline/hooks";
 import { Button } from "@/components/ui/button";

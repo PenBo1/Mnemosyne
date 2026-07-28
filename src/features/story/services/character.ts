@@ -1,4 +1,4 @@
-﻿import { ipc } from "@/services/ipc";
+import { ipc } from "@/services/ipc";
 import type { Character, CharacterRelationship } from "@/features/story/types";
 
 export async function listCharacters(novelId: string): Promise<Character[]> {
@@ -6,7 +6,7 @@ export async function listCharacters(novelId: string): Promise<Character[]> {
 }
 
 export async function listCharacterRelationships(novelId: string): Promise<CharacterRelationship[]> {
-  return ipc<CharacterRelationship[]>("character_relationship_list", { novelId }).catch(() => []);
+  return ipc<CharacterRelationship[]>("character_relationship_list", { novelId }).catch((err) => { console.error("[character] load relationships failed:", err); return []; });
 }
 
 export async function createCharacter(params: {

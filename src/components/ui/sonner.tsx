@@ -1,5 +1,13 @@
-﻿import { Toaster as Sonner, type ToasterProps } from "sonner"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Sonner - Toast 提示组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+
+// ── Toast 提示组件 ──────────────────────────────────────────────────────────
 
 const Toaster = ({ ...props }: ToasterProps) => {
   return (

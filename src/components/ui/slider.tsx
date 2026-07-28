@@ -1,7 +1,15 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Slider - 滑块组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { Slider as SliderPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 滑块组件 ────────────────────────────────────────────────────────────────
 
 function Slider({
   className,

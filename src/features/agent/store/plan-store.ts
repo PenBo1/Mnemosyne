@@ -11,7 +11,7 @@
 // - create_directory 的 proposedContent 为空（只创建目录）
 
 import { create } from "zustand";
-import { ipc } from "@/services/ipc";
+import { writePlanFile, createPlanDirectory } from "@/features/agent/services/plan-persistence";
 
 export type QueuedEdit = {
   id: string;
@@ -57,9 +57,9 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     for (const q of items) {
       try {
         if (q.kind === "create_directory") {
-          await ipc<boolean>("fs_create_directory", { path: q.path });
+          await createPlanDirectory(q.path);
         } else {
-          await ipc<number>("fs_write_file", { path: q.path, content: q.proposedContent });
+          await writePlanFile(q.path, q.proposedContent);
         }
         succeeded.add(q.id);
         results.push({ id: q.id, ok: true });

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PromptsSettings - 提示词模板设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,7 +91,7 @@ export function PromptsSettings() {
   }
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.prompts}</PageTitle>

@@ -1,15 +1,27 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * StatCard - 统计卡片组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { memo } from "react";
+import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface StatCardProps {
     label: string;
     value: string | number;
-    icon?: React.ReactNode;
+    icon?: ReactNode;
     hint?: string;
     className?: string;
 }
 
-export function StatCard({ label, value, icon, hint, className }: StatCardProps) {
+// ── 统计卡片组件 ────────────────────────────────────────────────────────────
+
+const StatCard = memo(function StatCard({ label, value, icon, hint, className }: StatCardProps) {
     return (
         <Card className={cn("p-4", className)}>
             <div className="flex items-start justify-between gap-3">
@@ -28,4 +40,6 @@ export function StatCard({ label, value, icon, hint, className }: StatCardProps)
             </div>
         </Card>
     );
-}
+});
+
+export { StatCard };

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 国际化管理 - 多语言支持与翻译管理
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import {
   createContext,
   useContext,
@@ -14,6 +20,9 @@ import {
   type Locale,
   type TranslationKeys,
 } from "@/locales";
+import { setTranslations } from "@/locales/i18n-store";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 type ShapeOf<T> = T extends string
   ? string
@@ -25,7 +34,7 @@ type ShapeOf<T> = T extends string
         ? { [K in keyof T]: ShapeOf<T[K]> }
         : T;
 
-type Translations = ShapeOf<TranslationKeys>;
+export type Translations = ShapeOf<TranslationKeys>;
 
 const STORAGE_KEY_LOCALE = "mnemosyne-locale";
 
@@ -34,6 +43,8 @@ interface I18nContextValue {
   t: Translations;
   setLocale: (locale: Locale) => void;
 }
+
+// ── 工具函数 ────────────────────────────────────────────────────────────────
 
 function getInitialLocale(): Locale {
   try {
@@ -44,18 +55,27 @@ function getInitialLocale(): Locale {
   return "en";
 }
 
+// ── Context 定义 ────────────────────────────────────────────────────────────────
+
 const I18nContext = createContext<I18nContextValue | null>(null);
+
+// ── Provider 组件 ────────────────────────────────────────────────────────────────
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
   // 初始用内置 en 翻译，zh 在 useEffect 中异步加载
   const [t, setT] = useState<Translations>(builtinTranslations as Translations);
 
-  // locale 变化时异步加载翻译文件（zh 按需 import，减小首屏 bundle）
+  // ── 语言切换时异步加载翻译文件 ────────────────────────────────────────────────────────────────
+  // zh 按需 import，减小首屏 bundle
   useEffect(() => {
     let cancelled = false;
     void loadLocale(locale).then((translations) => {
-      if (!cancelled) setT(translations as Translations);
+      if (!cancelled) {
+        setT(translations as Translations);
+        // 同步到模块级 i18n-store，让非 React 上下文（如 zustand store）也能读到最新翻译
+        setTranslations(locale, translations as Translations);
+      }
     });
     return () => { cancelled = true; };
   }, [locale]);
@@ -75,6 +95,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
+
+// ── Hooks ────────────────────────────────────────────────────────────────
 
 export function useI18n() {
   const ctx = useContext(I18nContext);

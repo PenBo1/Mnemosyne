@@ -3,7 +3,12 @@ import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { WorldSetting, WorldCategory } from "@/features/story/types";
 import { ipc } from "@/services/ipc";
-import * as worldService from "@/features/story/services";
+import {
+  listWorldSettings,
+  createWorldSetting,
+  updateWorldSetting,
+  deleteWorldSetting,
+} from "@/features/story/services";
 
 export function useWorldSettings(workspaceId: string | null) {
   const { t } = useI18n();
@@ -17,7 +22,7 @@ export function useWorldSettings(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) { setItems([]); return; }
-      const data = await worldService.listWorldSettings(novel.id);
+      const data = await listWorldSettings(novel.id);
       setItems(data);
     } catch {
       setItems([]);
@@ -41,7 +46,7 @@ export function useWorldSettings(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) return;
-      await worldService.createWorldSetting({ ...params, novelId: novel.id });
+      await createWorldSetting({ ...params, novelId: novel.id });
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -57,7 +62,7 @@ export function useWorldSettings(workspaceId: string | null) {
     tags: string[];
   }) => {
     try {
-      await worldService.updateWorldSetting(params);
+      await updateWorldSetting(params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -67,7 +72,7 @@ export function useWorldSettings(workspaceId: string | null) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await worldService.deleteWorldSetting(id);
+      await deleteWorldSetting(id);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {

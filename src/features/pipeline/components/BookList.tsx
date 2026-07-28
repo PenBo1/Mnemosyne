@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BookList - 书籍列表组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useI18n } from "@/locales/i18n";
 import { usePipeline } from "@/features/pipeline/hooks";
 import { Card } from "@/components/ui/card";

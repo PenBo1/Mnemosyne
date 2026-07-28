@@ -229,7 +229,9 @@ function detectHookActivityColumnIndex(lines: ReadonlyArray<string>): number {
 function extractColumn(row: string, index: number): string | null {
   const cols = row.split("|");
   if (index >= 0 && index < cols.length) {
-    return cols[index]!.trim();
+    const cell = cols[index];
+    // 边界已校验 index < cols.length，cell 必为 string；保留显式取值避免非空断言
+    return cell.trim();
   }
   return null;
 }

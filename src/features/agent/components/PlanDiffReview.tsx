@@ -1,19 +1,29 @@
-// PlanDiffReview —— Plan mode 队列审查 UI。
-//
-// 适配 Mnemosyne：
-// - queue 非空时全屏遮罩
-// - 逐项显示 path + diff 预览 + reject 按钮
-// - Apply All / Discard All 按钮
-// - 简化 diff 算法（行级 set-membership）
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PlanDiffReview - 计划差异审查组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
 import { FileEdit, FilePlus, FolderPlus, Trash2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/locales/i18n";
 import type { QueuedEdit } from "@/features/agent/store/plan-store";
 
-/** 简化行级 diff：原行集合 vs 新行集合，标记 added/removed。 */
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
+interface PlanRowProps {
+  item: QueuedEdit;
+  onReject: (id: string) => void;
+}
+
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 计算文本行差异
+ */
 function diffLines(original: string, proposed: string): Array<{ text: string; kind: "same" | "added" | "removed" }> {
   const oldLines = original.split("\n");
   const newLines = proposed.split("\n");
@@ -35,10 +45,15 @@ function diffLines(original: string, proposed: string): Array<{ text: string; ki
       result.push({ text: n, kind: "added" });
     }
   }
-  return result.slice(0, 80); // 最多 80 行
+  return result.slice(0, 80);
 }
 
-function PlanRow({ item, onReject }: { item: QueuedEdit; onReject: () => void }) {
+// ── 子组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 单个计划行组件
+ */
+const PlanRow = memo(function PlanRow({ item, onReject }: PlanRowProps) {
   const [expanded, setExpanded] = useState(false);
   const Icon = item.kind === "create_directory" ? FolderPlus : item.isNewFile ? FilePlus : FileEdit;
   const diff = useMemo(
@@ -76,7 +91,7 @@ function PlanRow({ item, onReject }: { item: QueuedEdit; onReject: () => void })
           className="size-3.5 shrink-0 cursor-pointer text-[var(--text-tertiary)] hover:text-red-600"
           onClick={(e) => {
             e.stopPropagation();
-            onReject();
+            onReject(item.id);
           }}
         />
       </button>
@@ -98,9 +113,14 @@ function PlanRow({ item, onReject }: { item: QueuedEdit; onReject: () => void })
       )}
     </div>
   );
-}
+});
 
-export function PlanDiffReview({
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 计划差异审查组件，用于展示和审批文件变更计划
+ */
+const PlanDiffReview = memo(function PlanDiffReview({
   queue,
   onApplyAll,
   onRejectOne,
@@ -111,43 +131,49 @@ export function PlanDiffReview({
   onRejectOne: (id: string) => void;
   onDiscardAll: () => void;
 }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   if (queue.length === 0) return null;
 
-  const handleApply = async () => {
+  /**
+   * 处理应用所有变更
+   */
+  const handleApply = useCallback(async () => {
     setBusy(true);
     try {
       await onApplyAll();
     } finally {
       setBusy(false);
     }
-  };
+  }, [onApplyAll]);
 
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-[var(--bg-base-default)]/85 backdrop-blur-xl">
       <div className="flex items-center justify-between border-b border-[var(--border-neutral-l1)] p-3">
         <div className="flex items-center gap-2">
-          <span className="font-medium">Plan 审查</span>
-          <Badge variant="outline">{queue.length} 项待处理</Badge>
+          <span className="font-medium">{t.agentChat.planReviewTitle}</span>
+          <Badge variant="outline">{t.agentChat.planReviewPending.replace("{count}", String(queue.length))}</Badge>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={onDiscardAll} disabled={busy}>
             <Trash2 className="size-3.5" data-icon="inline-start" />
-            全部丢弃
+            {t.agentChat.planReviewDiscardAll}
           </Button>
           <Button size="sm" variant="default" onClick={handleApply} disabled={busy}>
             <Check className="size-3.5" data-icon="inline-start" />
-            全部应用 ({queue.length})
+            {t.agentChat.planReviewApplyAll.replace("{count}", String(queue.length))}
           </Button>
         </div>
       </div>
       <ul className="flex flex-1 flex-col gap-1.5 overflow-auto p-3">
         {queue.map((q) => (
           <li key={q.id}>
-            <PlanRow item={q} onReject={() => onRejectOne(q.id)} />
+            <PlanRow item={q} onReject={onRejectOne} />
           </li>
         ))}
       </ul>
     </div>
   );
-}
+});
+
+export { PlanDiffReview };

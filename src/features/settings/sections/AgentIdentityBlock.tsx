@@ -1,11 +1,8 @@
-// Agent 身份文件编辑区块 —— 编辑 <data_dir>/agents/<role>/{SOUL,CONTEXT,MEMORY}.md。
-//
-// 设计：
-// - role 选择器（当前仅 "main"，结构上可扩展）
-// - Tabs 切换 SOUL.md / CONTEXT.md / MEMORY.md
-// - 每个 tab 下一个 Textarea 编辑器
-// - 加载时读取磁盘文件（文件不存在则展示占位符）
-// - 保存按钮写入当前激活的文件
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AgentIdentityBlock - Agent 身份文件编辑区块
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -29,21 +26,33 @@ import {
   type IdentityFileName,
 } from "@/features/settings/services/agent-identity";
 
-/** 当前支持的角色列表（对齐后端 MAIN_ROLE = "main"） */
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/** 当前支持的角色列表 */
 const ROLES = ["main"] as const;
 type AgentRole = (typeof ROLES)[number];
 
-/** 三种身份文件的中英文 tab 标签 key 后缀 */
+/** 三种身份文件的标签 key 后缀 */
 const FILE_LABEL_KEYS: Record<IdentityFileName, string> = {
   "SOUL.md": "soulMd",
   "CONTEXT.md": "contextMd",
   "MEMORY.md": "memoryMd",
 };
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 创建空内容对象
+ */
 function emptyContents(): Record<IdentityFileName, string> {
   return { "SOUL.md": "", "CONTEXT.md": "", "MEMORY.md": "" };
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Agent 身份文件编辑区块，用于编辑 SOUL.md、CONTEXT.md、MEMORY.md 文件
+ */
 export function AgentIdentityBlock() {
   const { t } = useI18n();
   const { loading: saving, run } = useAsyncAction();
@@ -53,6 +62,8 @@ export function AgentIdentityBlock() {
   const [originals, setOriginals] = useState<Record<IdentityFileName, string>>(emptyContents);
   const [loading, setLoading] = useState(true);
   const ai = t.settings.agentIdentity;
+
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
 
   const loadAll = useCallback(async (r: string) => {
     setLoading(true);
@@ -76,8 +87,15 @@ export function AgentIdentityBlock() {
     void loadAll(role);
   }, [role, loadAll]);
 
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
+
   const dirty = contents[activeFile] !== originals[activeFile];
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 保存文件
+   */
   const handleSave = useCallback(async () => {
     await run(
       () => saveIdentityFile(role, activeFile, contents[activeFile]),
@@ -89,10 +107,12 @@ export function AgentIdentityBlock() {
     setOriginals((prev) => ({ ...prev, [activeFile]: contents[activeFile] }));
   }, [run, role, activeFile, contents, ai.saved, ai.saveError]);
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
     <SettingsSection title={ai.title} description={ai.description}>
       <div className="flex flex-col gap-3 px-4 py-3">
-        {/* role 选择器 + 当前文件保存按钮 */}
+        {/* ── 角色选择器和保存按钮 ──────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">{ai.selectRole}</span>
@@ -120,6 +140,7 @@ export function AgentIdentityBlock() {
           </div>
         </div>
 
+        {/* ── 文件编辑器 ────────────────────────────────────────────────────── */}
         <Tabs
           value={activeFile}
           onValueChange={(v) => setActiveFile(v as IdentityFileName)}

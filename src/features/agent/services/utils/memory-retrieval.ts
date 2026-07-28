@@ -174,8 +174,8 @@ async function tryRetrieveSelectionFromSqlite(params: {
   // IPC 有数据：仍需从 markdown 读取 hooks + volume_summaries（无 SQLite 表）
   const storyDir = joinPath(params.bookDir, "story");
   const [hooksMarkdown, volumeSummariesMarkdown] = await Promise.all([
-    ipc<string>("fs_read_file", { path: joinPath(storyDir, "pending_hooks.md") }).catch(() => ""),
-    ipc<string>("fs_read_file", { path: joinPath(storyDir, "volume_summaries.md") }).catch(() => ""),
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "pending_hooks.md") }).catch((err) => { console.error("[memory-retrieval] read pending_hooks.md failed:", err); return ""; }),
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "volume_summaries.md") }).catch((err) => { console.error("[memory-retrieval] read volume_summaries.md failed:", err); return ""; }),
   ]);
 
   const narrativeQueryTerms = extractQueryTerms(params.goal, params.outlineNode, []);
@@ -241,7 +241,7 @@ export async function retrieveMemorySelection(params: {
   await bootstrapStructuredStateFromMarkdown({
     bookDir: params.bookDir,
     fallbackChapter,
-  }).catch(() => undefined);
+  }).catch((err) => { console.error("[memory-retrieval] bootstrap structured state failed:", err); });
 
   const [
     currentStateMarkdown,
@@ -253,9 +253,9 @@ export async function retrieveMemorySelection(params: {
     structuredSummaries,
   ] = await Promise.all([
     readCurrentStateWithFallback(params.bookDir),
-    ipc<string>("fs_read_file", { path: joinPath(storyDir, "pending_hooks.md") }).catch(() => ""),
-    ipc<string>("fs_read_file", { path: joinPath(storyDir, "volume_summaries.md") }).catch(() => ""),
-    ipc<string>("fs_read_file", { path: joinPath(storyDir, "chapter_summaries.md") }).catch(() => ""),
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "pending_hooks.md") }).catch((err) => { console.error("[memory-retrieval] read pending_hooks.md failed:", err); return ""; }),
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "volume_summaries.md") }).catch((err) => { console.error("[memory-retrieval] read volume_summaries.md failed:", err); return ""; }),
+    ipc<string>("fs_read_file", { path: joinPath(storyDir, "chapter_summaries.md") }).catch((err) => { console.error("[memory-retrieval] read chapter_summaries.md failed:", err); return ""; }),
     readStructuredState(joinPath(stateDir, "current_state.json"), CurrentStateStateSchema),
     readStructuredState(joinPath(stateDir, "hooks.json"), HooksStateSchema),
     readStructuredState(joinPath(stateDir, "chapter_summaries.json"), ChapterSummariesStateSchema),

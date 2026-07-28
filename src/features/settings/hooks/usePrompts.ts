@@ -1,7 +1,12 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import type { Prompt } from "@/features/settings/types";
-import * as promptsService from "@/features/settings/services";
+import {
+  fetchPrompts,
+  createPrompt,
+  updatePrompt,
+  deletePrompt,
+} from "@/features/settings/services";
 
 export function usePrompts(filterCategory?: string) {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -12,7 +17,7 @@ export function usePrompts(filterCategory?: string) {
     try {
       setLoading(true);
       setError(null);
-      const result = await promptsService.fetchPrompts(filterCategory);
+      const result = await fetchPrompts(filterCategory);
       setPrompts(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load prompts";
@@ -30,7 +35,7 @@ export function usePrompts(filterCategory?: string) {
   const create = useCallback(async (name: string, content: string, category: string) => {
     setError(null);
     try {
-      await promptsService.createPrompt(name, content, category, []);
+      await createPrompt(name, content, category, []);
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create prompt";
@@ -43,7 +48,7 @@ export function usePrompts(filterCategory?: string) {
   const update = useCallback(async (id: string, name: string, content: string, category: string) => {
     setError(null);
     try {
-      await promptsService.updatePrompt(id, name, content, category);
+      await updatePrompt(id, name, content, category);
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update prompt";
@@ -56,7 +61,7 @@ export function usePrompts(filterCategory?: string) {
   const remove = useCallback(async (id: string) => {
     setError(null);
     try {
-      await promptsService.deletePrompt(id);
+      await deletePrompt(id);
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete prompt";

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LogsSettings - 日志查看设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -95,6 +101,7 @@ export function LogsSettings() {
   const [logsDir, setLogsDir] = useState<string>("");
   const viewportRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 获取日志目录路径（data_dir/logs）
   useEffect(() => {
@@ -174,6 +181,13 @@ export function LogsSettings() {
     }
   }, [content]);
 
+  // 组件卸载时清理 copy 状态定时器，避免卸载后 setState
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   const handleRefresh = useCallback(() => {
     void loadFiles();
     void loadContent();
@@ -198,7 +212,8 @@ export function LogsSettings() {
       await navigator.clipboard.writeText(content);
       setCopied(true);
       toast.success(t.common.copiedToClipboard);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch (e) {
       console.error("[logs] copy failed", e);
       toast.error(t.common.failedToCopy);
@@ -230,7 +245,7 @@ export function LogsSettings() {
   const displayLines = truncated ? lines.slice(-DISPLAY_LINE_CAP) : lines;
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.logs.label}</PageTitle>

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MessageList - 聊天消息列表组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { memo, useMemo } from "react";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,6 +21,15 @@ import { MessageBubble } from "./message-bubble";
 import { EmptyState } from "./empty-state";
 import type { Message as ChatMessage } from "@/types";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/**
+ * 流式消息的固定时间戳，避免每帧生成新值
+ */
+const STREAMING_CREATED_AT = new Date(0).toISOString();
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface MessageListProps {
   messages: ChatMessage[];
   streaming: boolean;
@@ -22,10 +37,11 @@ interface MessageListProps {
   onRegenerate: () => void;
 }
 
-// 流式消息的固定时间戳 —— 避免 new Date().toISOString() 每帧生成新值
-const STREAMING_CREATED_AT = new Date(0).toISOString();
+// ── 主组件 ──────────────────────────────────────────────────────────────────
 
-/** 消息列表 —— memo 包裹避免 ChatPage 输入打字时触发重渲染 */
+/**
+ * 消息列表组件，展示聊天消息并支持滚动和流式更新
+ */
 export const MessageList = memo(function MessageList({
   messages,
   streaming,
@@ -45,7 +61,7 @@ export const MessageList = memo(function MessageList({
     return -1;
   }, [messages]);
 
-  // 将连续同角色消息分组 —— 预计算 startIdx 消除 globalIdx O(n²)
+  // 将连续同角色消息分组，预计算 startIdx 消除 globalIdx O(n²)
   const groups = useMemo(() => {
     const result: Array<{ role: string; messages: ChatMessage[]; startIdx: number }> = [];
     let idx = 0;
@@ -78,7 +94,7 @@ export const MessageList = memo(function MessageList({
               <MessageScrollerItem key={groupIdx}>
                 <MessageGroup>
                   {group.messages.map((msg, msgIdx) => {
-                    // O(1) 全局索引 —— 直接用 group.startIdx + msgIdx
+                    // O(1) 全局索引
                     const globalIdx = group.startIdx + msgIdx;
                     return (
                       <MessageBubble

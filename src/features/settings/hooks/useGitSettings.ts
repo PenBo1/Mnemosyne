@@ -7,9 +7,7 @@ import type { GitConfig } from "@/features/git/types";
 const DEFAULT_CONFIG: GitConfig = {
   user_name: null,
   user_email: null,
-  auto_stage: false,
-  commit_message_template: null,
-  enable_remote: false,
+  custom: {},
 };
 
 export function useGitSettings() {

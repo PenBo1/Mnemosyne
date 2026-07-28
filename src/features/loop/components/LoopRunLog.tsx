@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LoopRunLog - 循环任务运行日志组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import type { ReactNode } from "react";
 import { useI18n } from "@/locales/i18n";
 import type { LoopRunLog as LoopRunLogType } from "@/features/loop/types";

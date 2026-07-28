@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * StyleSettings - 写作风格分析设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { useI18n } from "@/locales/i18n";
 import {
@@ -27,6 +33,17 @@ interface StyleProfile {
   analyzedAt?: string;
 }
 
+interface StyleAnalysisLabels {
+  punctuation: string[];
+  rhetorical: {
+    simile: string;
+    strongEmotion: string;
+    rhythmChange: string;
+    dialogue: string;
+    parenthetical: string;
+  };
+}
+
 export function StyleSettings() {
   const { t } = useI18n();
   const [text, setText] = useState("");
@@ -43,7 +60,23 @@ export function StyleSettings() {
     setProfile(null);
 
     try {
-      const result = analyzeStyle(text, sourceName || "sample");
+      const labels: StyleAnalysisLabels = {
+        punctuation: [
+          t.settings.style.punctuation.quotationMark,
+          t.settings.style.punctuation.exclamationQuestion,
+          t.settings.style.punctuation.ellipsis,
+          t.settings.style.punctuation.dash,
+          t.settings.style.punctuation.number,
+        ],
+        rhetorical: {
+          simile: t.settings.style.rhetorical.simile,
+          strongEmotion: t.settings.style.rhetorical.strongEmotion,
+          rhythmChange: t.settings.style.rhetorical.rhythmChange,
+          dialogue: t.settings.style.rhetorical.dialogue,
+          parenthetical: t.settings.style.rhetorical.parenthetical,
+        },
+      };
+      const result = analyzeStyle(text, sourceName || "sample", labels);
       setProfile(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analysis failed");
@@ -60,7 +93,7 @@ export function StyleSettings() {
   };
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>
@@ -243,7 +276,7 @@ export function StyleSettings() {
   );
 }
 
-function analyzeStyle(text: string, sourceName: string): StyleProfile {
+function analyzeStyle(text: string, sourceName: string, labels: StyleAnalysisLabels): StyleProfile {
   const sentences = text.split(/[。！？\n]+/).filter((s) => s.trim().length > 0);
   const paragraphs = text.split(/\n\n+/).filter((p) => p.trim().length > 0);
   const words = text.split(/\s+/).filter((w) => w.trim().length > 0);
@@ -269,8 +302,8 @@ function analyzeStyle(text: string, sourceName: string): StyleProfile {
 
   const vocabularyDiversity = words.length > 0 ? uniqueWords.size / words.length : 0;
 
-  const topPatterns = extractPatterns(text);
-  const rhetoricalFeatures = extractRhetoricalFeatures(text);
+  const topPatterns = extractPatterns(text, labels.punctuation);
+  const rhetoricalFeatures = extractRhetoricalFeatures(text, labels.rhetorical);
 
   return {
     sourceName,
@@ -284,7 +317,7 @@ function analyzeStyle(text: string, sourceName: string): StyleProfile {
   };
 }
 
-function extractPatterns(text: string): string[] {
+function extractPatterns(text: string, labels: string[]): string[] {
   const patterns: string[] = [];
   const regexes = [
     /[""「」『』]/g,
@@ -293,7 +326,6 @@ function extractPatterns(text: string): string[] {
     /——/g,
     /\d+[%％]/g,
   ];
-  const labels = ["引号", "叹问句", "省略号", "破折号", "数字"];
 
   regexes.forEach((regex, i) => {
     const matches = text.match(regex);
@@ -305,23 +337,23 @@ function extractPatterns(text: string): string[] {
   return patterns;
 }
 
-function extractRhetoricalFeatures(text: string): string[] {
+function extractRhetoricalFeatures(text: string, labels: StyleAnalysisLabels["rhetorical"]): string[] {
   const features: string[] = [];
 
   if (text.includes("像") && text.split("像").length > 3) {
-    features.push("明喻");
+    features.push(labels.simile);
   }
   if (/[！？]{2,}/.test(text)) {
-    features.push("强烈情感");
+    features.push(labels.strongEmotion);
   }
   if (/[。]{2,}/.test(text)) {
-    features.push("节奏变化");
+    features.push(labels.rhythmChange);
   }
   if (/「[^」]+」/.test(text)) {
-    features.push("对话");
+    features.push(labels.dialogue);
   }
   if (/（[^）]+）/.test(text)) {
-    features.push("括号注释");
+    features.push(labels.parenthetical);
   }
 
   return features;

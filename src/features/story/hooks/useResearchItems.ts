@@ -3,7 +3,12 @@ import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { ResearchItem, ResearchCategory } from "@/features/story/types";
 import { ipc } from "@/services/ipc";
-import * as researchService from "@/features/story/services";
+import {
+  listResearchItems,
+  createResearchItem,
+  updateResearchItem,
+  deleteResearchItem,
+} from "@/features/story/services";
 
 export function useResearchItems(workspaceId: string | null) {
   const { t } = useI18n();
@@ -17,7 +22,7 @@ export function useResearchItems(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) { setItems([]); return; }
-      const data = await researchService.listResearchItems(novel.id);
+      const data = await listResearchItems(novel.id);
       setItems(data);
     } catch {
       setItems([]);
@@ -41,7 +46,7 @@ export function useResearchItems(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) return;
-      await researchService.createResearchItem({ ...params, novelId: novel.id });
+      await createResearchItem({ ...params, novelId: novel.id });
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -58,7 +63,7 @@ export function useResearchItems(workspaceId: string | null) {
     source_url: string | null;
   }) => {
     try {
-      await researchService.updateResearchItem(params);
+      await updateResearchItem(params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -68,7 +73,7 @@ export function useResearchItems(workspaceId: string | null) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await researchService.deleteResearchItem(id);
+      await deleteResearchItem(id);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {

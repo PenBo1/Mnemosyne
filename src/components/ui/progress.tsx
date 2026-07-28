@@ -1,10 +1,20 @@
-﻿import * as React from "react";
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Progress - 进度条组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react";
 import { cn } from "@/lib/utils";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number;
   max?: number;
 }
+
+// ── 进度条组件 ──────────────────────────────────────────────────────────────
 
 const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
   ({ className, value = 0, max = 100, ...props }, ref) => {

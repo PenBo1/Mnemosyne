@@ -1,9 +1,17 @@
-﻿import { useMemo } from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Field - 表单字段组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+
+// ── 字段集组件 ──────────────────────────────────────────────────────────────
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (
@@ -17,6 +25,8 @@ function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
     />
   )
 }
+
+// ── 字段图例组件 ────────────────────────────────────────────────────────────
 
 function FieldLegend({
   className,
@@ -36,6 +46,8 @@ function FieldLegend({
   )
 }
 
+// ── 字段组组件 ──────────────────────────────────────────────────────────────
+
 function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -48,6 +60,8 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 字段样式变体 ────────────────────────────────────────────────────────────
 
 const fieldVariants = cva(
   "group/field flex w-full gap-2 data-[invalid=true]:text-destructive",
@@ -67,6 +81,8 @@ const fieldVariants = cva(
   }
 )
 
+// ── 字段组件 ────────────────────────────────────────────────────────────────
+
 function Field({
   className,
   orientation = "vertical",
@@ -83,6 +99,8 @@ function Field({
   )
 }
 
+// ── 字段内容组件 ────────────────────────────────────────────────────────────
+
 function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -95,6 +113,8 @@ function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 字段标签组件 ────────────────────────────────────────────────────────────
 
 function FieldLabel({
   className,
@@ -113,6 +133,8 @@ function FieldLabel({
   )
 }
 
+// ── 字段标题组件 ────────────────────────────────────────────────────────────
+
 function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -125,6 +147,8 @@ function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 字段描述组件 ────────────────────────────────────────────────────────────
 
 function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
@@ -140,6 +164,8 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
     />
   )
 }
+
+// ── 字段分隔符组件 ──────────────────────────────────────────────────────────
 
 function FieldSeparator({
   children,
@@ -170,6 +196,8 @@ function FieldSeparator({
     </div>
   )
 }
+
+// ── 字段错误组件 ────────────────────────────────────────────────────────────
 
 function FieldError({
   className,

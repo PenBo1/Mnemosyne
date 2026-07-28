@@ -234,7 +234,7 @@ function parseSingleTable(content: string): ParsedTable | null {
 
   const headerStart = tableIndexes[0]!;
   const nextIndex = tableIndexes[1];
-  const headerEnd = nextIndex !== undefined && lines[nextIndex]!.includes("---")
+  const headerEnd = nextIndex !== undefined && lines[nextIndex]?.includes("---") === true
     ? nextIndex
     : headerStart;
   const dataIndexes = tableIndexes.filter((index) => index > headerEnd);
@@ -242,7 +242,11 @@ function parseSingleTable(content: string): ParsedTable | null {
 
   return {
     leadingLines: lines.slice(0, headerEnd + 1),
-    dataRows: dataIndexes.map((index) => parseRow(lines[index]!)),
+    dataRows: dataIndexes.flatMap((index) => {
+      const line = lines[index];
+      if (!line) return [];
+      return [parseRow(line)];
+    }),
     trailingLines: lines.slice(lastDataIndex + 1),
   };
 }

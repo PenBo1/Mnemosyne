@@ -43,9 +43,11 @@ export function parseGenreProfile(raw: string): ParsedGenreProfile {
     throw new Error("Genre profile missing YAML frontmatter (--- ... ---)");
   }
 
-  const frontmatter = parseMinimalYamlFrontmatter(fmMatch[1]!);
+  // 正则两捕获组均为必填，解构后类型收窄（避免非空断言）
+  const [, frontmatterRaw, bodyRaw] = fmMatch;
+  const frontmatter = parseMinimalYamlFrontmatter(frontmatterRaw);
   const profile = GenreProfileSchema.parse(frontmatter);
-  const body = fmMatch[2]!.trim();
+  const body = bodyRaw.trim();
 
   return { profile, body };
 }

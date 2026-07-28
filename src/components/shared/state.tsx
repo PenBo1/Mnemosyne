@@ -1,4 +1,11 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * State - 状态展示组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
+import { memo } from "react"
 import { cn } from "@/lib/utils"
 import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +18,9 @@ import {
   EmptyContent,
 } from "@/components/ui/empty"
 
-function LoadingState({
+// ── 加载状态组件 ────────────────────────────────────────────────────────────
+
+const LoadingState = memo(function LoadingState({
   className,
   label,
 }: {
@@ -29,9 +38,11 @@ function LoadingState({
       {label && <span className="text-sm">{label}</span>}
     </div>
   )
-}
+})
 
-function EmptyState({
+// ── 空状态组件 ──────────────────────────────────────────────────────────────
+
+const EmptyState = memo(function EmptyState({
   icon,
   title,
   description,
@@ -54,9 +65,11 @@ function EmptyState({
       {children && <EmptyContent>{children}</EmptyContent>}
     </Empty>
   )
-}
+})
 
-function StatusBadge({
+// ── 状态徽章组件 ────────────────────────────────────────────────────────────
+
+const StatusBadge = memo(function StatusBadge({
   variant = "default",
   children,
   className,
@@ -70,6 +83,6 @@ function StatusBadge({
       {children}
     </Badge>
   )
-}
+})
 
 export { LoadingState, EmptyState, StatusBadge }

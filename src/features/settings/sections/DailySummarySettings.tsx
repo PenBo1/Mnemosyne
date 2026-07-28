@@ -1,10 +1,8 @@
-// 每日摘要任务设置页 —— 控制 DailySummaryTask 的启停、配置和手动触发。
-//
-// 核心功能:
-// 1. 启停定时任务(默认不启动)
-// 2. 手动触发一次摘要生成(立即执行)
-// 3. 配置触发间隔、回看窗口、偏好衰减 cutoff
-// 4. 展示最近一次手动触发的执行报告
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DailySummarySettings - 每日摘要任务设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -50,6 +48,11 @@ import {
   type DailySummaryReport,
 } from "@/features/settings/types/daily-summary";
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 每日摘要任务设置页面，控制 DailySummaryTask 的启停、配置和手动触发
+ */
 export function DailySummarySettings() {
   const { t } = useI18n();
   const [config, setConfig] = useState<DailySummaryConfig>(DEFAULT_DAILY_SUMMARY_CONFIG);
@@ -60,8 +63,10 @@ export function DailySummarySettings() {
   const [saving, setSaving] = useState(false);
   const [lastReport, setLastReport] = useState<DailySummaryReport | null>(null);
 
-  // 本地草稿(用户编辑中、未保存的配置)
+  /** 本地草稿（用户编辑中、未保存的配置） */
   const [draft, setDraft] = useState<DailySummaryConfig>(DEFAULT_DAILY_SUMMARY_CONFIG);
+
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
     try {
@@ -85,6 +90,11 @@ export function DailySummarySettings() {
     void loadData();
   }, [loadData]);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 启动定时任务
+   */
   const handleStart = useCallback(async () => {
     try {
       setActionLoading(true);
@@ -99,6 +109,9 @@ export function DailySummarySettings() {
     }
   }, [t.settings.dailySummary.taskStarted]);
 
+  /**
+   * 停止定时任务
+   */
   const handleStop = useCallback(async () => {
     try {
       setActionLoading(true);
@@ -113,6 +126,9 @@ export function DailySummarySettings() {
     }
   }, [t.settings.dailySummary.taskStopped]);
 
+  /**
+   * 手动触发一次摘要生成
+   */
   const handleTrigger = useCallback(async () => {
     try {
       setTriggering(true);
@@ -127,6 +143,9 @@ export function DailySummarySettings() {
     }
   }, [t.settings.dailySummary.triggerSuccess, t.settings.dailySummary.triggerFailed]);
 
+  /**
+   * 切换启用状态
+   */
   const handleToggleEnabled = useCallback(async (enabled: boolean) => {
     try {
       setSaving(true);
@@ -150,6 +169,9 @@ export function DailySummarySettings() {
     }
   }, [draft]);
 
+  /**
+   * 保存配置
+   */
   const handleSaveConfig = useCallback(async () => {
     try {
       setSaving(true);
@@ -165,19 +187,25 @@ export function DailySummarySettings() {
     }
   }, [draft, t.settings.dailySummary.configSaved]);
 
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
+
   const intervalPresetValue = String(draft.intervalMs);
   const isPresetMatched = INTERVAL_PRESETS.some((p) => String(p.value) === intervalPresetValue);
 
+  // ── 加载中状态 ────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>
@@ -199,7 +227,7 @@ export function DailySummarySettings() {
         </PageActions>
       </PageHeader>
 
-      {/* 1. 任务控制 */}
+      {/* ── 任务控制 ────────────────────────────────────────────────────────── */}
       <SettingsSection
         title={t.settings.dailySummary.taskControl}
         description={t.settings.dailySummary.taskControlHint}
@@ -262,7 +290,7 @@ export function DailySummarySettings() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* 2. 配置 */}
+      {/* ── 配置 ────────────────────────────────────────────────────────────── */}
       <SettingsSection
         title={t.settings.dailySummary.config}
         description={t.settings.dailySummary.configHint}
@@ -354,7 +382,7 @@ export function DailySummarySettings() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* 3. 最近执行结果 */}
+      {/* ── 最近执行结果 ──────────────────────────────────────────────────── */}
       <SettingsSection
         title={t.settings.dailySummary.lastReport}
         description={t.settings.dailySummary.lastReportHint}
@@ -362,6 +390,7 @@ export function DailySummarySettings() {
         {lastReport ? (
           <ScrollArea className="max-h-96">
             <div className="flex flex-col gap-3 px-4 py-2">
+              {/* ── 统计卡片 ────────────────────────────────────────────────── */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded border border-border/50 bg-muted/30 px-3 py-2">
                   <div className="text-xs text-muted-foreground">
@@ -391,6 +420,7 @@ export function DailySummarySettings() {
                 </div>
               </div>
 
+              {/* ── 更新的角色 ──────────────────────────────────────────────── */}
               {lastReport.updatedRoles.length > 0 && (
                 <div className="flex flex-col gap-1.5">
                   <div className="text-xs font-medium text-muted-foreground">
@@ -406,6 +436,7 @@ export function DailySummarySettings() {
                 </div>
               )}
 
+              {/* ── 错误信息 ────────────────────────────────────────────────── */}
               <div className="flex flex-col gap-1.5">
                 <div className="text-xs font-medium text-muted-foreground">
                   {t.settings.dailySummary.errors}

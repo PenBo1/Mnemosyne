@@ -13,8 +13,9 @@ export const pageRegistry: Record<string, PageConfig> = {
     loader: () => import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
     layout: "default",
   },
+  // 合并后的设置页面（10 个）
   "settings.general": {
-    loader: () => import("@/features/settings/sections/GeneralSettings").then((m) => ({ default: m.GeneralSettings })),
+    loader: () => import("@/features/settings/sections/GeneralSettingsUnified").then((m) => ({ default: m.GeneralSettingsUnified })),
     layout: "default",
   },
   "settings.userProfile": {
@@ -29,80 +30,28 @@ export const pageRegistry: Record<string, PageConfig> = {
     loader: () => import("@/features/settings/sections/StyleSettings").then((m) => ({ default: m.StyleSettings })),
     layout: "default",
   },
-  "settings.model": {
-    loader: () => import("@/features/settings/sections/ModelSettings").then((m) => ({ default: m.ModelSettings })),
-    layout: "default",
-  },
-  "settings.embedding": {
-    loader: () => import("@/features/settings/sections/EmbeddingSettings").then((m) => ({ default: m.EmbeddingSettings })),
-    layout: "default",
-  },
-  "settings.prompts": {
-    loader: () => import("@/features/settings/sections/PromptsSettings").then((m) => ({ default: m.PromptsSettings })),
-    layout: "default",
-  },
-  "settings.agents": {
-    loader: () => import("@/features/settings/sections/AgentsSettings").then((m) => ({ default: m.AgentsSettings })),
+  "settings.ai": {
+    loader: () => import("@/features/settings/sections/AISettings").then((m) => ({ default: m.AISettings })),
     layout: "default",
   },
   "settings.bookSources": {
     loader: () => import("@/features/settings/sections/BookSourcesSettings").then((m) => ({ default: m.BookSourcesSettings })),
     layout: "default",
   },
-  "settings.network": {
-    loader: () => import("@/features/settings/sections/NetworkSettings").then((m) => ({ default: m.NetworkSettings })),
+  "settings.memory": {
+    loader: () => import("@/features/settings/sections/MemorySettings").then((m) => ({ default: m.MemorySettings })),
     layout: "default",
   },
-  "settings.audit": {
-    loader: () => import("@/features/settings/sections/AuditSettings").then((m) => ({ default: m.AuditSettings })),
+  "settings.security": {
+    loader: () => import("@/features/settings/sections/SecuritySettings").then((m) => ({ default: m.SecuritySettings })),
     layout: "default",
   },
-  "settings.git": {
-    loader: () => import("@/features/settings/sections/GitSettings").then((m) => ({ default: m.GitSettings })),
+  "settings.networkTools": {
+    loader: () => import("@/features/settings/sections/NetworkToolsSettings").then((m) => ({ default: m.NetworkToolsSettings })),
     layout: "default",
   },
-  "settings.shortcuts": {
-    loader: () => import("@/features/settings/sections/ShortcutsSettings").then((m) => ({ default: m.ShortcutsSettings })),
-    layout: "default",
-  },
-  "settings.system": {
-    loader: () => import("@/features/settings/sections/SystemSettings").then((m) => ({ default: m.SystemSettings })),
-    layout: "default",
-  },
-  "settings.logs": {
-    loader: () => import("@/features/settings/sections/LogsSettings").then((m) => ({ default: m.LogsSettings })),
-    layout: "default",
-  },
-  "settings.skillEvolution": {
-    loader: () => import("@/features/settings/sections/SkillEvolutionSettings").then((m) => ({ default: m.SkillEvolutionSettings })),
-    layout: "default",
-  },
-  "settings.learnedPreferences": {
-    loader: () => import("@/features/settings/sections/LearnedPreferencesSettings").then((m) => ({ default: m.LearnedPreferencesSettings })),
-    layout: "default",
-  },
-  "settings.shortTermMemory": {
-    loader: () => import("@/features/settings/sections/ShortTermMemorySettings").then((m) => ({ default: m.ShortTermMemorySettings })),
-    layout: "default",
-  },
-  "settings.agentAudit": {
-    loader: () => import("@/features/settings/sections/AgentAuditSettings").then((m) => ({ default: m.AgentAuditSettings })),
-    layout: "default",
-  },
-  "settings.dailySummary": {
-    loader: () => import("@/features/settings/sections/DailySummarySettings").then((m) => ({ default: m.DailySummarySettings })),
-    layout: "default",
-  },
-  "settings.projectMemory": {
-    loader: () => import("@/features/settings/sections/ProjectMemorySettings").then((m) => ({ default: m.ProjectMemorySettings })),
-    layout: "default",
-  },
-  "settings.toolLimits": {
-    loader: () => import("@/features/settings/sections/ToolLimitsSettings").then((m) => ({ default: m.ToolLimitsSettings })),
-    layout: "default",
-  },
-  "settings.about": {
-    loader: () => import("@/features/settings/sections/AboutSettings").then((m) => ({ default: m.AboutSettings })),
+  "settings.usageStats": {
+    loader: () => import("@/features/settings/sections/UsageStatsSettings").then((m) => ({ default: m.UsageStatsSettings })),
     layout: "default",
   },
   overview: {
@@ -141,10 +90,6 @@ export const pageRegistry: Record<string, PageConfig> = {
     loader: () => import("@/features/skill/SkillsPage").then((m) => ({ default: m.SkillsPage })),
     layout: "default",
   },
-  dashboard: {
-    loader: () => import("@/features/workspace/DashboardPage").then((m) => ({ default: m.DashboardPage })),
-    layout: "default",
-  },
   knowledge: {
     loader: () => import("@/features/knowledge/KnowledgePage").then((m) => ({ default: m.KnowledgePage })),
     layout: "default",
@@ -168,6 +113,10 @@ export const pageRegistry: Record<string, PageConfig> = {
   },
   pipeline: {
     loader: () => import("@/features/pipeline/PipelinePage"),
+    layout: "default",
+  },
+  editor: {
+    loader: () => import("@/features/editor/EditorPage").then((m) => ({ default: m.EditorPage })),
     layout: "default",
   },
 };

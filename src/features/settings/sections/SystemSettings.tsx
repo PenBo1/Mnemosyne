@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SystemSettings - 系统设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { FolderOpenIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -18,6 +24,7 @@ export function SystemSettings() {
   const { t } = useI18n();
   const [dataDir, setDataDir] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +37,13 @@ export function SystemSettings() {
       });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // 组件卸载时清理 copy 状态定时器，避免卸载后 setState
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
 
@@ -49,7 +63,8 @@ export function SystemSettings() {
       await navigator.clipboard.writeText(dataDir);
       setCopied(true);
       toast.success(t.common.copiedToClipboard);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch (e) {
       console.error("[system] copy path failed", e);
       toast.error(t.common.failedToCopy);
@@ -57,7 +72,7 @@ export function SystemSettings() {
   };
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.system}</PageTitle>

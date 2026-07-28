@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ApprovalDialog - 安全审批对话框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState, useCallback } from "react";
 import { AlertTriangle, Check, X, Clock, FileText, Hash } from "lucide-react";
 import {
@@ -11,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { useI18n } from "@/locales/i18n";
 import type {
   ApprovalRequest,
   RiskLevel,
@@ -22,12 +29,7 @@ import {
 } from "@/features/agent/services/security/policy-check";
 import { approvalConsume, approvalReject } from "@/services/ipc/security";
 
-const RISK_BADGE_VARIANTS: Record<RiskLevel, "success" | "warning" | "destructive" | "outline"> = {
-  low: "success",
-  medium: "warning",
-  high: "destructive",
-  critical: "destructive",
-};
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface ApprovalDialogProps {
   request: ApprovalRequest | null;
@@ -36,17 +38,34 @@ interface ApprovalDialogProps {
   onResolved: (result: { approved: boolean; tokenId: string }) => void;
 }
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+const RISK_BADGE_VARIANTS: Record<RiskLevel, "success" | "warning" | "destructive" | "outline"> = {
+  low: "success",
+  medium: "warning",
+  high: "destructive",
+  critical: "destructive",
+};
+
+// ── 模态对话框版本 ──────────────────────────────────────────────────────────
+
+/**
+ * 安全审批对话框组件，用于审批高风险操作
+ */
 export function ApprovalDialog({
   request,
   open,
   onOpenChange,
   onResolved,
 }: ApprovalDialogProps) {
+  const { t } = useI18n();
   const [remainingSeconds, setRemainingSeconds] = useState(30);
   const [submitting, setSubmitting] = useState(false);
 
   const token = request?.token;
   const operation = request?.operation;
+
+  // ── 倒计时逻辑 ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!token || !open) {
@@ -80,6 +99,11 @@ export function ApprovalDialog({
     return () => clearInterval(interval);
   }, [token, open, onResolved, onOpenChange]);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 处理批准操作
+   */
   const handleApprove = useCallback(async () => {
     if (!token || submitting) return;
 
@@ -97,6 +121,9 @@ export function ApprovalDialog({
     }
   }, [token, submitting, onResolved, onOpenChange]);
 
+  /**
+   * 处理拒绝操作
+   */
   const handleReject = useCallback(async (reason?: string) => {
     if (!token || submitting) return;
 
@@ -113,6 +140,8 @@ export function ApprovalDialog({
       setSubmitting(false);
     }
   }, [token, submitting, onResolved, onOpenChange]);
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   if (!request || !token || !operation) return null;
 
@@ -131,12 +160,12 @@ export function ApprovalDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="size-4 text-yellow-600" />
-            操作审批请求
+            {t.security.approval.title}
           </DialogTitle>
           <DialogDescription>
             {isCritical
-              ? "此操作风险过高，已被安全策略禁止"
-              : "请审核以下操作，决定是否批准执行"}
+              ? t.security.approval.criticalWarning
+              : t.security.approval.description}
           </DialogDescription>
         </DialogHeader>
 
@@ -150,7 +179,7 @@ export function ApprovalDialog({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Clock className="size-3" />
               <span>
-                {isExpired ? "已过期" : `剩余 ${remainingSeconds} 秒`}
+                {isExpired ? t.security.approval.expired : t.security.approval.remaining.replace("{seconds}", String(remainingSeconds))}
               </span>
             </div>
 
@@ -163,7 +192,7 @@ export function ApprovalDialog({
             <div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                 <FileText className="size-3" />
-                <span>操作详情</span>
+                <span>{t.security.approval.operationDetails}</span>
               </div>
               <pre className="text-xs whitespace-pre-wrap break-words overflow-auto max-h-32">
                 {operationDetails}
@@ -173,7 +202,7 @@ export function ApprovalDialog({
 
           {request.reason && (
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium">原因: </span>
+              <span className="font-medium">{t.security.approval.reason}: </span>
               {request.reason}
             </div>
           )}
@@ -186,7 +215,7 @@ export function ApprovalDialog({
               disabled={submitting}
               onClick={() => onOpenChange(false)}
             >
-              关闭
+              {t.common.close}
             </Button>
           ) : (
             <>
@@ -196,7 +225,7 @@ export function ApprovalDialog({
                 onClick={() => handleReject("User rejected")}
               >
                 <X className="size-3.5" />
-                拒绝
+                {t.security.approval.reject}
               </Button>
               <Button
                 variant="default"
@@ -204,7 +233,7 @@ export function ApprovalDialog({
                 onClick={handleApprove}
               >
                 <Check className="size-3.5" />
-                批准
+                {t.security.approval.approve}
               </Button>
             </>
           )}
@@ -214,6 +243,11 @@ export function ApprovalDialog({
   );
 }
 
+// ── 内联卡片版本 ────────────────────────────────────────────────────────────
+
+/**
+ * 内联审批卡片组件，用于在聊天界面中展示审批请求
+ */
 export function ApprovalDialogInline({
   request,
   submitting,
@@ -223,10 +257,13 @@ export function ApprovalDialogInline({
   submitting: boolean;
   onRespond: (tokenId: string, approved: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [remainingSeconds, setRemainingSeconds] = useState(30);
 
   const token = request?.token;
   const operation = request?.operation;
+
+  // ── 倒计时逻辑 ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!token) {
@@ -255,6 +292,8 @@ export function ApprovalDialogInline({
     return () => clearInterval(interval);
   }, [token, submitting, onRespond]);
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   if (!request || !token || !operation) return null;
 
   const riskLevel = token.riskLevel;
@@ -276,7 +315,7 @@ export function ApprovalDialogInline({
             <Badge variant={badgeVariant}>{riskLabel}</Badge>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="size-3" />
-              <span>{isExpired ? "已过期" : `${remainingSeconds}s`}</span>
+              <span>{isExpired ? t.security.approval.expired : `${remainingSeconds}s`}</span>
             </div>
           </div>
 
@@ -292,14 +331,14 @@ export function ApprovalDialogInline({
 
           {request.reason && (
             <div className="mb-3 text-xs text-muted-foreground">
-              <span className="font-medium">原因: </span>
+              <span className="font-medium">{t.security.approval.reason}: </span>
               {request.reason}
             </div>
           )}
 
           <div className="flex gap-2">
             {isCritical ? (
-              <span className="text-xs text-destructive">此操作已被安全策略禁止</span>
+              <span className="text-xs text-destructive">{t.security.approval.criticalWarning}</span>
             ) : (
               <>
                 <Button
@@ -309,7 +348,7 @@ export function ApprovalDialogInline({
                   onClick={() => onRespond(token.id.uuid, true)}
                 >
                   <Check className="size-3.5" data-icon="inline-start" />
-                  批准
+                  {t.security.approval.approve}
                 </Button>
                 <Button
                   size="sm"
@@ -318,7 +357,7 @@ export function ApprovalDialogInline({
                   onClick={() => onRespond(token.id.uuid, false)}
                 >
                   <X className="size-3.5" data-icon="inline-start" />
-                  拒绝
+                  {t.security.approval.reject}
                 </Button>
               </>
             )}

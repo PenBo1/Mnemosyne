@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SidebarSessionList - 侧边栏工作区会话列表组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect } from "react";
 import { MessageSquareIcon, Trash2Icon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
@@ -10,8 +16,12 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 
-/** 相对时间格式化（如 "刚刚"、"3 分钟前"、"昨天"） */
-function formatRelativeTime(iso: string, locale: string): string {
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 格式化相对时间
+ */
+function formatRelativeTime(iso: string, locale: string, agentChat: { justNow: string; minutesAgo: string; hoursAgo: string; daysAgo: string; yesterday: string }): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diff = Math.max(0, now - then);
@@ -19,28 +29,27 @@ function formatRelativeTime(iso: string, locale: string): string {
   const hour = 60 * min;
   const day = 24 * hour;
 
-  if (diff < min) return locale === "zh" ? "刚刚" : "just now";
+  if (diff < min) return agentChat.justNow;
   if (diff < hour) {
     const m = Math.floor(diff / min);
-    return locale === "zh" ? `${m} 分钟前` : `${m}m ago`;
+    return agentChat.minutesAgo.replace("{count}", String(m));
   }
   if (diff < day) {
     const h = Math.floor(diff / hour);
-    return locale === "zh" ? `${h} 小时前` : `${h}h ago`;
+    return agentChat.hoursAgo.replace("{count}", String(h));
   }
-  if (diff < 2 * day) return locale === "zh" ? "昨天" : "yesterday";
+  if (diff < 2 * day) return agentChat.yesterday;
   if (diff < 7 * day) {
     const d = Math.floor(diff / day);
-    return locale === "zh" ? `${d} 天前` : `${d}d ago`;
+    return agentChat.daysAgo.replace("{count}", String(d));
   }
   return new Date(then).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US");
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
 /**
- * 侧边栏工作区会话列表。
- *
- * - 根据 workspaceId 加载该工作区下的会话
- * - 点击会话项切换；hover 显示删除按钮
+ * 侧边栏工作区会话列表，根据 workspaceId 加载并展示该工作区下的会话
  */
 export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
   const { t, locale } = useI18n();
@@ -78,7 +87,7 @@ export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
                 {s.title || t.sidebar.untitledSession}
               </span>
               <span className="text-xs text-muted-foreground">
-                {formatRelativeTime(s.updated_at, locale)}
+                {formatRelativeTime(s.updated_at, locale, t.agentChat)}
               </span>
             </SidebarMenuSubButton>
             <SidebarMenuAction

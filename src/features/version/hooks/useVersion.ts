@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import * as versionService from "@/features/version/services";
@@ -10,21 +10,26 @@ export function useVersion(novelId?: string) {
   const [diffResult, setDiffResult] = useState<LineDiffResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 请求序列号：快速切换章节时防止旧响应覆盖新请求的数据
+  const requestCounterRef = useRef(0);
 
   const loadVersions = useCallback(
     async (chapterNumber: number) => {
       if (!novelId) return;
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
         const list = await versionService.listChapterVersions(novelId, chapterNumber);
+        if (requestId !== requestCounterRef.current) return;
         setVersions(list);
       } catch (err) {
+        if (requestId !== requestCounterRef.current) return;
         const msg = err instanceof Error ? err.message : t.common.error;
         setError(msg);
         toast.error(msg);
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     [novelId]
@@ -32,18 +37,20 @@ export function useVersion(novelId?: string) {
 
   const getVersion = useCallback(
     async (versionId: string) => {
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
         const version = await versionService.getChapterVersion(versionId);
         return version;
       } catch (err) {
+        if (requestId !== requestCounterRef.current) return null;
         const msg = err instanceof Error ? err.message : t.common.error;
         setError(msg);
         toast.error(msg);
         return null;
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     []
@@ -52,18 +59,20 @@ export function useVersion(novelId?: string) {
   const getLatestVersion = useCallback(
     async (chapterNumber: number) => {
       if (!novelId) return null;
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
         const version = await versionService.getLatestChapterVersion(novelId, chapterNumber);
         return version;
       } catch (err) {
+        if (requestId !== requestCounterRef.current) return null;
         const msg = err instanceof Error ? err.message : t.common.error;
         setError(msg);
         toast.error(msg);
         return null;
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     [novelId]
@@ -71,19 +80,22 @@ export function useVersion(novelId?: string) {
 
   const computeDiff = useCallback(
     async (fromVersionId: string, toVersionId: string) => {
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
         const diff = await versionService.computeVersionDiff(fromVersionId, toVersionId);
+        if (requestId !== requestCounterRef.current) return diff;
         setDiffResult(diff);
         return diff;
       } catch (err) {
+        if (requestId !== requestCounterRef.current) return null;
         const msg = err instanceof Error ? err.message : t.common.error;
         setError(msg);
         toast.error(msg);
         return null;
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     []
@@ -92,19 +104,22 @@ export function useVersion(novelId?: string) {
   const computeLatestDiff = useCallback(
     async (chapterNumber: number) => {
       if (!novelId) return null;
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
         const diff = await versionService.computeLatestDiff(novelId, chapterNumber);
+        if (requestId !== requestCounterRef.current) return diff;
         setDiffResult(diff);
         return diff;
       } catch (err) {
+        if (requestId !== requestCounterRef.current) return null;
         const msg = err instanceof Error ? err.message : t.common.error;
         setError(msg);
         toast.error(msg);
         return null;
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     [novelId]
@@ -112,21 +127,24 @@ export function useVersion(novelId?: string) {
 
   const restoreVersion = useCallback(
     async (versionId: string, workspaceId: string, bookId: string) => {
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
         const newVersion = await versionService.restoreVersion(versionId, workspaceId, bookId);
+        if (requestId !== requestCounterRef.current) return newVersion;
         // 恢复成功：将新版本 prepend 到列表顶部
         setVersions((prev) => [newVersion, ...prev]);
         toast.success(t.common.updatedSuccessfully);
         return newVersion;
       } catch (err) {
+        if (requestId !== requestCounterRef.current) return null;
         const msg = err instanceof Error ? err.message : t.common.failedToUpdate;
         setError(msg);
         toast.error(msg);
         return null;
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     []
@@ -140,6 +158,7 @@ export function useVersion(novelId?: string) {
       revisionReason: string = "User save"
     ) => {
       if (!novelId) throw new Error("No novel selected");
+      const requestId = ++requestCounterRef.current;
       setLoading(true);
       setError(null);
       try {
@@ -150,16 +169,18 @@ export function useVersion(novelId?: string) {
           revisionMode,
           revisionReason
         );
+        if (requestId !== requestCounterRef.current) return version;
         setVersions((prev) => [version, ...prev]);
         toast.success(t.common.createdSuccessfully);
         return version;
       } catch (err) {
+        if (requestId !== requestCounterRef.current) throw err;
         const msg = err instanceof Error ? err.message : t.common.failedToCreate;
         setError(msg);
         toast.error(msg);
         throw err;
       } finally {
-        setLoading(false);
+        if (requestId === requestCounterRef.current) setLoading(false);
       }
     },
     [novelId]

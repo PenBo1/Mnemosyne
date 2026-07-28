@@ -2,7 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { KnowledgeEntry } from "@/features/knowledge/types";
-import * as knowledgeService from "@/features/knowledge/services";
+import {
+  loadEntries,
+  createEntry,
+  updateEntry,
+  deleteEntry,
+} from "@/features/knowledge/services";
 
 export function useKnowledge() {
   const { t } = useI18n();
@@ -14,7 +19,7 @@ export function useKnowledge() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await knowledgeService.loadEntries();
+      const data = await loadEntries();
       setEntries(data);
     } catch {
       setEntries([]);
@@ -44,7 +49,7 @@ export function useKnowledge() {
     tags: string[];
   }) => {
     try {
-      await knowledgeService.createEntry(params);
+      await createEntry(params);
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -59,7 +64,7 @@ export function useKnowledge() {
     tags: string[];
   }) => {
     try {
-      await knowledgeService.updateEntry(id, params);
+      await updateEntry(id, params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -69,7 +74,7 @@ export function useKnowledge() {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await knowledgeService.deleteEntry(id);
+      await deleteEntry(id);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {

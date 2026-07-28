@@ -1,11 +1,10 @@
-// EventDetailDrawer —— 审计事件详情抽屉,展示 payload 完整 JSON。
-//
-// 设计:
-// - 从右侧滑入
-// - 顶部展示事件类型 + operation + 时间戳
-// - 中部展示 workspace / denied / security 标签
-// - 底部展示 payload 完整 JSON(pretty-printed)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EventDetailDrawer - 审计事件详情抽屉组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
+import { memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
@@ -19,12 +18,44 @@ import { useI18n } from "@/locales/i18n";
 import { DENIED_EVENT_TYPES, SECURITY_EVENT_TYPES_SET } from "../types";
 import type { AuditEventRow } from "../types";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface EventDetailDrawerProps {
   event: AuditEventRow | null;
   open: boolean;
   onClose: () => void;
 }
 
+interface DetailRowProps {
+  label: string;
+  value: string;
+  mono?: boolean;
+}
+
+// ── 子组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 详情行组件
+ */
+const DetailRow = memo(function DetailRow({ label, value, mono }: DetailRowProps) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div
+        className={`truncate text-sm ${mono ? "font-mono" : ""}`}
+        title={value}
+      >
+        {value}
+      </div>
+    </div>
+  );
+});
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 审计事件详情抽屉，从右侧滑入展示事件的完整 payload
+ */
 export function EventDetailDrawer({ event, open, onClose }: EventDetailDrawerProps) {
   const { t } = useI18n();
 
@@ -90,25 +121,5 @@ export function EventDetailDrawer({ event, open, onClose }: EventDetailDrawerPro
         </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-interface DetailRowProps {
-  label: string;
-  value: string;
-  mono?: boolean;
-}
-
-function DetailRow({ label, value, mono }: DetailRowProps) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div
-        className={`truncate text-sm ${mono ? "font-mono" : ""}`}
-        title={value}
-      >
-        {value}
-      </div>
-    </div>
   );
 }

@@ -1,7 +1,17 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
-import * as wikiService from "@/features/wiki/services";
+import {
+  listWikiEntries,
+  getWikiGraph,
+  createWikiEntry,
+  updateWikiEntry,
+  deleteWikiEntry,
+  createWikiLink,
+  deleteWikiLink,
+  searchWikiEntries,
+  searchWikiSemantic,
+} from "@/features/wiki/services";
 import type { WikiEntry, WikiGraphView, CreateWikiEntryRequest, UpdateWikiEntryRequest, WikiCategory, SearchResult } from "@/features/wiki/types";
 
 export function useWiki(novelId?: string, workspaceId?: string) {
@@ -17,7 +27,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        const list = await wikiService.listWikiEntries(novelId, category);
+        const list = await listWikiEntries(novelId, category);
         setEntries(list);
       } catch (err) {
         const msg = err instanceof Error ? err.message : t.common.error;
@@ -36,7 +46,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        const view = await wikiService.getWikiGraph(novelId, category, minImportance);
+        const view = await getWikiGraph(novelId, category, minImportance);
         setGraph(view);
       } catch (err) {
         const msg = err instanceof Error ? err.message : t.common.error;
@@ -55,7 +65,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        const entry = await wikiService.createWikiEntry(novelId, request);
+        const entry = await createWikiEntry(novelId, request);
         setEntries((prev) => [...prev, entry]);
         toast.success(t.common.createdSuccessfully);
         return entry;
@@ -76,7 +86,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        const entry = await wikiService.updateWikiEntry(entryId, request);
+        const entry = await updateWikiEntry(entryId, request);
         setEntries((prev) => prev.map((e) => (e.id === entryId ? entry : e)));
         toast.success(t.common.updatedSuccessfully);
         return entry;
@@ -97,7 +107,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        await wikiService.deleteWikiEntry(entryId);
+        await deleteWikiEntry(entryId);
         setEntries((prev) => prev.filter((e) => e.id !== entryId));
         toast.success(t.common.deletedSuccessfully);
       } catch (err) {
@@ -121,7 +131,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
     ) => {
       if (!novelId) throw new Error("No novel selected");
       try {
-        const link = await wikiService.createWikiLink(
+        const link = await createWikiLink(
           novelId,
           sourceId,
           targetId,
@@ -143,7 +153,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
   const deleteLink = useCallback(
     async (linkId: string) => {
       try {
-        await wikiService.deleteWikiLink(linkId);
+        await deleteWikiLink(linkId);
         // 重新加载图谱以反映已删除的链接
         await loadGraph();
       } catch (err) {
@@ -161,7 +171,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        const results = await wikiService.searchWikiEntries(novelId, query, limit);
+        const results = await searchWikiEntries(novelId, query, limit);
         return results;
       } catch (err) {
         const msg = err instanceof Error ? err.message : t.common.error;
@@ -181,7 +191,7 @@ export function useWiki(novelId?: string, workspaceId?: string) {
       setLoading(true);
       setError(null);
       try {
-        const results = await wikiService.searchWikiSemantic(query, workspaceId, limit);
+        const results = await searchWikiSemantic(query, workspaceId, limit);
         return results;
       } catch (err) {
         const msg = err instanceof Error ? err.message : t.common.error;

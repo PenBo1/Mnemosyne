@@ -3,7 +3,13 @@ import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { Character, CharacterRelationship } from "@/features/story/types";
 import { ipc } from "@/services/ipc";
-import * as characterService from "@/features/story/services";
+import {
+  listCharacters,
+  listCharacterRelationships,
+  createCharacter,
+  updateCharacter,
+  deleteCharacter,
+} from "@/features/story/services";
 
 export function useCharacters(workspaceId: string | null) {
   const { t } = useI18n();
@@ -19,8 +25,8 @@ export function useCharacters(workspaceId: string | null) {
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) { setCharacters([]); setRelationships([]); return; }
       const [chars, rels] = await Promise.all([
-        characterService.listCharacters(novel.id),
-        characterService.listCharacterRelationships(novel.id),
+        listCharacters(novel.id),
+        listCharacterRelationships(novel.id),
       ]);
       setCharacters(chars);
       setRelationships(rels);
@@ -54,7 +60,7 @@ export function useCharacters(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) return;
-      await characterService.createCharacter({ ...params, novelId: novel.id });
+      await createCharacter({ ...params, novelId: novel.id });
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -78,7 +84,7 @@ export function useCharacters(workspaceId: string | null) {
     traits: string[];
   }) => {
     try {
-      await characterService.updateCharacter(params);
+      await updateCharacter(params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -88,7 +94,7 @@ export function useCharacters(workspaceId: string | null) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await characterService.deleteCharacter(id);
+      await deleteCharacter(id);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {

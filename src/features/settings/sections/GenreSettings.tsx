@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GenreSettings - 题材设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useEffect } from "react";
 import { useI18n } from "@/locales/i18n";
 import {
@@ -17,55 +23,137 @@ import { ChevronDown, BookMarked, Zap, TrendingUp, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GenreProfile } from "@/types/genre-profile";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface GenreListItem {
   id: string;
-  name: string;
+  nameKey: string;
   source: "builtin" | "project";
 }
 
+type GenreTranslations = {
+  xianxia: string;
+  xuanhuan: string;
+  urban: string;
+  litrpg: string;
+  progression: string;
+  cozy: string;
+  cultivation: string;
+  "dungeon-core": string;
+  horror: string;
+  isekai: string;
+  romantasy: string;
+  "sci-fi": string;
+  "system-apocalypse": string;
+  "tower-climber": string;
+  other: string;
+  chapterTypes: Record<string, string>;
+  fatigueWords: Record<string, string>;
+  satisfactionTypes: Record<string, string>;
+  pacingRules: Record<string, string>;
+};
+
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
 const BUILTIN_GENRES: GenreListItem[] = [
-  { id: "xianxia", name: "仙侠", source: "builtin" },
-  { id: "xuanhuan", name: "玄幻", source: "builtin" },
-  { id: "urban", name: "都市", source: "builtin" },
-  { id: "litrpg", name: "LitRPG", source: "builtin" },
-  { id: "progression", name: "升级流", source: "builtin" },
-  { id: "cozy", name: "轻松日常", source: "builtin" },
-  { id: "cultivation", name: "修炼流", source: "builtin" },
-  { id: "dungeon-core", name: "地牢核心", source: "builtin" },
-  { id: "horror", name: "恐怖", source: "builtin" },
-  { id: "isekai", name: "异世界", source: "builtin" },
-  { id: "romantasy", name: "浪漫奇幻", source: "builtin" },
-  { id: "sci-fi", name: "科幻", source: "builtin" },
-  { id: "system-apocalypse", name: "系统末世", source: "builtin" },
-  { id: "tower-climber", name: "爬塔流", source: "builtin" },
-  { id: "other", name: "通用", source: "builtin" },
+  { id: "xianxia", nameKey: "xianxia", source: "builtin" },
+  { id: "xuanhuan", nameKey: "xuanhuan", source: "builtin" },
+  { id: "urban", nameKey: "urban", source: "builtin" },
+  { id: "litrpg", nameKey: "litrpg", source: "builtin" },
+  { id: "progression", nameKey: "progression", source: "builtin" },
+  { id: "cozy", nameKey: "cozy", source: "builtin" },
+  { id: "cultivation", nameKey: "cultivation", source: "builtin" },
+  { id: "dungeon-core", nameKey: "dungeon-core", source: "builtin" },
+  { id: "horror", nameKey: "horror", source: "builtin" },
+  { id: "isekai", nameKey: "isekai", source: "builtin" },
+  { id: "romantasy", nameKey: "romantasy", source: "builtin" },
+  { id: "sci-fi", nameKey: "sci-fi", source: "builtin" },
+  { id: "system-apocalypse", nameKey: "system-apocalypse", source: "builtin" },
+  { id: "tower-climber", nameKey: "tower-climber", source: "builtin" },
+  { id: "other", nameKey: "other", source: "builtin" },
 ];
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+function getGenreData(t: { agentChat: { genreData: GenreTranslations } }): GenreTranslations {
+  return t.agentChat.genreData;
+}
+
+function getDefaultChapterTypes(id: string, genreData: GenreTranslations): string[] {
+  const ct = genreData.chapterTypes;
+  const types: Record<string, string[]> = {
+    xianxia: [ct.battle, ct.enlightenment, ct.setup, ct.transition, ct.payoff].filter(Boolean),
+    xuanhuan: [ct.battle, ct.exploration, ct.upgrade, ct.transition].filter(Boolean),
+    urban: [ct.daily, ct.business, ct.romance, ct.turning].filter(Boolean),
+    litrpg: [ct.mission, ct.battle, ct.upgrade, ct.daily].filter(Boolean),
+    progression: [ct.upgrade, ct.battle, ct.cultivation, ct.harvest].filter(Boolean),
+    other: [ct.plot, ct.transition].filter(Boolean),
+  };
+  return types[id] ?? types.other;
+}
+
+function getDefaultFatigueWords(id: string, genreData: GenreTranslations): string[] {
+  const fw = genreData.fatigueWords;
+  const words: Record<string, string[]> = {
+    xianxia: [fw.sneer, fw.ant, fw.gasp, fw.pupilShrink, fw.heavenlyDao, fw.greatDao, fw.karma, fw.fortune].filter(Boolean),
+    xuanhuan: [fw.sneer, fw.ant, fw.gasp, fw.pupilShrink].filter(Boolean),
+    urban: [fw.faintly, fw.slightly, fw.lightSmile, fw.cornerUp].filter(Boolean),
+    other: [],
+  };
+  return words[id] ?? words.other;
+}
+
+function getDefaultPacingRule(id: string, genreData: GenreTranslations): string {
+  return genreData.pacingRules[id] ?? genreData.pacingRules.other ?? "";
+}
+
+function getDefaultSatisfactionTypes(id: string, genreData: GenreTranslations): string[] {
+  const st = genreData.satisfactionTypes;
+  const types: Record<string, string[]> = {
+    xianxia: [st.enlightenmentBreakthrough, st.combatCrush, st.treasureGain, st.identityReveal, st.tribulationPass, st.karmaResolve].filter(Boolean),
+    xuanhuan: [st.upgradeBreakthrough, st.treasureObtain, st.powerCrush, st.opportunityGain].filter(Boolean),
+    urban: [st.businessSuccess, st.relationshipProgress, st.identityChange, st.dilemmaBreak].filter(Boolean),
+    progression: [st.upgradeBreakthrough, st.skillObtain, st.powerCrush, st.goalAchieve].filter(Boolean),
+    other: [st.goalAchieve, st.dilemmaBreak].filter(Boolean),
+  };
+  return types[id] ?? types.other;
+}
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 题材设置页面，用于选择和管理小说题材配置
+ */
 export function GenreSettings() {
   const { t } = useI18n();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
   const [genreProfiles, setGenreProfiles] = useState<Record<string, GenreProfile>>({});
 
+  // ── 初始化 ────────────────────────────────────────────────────────────────
+
   useEffect(() => {
+    const genreData = getGenreData(t as { agentChat: { genreData: GenreTranslations } });
     const loadedProfiles: Record<string, GenreProfile> = {};
     BUILTIN_GENRES.forEach((g) => {
       loadedProfiles[g.id] = {
         id: g.id,
-        name: g.name,
+        name: genreData[g.nameKey as keyof GenreTranslations] as string,
         language: "zh",
-        chapterTypes: getDefaultChapterTypes(g.id),
-        fatigueWords: getDefaultFatigueWords(g.id),
+        chapterTypes: getDefaultChapterTypes(g.id, genreData),
+        fatigueWords: getDefaultFatigueWords(g.id, genreData),
         numericalSystem: ["xianxia", "xuanhuan", "litrpg", "progression", "cultivation", "tower-climber"].includes(g.id),
         powerScaling: ["xianxia", "xuanhuan", "litrpg", "progression", "cultivation", "tower-climber", "system-apocalypse"].includes(g.id),
         eraResearch: ["urban", "sci-fi"].includes(g.id),
-        pacingRule: getDefaultPacingRule(g.id),
-        satisfactionTypes: getDefaultSatisfactionTypes(g.id),
+        pacingRule: getDefaultPacingRule(g.id, genreData),
+        satisfactionTypes: getDefaultSatisfactionTypes(g.id, genreData),
         auditDimensions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
       };
     });
     setGenreProfiles(loadedProfiles);
-  }, []);
+  }, [t]);
+
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
 
   const toggleGenre = (id: string) => {
     setSelectedGenres((prev) => {
@@ -83,8 +171,10 @@ export function GenreSettings() {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>
@@ -96,7 +186,7 @@ export function GenreSettings() {
       </PageHeader>
 
       <div className="flex flex-col gap-5">
-        {/* 工具栏 */}
+        {/* ── 工具栏 ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-sm text-[var(--text-tertiary)]">
@@ -124,7 +214,7 @@ export function GenreSettings() {
           </div>
         </div>
 
-        {/* 题材卡片网格 */}
+        {/* ── 题材卡片网格 ────────────────────────────────────────────────── */}
         <ScrollArea className="flex-1 -mx-2 px-2">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {BUILTIN_GENRES.map((genre) => {
@@ -141,14 +231,14 @@ export function GenreSettings() {
                   )}
                 >
                   <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(genre.id)}>
-                    {/* 卡片头部 */}
+                    {/* ── 卡片头部 ────────────────────────────────────────── */}
                     <div className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-4)] bg-[var(--bg-overlay-l2)]">
                           <BookMarked className="size-4 text-[var(--text-brand)]" />
                         </div>
                         <div className="min-w-0">
-                          <h3 className="text-sm font-semibold truncate">{genre.name}</h3>
+                          <h3 className="text-sm font-semibold truncate">{profile?.name ?? genre.id}</h3>
                           <Badge variant="outline" className="text-[10px] mt-1">
                             {genre.source === "builtin" ? t.settings.genresBuiltin : t.settings.genresProject}
                           </Badge>
@@ -160,7 +250,7 @@ export function GenreSettings() {
                       />
                     </div>
 
-                    {/* 展开触发器 */}
+                    {/* ── 展开触发器 ──────────────────────────────────────── */}
                     <CollapsibleTrigger asChild>
                       <Button
                         variant="ghost"
@@ -179,12 +269,12 @@ export function GenreSettings() {
                       </Button>
                     </CollapsibleTrigger>
 
-                    {/* 展开内容 */}
+                    {/* ── 展开内容 ────────────────────────────────────────── */}
                     <CollapsibleContent>
                       <CardContent className="pt-4 border-t border-[var(--border-neutral-l1)]">
                         {profile && (
                           <div className="flex flex-col gap-4 text-sm">
-                            {/* 特性标签 */}
+                            {/* ── 特性标签 ────────────────────────────────── */}
                             <div className="flex items-center gap-3">
                               <div className="flex items-center gap-2">
                                 <Zap className="size-4 text-[var(--text-tertiary)]" />
@@ -202,7 +292,7 @@ export function GenreSettings() {
                               </div>
                             </div>
 
-                            {/* 章节类型 */}
+                            {/* ── 章节类型 ──────────────────────────────── */}
                             {profile.chapterTypes.length > 0 && (
                               <div>
                                 <div className="trae-eyebrow mb-2">{t.settings.genresChapterTypes}</div>
@@ -216,7 +306,7 @@ export function GenreSettings() {
                               </div>
                             )}
 
-                            {/* 疲劳词 */}
+                            {/* ── 疲劳词 ────────────────────────────────── */}
                             {profile.fatigueWords.length > 0 && (
                               <div>
                                 <div className="trae-eyebrow mb-2 flex items-center gap-2">
@@ -237,7 +327,7 @@ export function GenreSettings() {
                               </div>
                             )}
 
-                            {/* 满足感类型 */}
+                            {/* ── 满足感类型 ──────────────────────────── */}
                             {profile.satisfactionTypes.length > 0 && (
                               <div>
                                 <div className="trae-eyebrow mb-2">{t.settings.genresSatisfactionTypes}</div>
@@ -251,7 +341,7 @@ export function GenreSettings() {
                               </div>
                             )}
 
-                            {/* 节奏规则 */}
+                            {/* ── 节奏规则 ──────────────────────────── */}
                             {profile.pacingRule && (
                               <div>
                                 <div className="trae-eyebrow mb-2 flex items-center gap-2">
@@ -276,48 +366,4 @@ export function GenreSettings() {
       </div>
     </PageContainer>
   );
-}
-
-function getDefaultChapterTypes(id: string): string[] {
-  const types: Record<string, string[]> = {
-    xianxia: ["战斗章", "悟道章", "布局章", "过渡章", "回收章"],
-    xuanhuan: ["战斗章", "探险章", "升级章", "过渡章"],
-    urban: ["日常章", "商战章", "感情章", "转折章"],
-    litrpg: ["任务章", "战斗章", "升级章", "日常章"],
-    progression: ["升级章", "战斗章", "修炼章", "收获章"],
-    other: ["情节章", "过渡章"],
-  };
-  return types[id] ?? types.other;
-}
-
-function getDefaultFatigueWords(id: string): string[] {
-  const words: Record<string, string[]> = {
-    xianxia: ["冷笑", "蝼蚁", "倒吸凉气", "瞳孔骤缩", "天道", "大道", "因果", "气运"],
-    xuanhuan: ["冷笑", "蝼蚁", "倒吸凉气", "瞳孔骤缩"],
-    urban: ["淡淡", "微微", "轻笑", "嘴角上扬"],
-    other: [],
-  };
-  return words[id] ?? words.other;
-}
-
-function getDefaultPacingRule(id: string): string {
-  const rules: Record<string, string> = {
-    xianxia: "修炼/悟道与战斗交替，每3-5章一次小突破或关键收获",
-    xuanhuan: "探险与升级交替，每章有明确目标",
-    urban: "日常与转折交替，感情线稳步推进",
-    progression: "升级节奏紧凑，每章有可见进展",
-    other: "情节张弛有度，每章有明确目的",
-  };
-  return rules[id] ?? rules.other;
-}
-
-function getDefaultSatisfactionTypes(id: string): string[] {
-  const types: Record<string, string[]> = {
-    xianxia: ["悟道突破", "斗法碾压", "法宝收获", "身份揭示", "天劫渡过", "因果了结"],
-    xuanhuan: ["升级突破", "宝物收获", "实力碾压", "机缘获得"],
-    urban: ["商业成功", "感情进展", "身份转变", "困境突破"],
-    progression: ["升级成功", "技能获得", "实力碾压", "目标达成"],
-    other: ["目标达成", "困境突破"],
-  };
-  return types[id] ?? types.other;
 }

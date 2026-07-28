@@ -1,8 +1,16 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Tabs - 标签页组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Tabs as TabsPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 标签页组件 ──────────────────────────────────────────────────────────────
 
 function Tabs({
   className,
@@ -22,6 +30,8 @@ function Tabs({
   )
 }
 
+// ── 标签页列表样式变体 ──────────────────────────────────────────────────────
+
 const tabsListVariants = cva(
   "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
   {
@@ -36,6 +46,8 @@ const tabsListVariants = cva(
     },
   }
 )
+
+// ── 标签页列表组件 ──────────────────────────────────────────────────────────
 
 function TabsList({
   className,
@@ -52,6 +64,8 @@ function TabsList({
     />
   )
 }
+
+// ── 标签页触发器组件 ────────────────────────────────────────────────────────
 
 function TabsTrigger({
   className,
@@ -71,6 +85,8 @@ function TabsTrigger({
     />
   )
 }
+
+// ── 标签页内容组件 ──────────────────────────────────────────────────────────
 
 function TabsContent({
   className,

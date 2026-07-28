@@ -177,7 +177,7 @@ function mapNormalizedToOriginal(original: string, normalizedPos: number): numbe
 
   // Skip leading whitespace in original (matches trim())
   let oi = 0;
-  while (oi < original.length && /\s/.test(original[oi]!)) oi++;
+  while (oi < original.length && /\s/.test(original[oi] ?? "")) oi++;
 
   for (; oi <= original.length && ni < normalizedPos; oi++) {
     if (oi === original.length) break;

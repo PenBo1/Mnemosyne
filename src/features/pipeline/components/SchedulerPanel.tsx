@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SchedulerPanel - 调度器面板组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useI18n } from "@/locales/i18n";
 import { usePipeline } from "@/features/pipeline/hooks";
 import { Button } from "@/components/ui/button";

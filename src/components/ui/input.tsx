@@ -1,6 +1,14 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Input - 输入框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
+
+// ── 输入框组件 ──────────────────────────────────────────────────────────────
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (

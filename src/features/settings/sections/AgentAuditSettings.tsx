@@ -1,9 +1,8 @@
-// Agent 审计设置页 —— 展示 audit_events 表数据,提供完整的操作追溯能力。
-//
-// 核心功能:
-// 1. 统计区:总数 / 拒绝数 / 安全相关数
-// 2. 最近事件列表(按 recordedAt 倒序)
-// 3. 支持调整返回条数上限
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AgentAuditSettings - Agent 审计设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -29,12 +28,17 @@ import {
 } from "@/components/shared/page-layout";
 import { SettingsSection, SettingsRow } from "@/features/settings/components/settings-section";
 import { LoadingState } from "@/components/shared/state";
-import { getAuditEventStats, getAuditEvents } from "@/features/stats/services/ai-logs";
+import { getAuditEventStats, getAuditEvents } from "@/features/settings/services/audit-events";
 import type {
   AuditEventRow,
   AuditEventStats,
-} from "@/features/stats/types/ai-logs";
+} from "@/features/settings/services/audit-events";
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 格式化相对时间
+ */
 function formatRelativeTime(iso: string): string {
   try {
     const d = new Date(iso);
@@ -53,6 +57,9 @@ function formatRelativeTime(iso: string): string {
   }
 }
 
+/**
+ * 格式化负载信息
+ */
 function formatPayload(payload: unknown): string {
   try {
     if (typeof payload === "string") return payload;
@@ -62,12 +69,19 @@ function formatPayload(payload: unknown): string {
   }
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Agent 审计设置页面，展示 audit_events 表数据，提供完整的操作追溯能力
+ */
 export function AgentAuditSettings() {
   const { t } = useI18n();
   const [events, setEvents] = useState<AuditEventRow[]>([]);
   const [stats, setStats] = useState<AuditEventStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(100);
+
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
     try {
@@ -90,13 +104,17 @@ export function AgentAuditSettings() {
     void loadData();
   }, [loadData]);
 
+  // ── 加载中状态 ────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
+
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
 
   const deniedRate = stats && stats.total > 0
     ? `${((stats.denied / stats.total) * 100).toFixed(1)}%`
@@ -105,8 +123,10 @@ export function AgentAuditSettings() {
     ? `${((stats.securityRelated / stats.total) * 100).toFixed(1)}%`
     : "0.0%";
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>
@@ -128,7 +148,7 @@ export function AgentAuditSettings() {
         </PageActions>
       </PageHeader>
 
-      {/* 1. 统计 */}
+      {/* ── 统计信息 ────────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.agentAudit.stats} description={t.settings.agentAudit.hint}>
         <SettingsRow
           label={t.settings.agentAudit.statsTotal}
@@ -164,7 +184,7 @@ export function AgentAuditSettings() {
         )}
       </SettingsSection>
 
-      {/* 2. 最近事件 */}
+      {/* ── 最近事件 ────────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.agentAudit.recentEvents}>
         <SettingsRow
           label={t.settings.agentAudit.limit}
@@ -195,6 +215,7 @@ export function AgentAuditSettings() {
             <div className="divide-y">
               {events.map((e) => (
                 <div key={e.id} className="flex flex-col gap-1.5 px-4 py-2.5">
+                  {/* ── 事件标题 ──────────────────────────────────────────────── */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <div className="flex flex-wrap items-center gap-2">
@@ -228,6 +249,7 @@ export function AgentAuditSettings() {
                       <ShieldCheckIcon className="size-4 text-emerald-500" />
                     )}
                   </div>
+                  {/* ── 事件负载 ──────────────────────────────────────────────── */}
                   {e.payload != null && (() => {
                     const formatted = formatPayload(e.payload);
                     return (

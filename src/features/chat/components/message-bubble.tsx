@@ -1,4 +1,10 @@
-import { memo, useState, Suspense, lazy } from "react";
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MessageBubble - 聊天消息气泡组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { memo, useState, Suspense, lazy, useMemo } from "react";
 import {
   Copy,
   Check,
@@ -24,20 +30,32 @@ import { Marker, MarkerIcon, MarkerContent } from "@/components/ui/marker";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import { useCopy } from "@/features/chat/hooks/use-copy";
+import { ThinkingIndicator } from "@/features/agent/components/ThinkingIndicator";
 import type { ActiveToolCall } from "@/features/chat/store";
 import type { Message as ChatMessage } from "@/types";
+
+// ── 懒加载组件 ──────────────────────────────────────────────────────────────
 
 const MarkdownRenderer = lazy(() =>
   import("./markdown-renderer").then((m) => ({ default: m.MarkdownRenderer })),
 );
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 格式化时间为本地时间字符串
+ */
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** 流式光标 —— 闪烁竖条，比小圆点优雅 */
+// ── 子组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 流式消息光标
+ */
 function StreamingCursor() {
   return (
     <span
@@ -47,7 +65,9 @@ function StreamingCursor() {
   );
 }
 
-/** AI 头像 —— Sparkles 图标 + primary 淡色背景 */
+/**
+ * 助手头像
+ */
 function AssistantAvatar() {
   return (
     <div className="flex size-7 shrink-0 items-center justify-center self-start rounded-full bg-[var(--bg-brand-popup)] text-[var(--text-brand)]">
@@ -56,7 +76,9 @@ function AssistantAvatar() {
   );
 }
 
-/** 思考过程折叠块 —— Collapsible + Brain 图标 + 淡色背景 */
+/**
+ * 推理过程展示区块
+ */
 function ReasoningBlock({
   reasoning,
   isStreaming,
@@ -69,7 +91,6 @@ function ReasoningBlock({
 
   if (!reasoning && !isStreaming) return null;
 
-  // 流式中强制展开，结束后用户可手动折叠/展开
   const open = expanded || isStreaming;
 
   return (
@@ -107,12 +128,14 @@ function ReasoningBlock({
   );
 }
 
-/** 工具调用卡片 —— 进行中 Spinner / 完成 CheckCircle / 错误 AlertCircle */
+/**
+ * 工具调用卡片
+ */
 function ToolCallCard({ call }: { call: ActiveToolCall }) {
   const { t } = useI18n();
   const isRunning = call.status === "running";
   return (
-    <Marker variant="border" className="my-0.5 gap-2 py-1.5">
+    <Marker variant="border" className="my-0.5 gap-2 py-1.5 max-w-full">
       <MarkerIcon className="size-3.5">
         {isRunning ? (
           <Spinner className="size-3 text-muted-foreground" />
@@ -122,11 +145,11 @@ function ToolCallCard({ call }: { call: ActiveToolCall }) {
           <CheckCircle2 className="size-3 text-[var(--text-brand)]" />
         )}
       </MarkerIcon>
-      <MarkerContent className="flex items-baseline gap-1">
-        <span className="font-mono text-[11px] text-muted-foreground">
+      <MarkerContent className="flex items-baseline gap-1 min-w-0">
+        <span className="font-mono text-[11px] text-muted-foreground shrink-0">
           {isRunning ? t.agentChat.toolRunning : t.agentChat.toolCalled}
         </span>
-        <span className="font-mono text-[11px] font-medium text-foreground">
+        <span className="font-mono text-[11px] font-medium text-foreground truncate">
           {call.name}
         </span>
       </MarkerContent>
@@ -134,7 +157,9 @@ function ToolCallCard({ call }: { call: ActiveToolCall }) {
   );
 }
 
-/** 工具结果卡片 —— 历史消息中的 tool 角色展示 */
+/**
+ * 工具结果展示
+ */
 function ToolResult({ content }: { content: string }) {
   const { t } = useI18n();
   return (
@@ -154,16 +179,104 @@ function ToolResult({ content }: { content: string }) {
   );
 }
 
+/**
+ * 文本块组件
+ */
+function TextBlock({
+  content,
+  isStreaming,
+  showCursor,
+}: {
+  content: string;
+  isStreaming?: boolean;
+  showCursor?: boolean;
+}) {
+  const { t } = useI18n();
+  if (!content) return null;
+
+  if (isStreaming) {
+    return (
+      <p className="whitespace-pre-wrap break-words leading-relaxed">
+        {content}
+        {showCursor && <StreamingCursor />}
+      </p>
+    );
+  }
+
+  return (
+    <Suspense
+      fallback={<span className="text-muted-foreground animate-pulse">{t.chat.message.loading}</span>}
+    >
+      <MarkdownRenderer content={content} />
+    </Suspense>
+  );
+}
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
+interface RenderSegment {
+  type: "text" | "tool";
+  content: string;
+  toolCall?: ActiveToolCall;
+  position: number;
+}
+
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
   reasoning?: string;
-  /** 流式 turn 进行中/已完成的工具调用（仅流式 bubble 传入） */
   toolCalls?: ActiveToolCall[];
   onRegenerate?: () => void;
 }
 
-/** 消息气泡 —— shadcn Message + Bubble + Collapsible + Marker 组合 */
+/**
+ * 构建渲染片段，将文本和工具调用分离
+ */
+function buildRenderSegments(
+  content: string,
+  toolCalls: ActiveToolCall[] | undefined,
+  isStreaming?: boolean
+): RenderSegment[] {
+  if (!toolCalls || toolCalls.length === 0) {
+    if (!content) return [];
+    return [{ type: "text", content, position: 0 }];
+  }
+
+  const sortedCalls = [...toolCalls].sort((a, b) => a.startPosition - b.startPosition);
+
+  const segments: RenderSegment[] = [];
+  let lastEnd = 0;
+
+  for (const call of sortedCalls) {
+    const textBefore = content.slice(lastEnd, call.startPosition);
+    if (textBefore) {
+      segments.push({ type: "text", content: textBefore, position: lastEnd });
+    }
+
+    const toolEnd = call.endPosition ?? (isStreaming ? content.length : call.startPosition);
+    segments.push({
+      type: "tool",
+      content: "",
+      toolCall: call,
+      position: call.startPosition,
+    });
+
+    lastEnd = Math.max(lastEnd, toolEnd);
+  }
+
+  const textAfter = content.slice(lastEnd);
+  if (textAfter) {
+    segments.push({ type: "text", content: textAfter, position: lastEnd });
+  }
+
+  return segments;
+}
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 消息气泡组件，展示单条聊天消息
+ */
 export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming,
@@ -175,7 +288,11 @@ export const MessageBubble = memo(function MessageBubble({
   const { copied, copy } = useCopy();
   const isUser = message.role === "user";
 
-  // system 消息：使用 Marker separator
+  const segments = useMemo(
+    () => buildRenderSegments(message.content, toolCalls, isStreaming),
+    [message.content, toolCalls, isStreaming]
+  );
+
   if (message.role === "system") {
     return (
       <Marker variant="separator">
@@ -184,7 +301,6 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // tool 消息：工具结果卡片
   if (message.role === "tool") {
     return <ToolResult content={message.content} />;
   }
@@ -192,9 +308,7 @@ export const MessageBubble = memo(function MessageBubble({
   const hasContent = message.content.length > 0;
   const hasReasoning = reasoning && reasoning.length > 0;
   const showReasoning = hasReasoning || (isStreaming && !hasContent);
-  const hasToolCalls = toolCalls && toolCalls.length > 0;
 
-  // 用户消息：右对齐 secondary 气泡（比 primary 更柔和）
   if (isUser) {
     return (
       <Message align="end">
@@ -214,50 +328,52 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // AI 消息：头像 + 思考 + 工具调用 + ghost 正文
   return (
     <Message align="start">
       <AssistantAvatar />
-      <MessageContent>
+      <MessageContent className="max-w-[85%]">
         {showReasoning && (
           <ReasoningBlock reasoning={reasoning ?? ""} isStreaming={!!isStreaming} />
         )}
 
-        {hasToolCalls && (
-          <div className="flex flex-col">
-            {toolCalls!.map((call) => (
-              <ToolCallCard key={call.id} call={call} />
-            ))}
+        {segments.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {segments.map((segment, idx) => {
+              if (segment.type === "text") {
+                const isLast = idx === segments.length - 1;
+                return (
+                  <Bubble key={`text-${idx}`} variant="ghost" align="start">
+                    <BubbleContent>
+                      <TextBlock
+                        content={segment.content}
+                        isStreaming={isStreaming && isLast}
+                        showCursor={isStreaming && isLast}
+                      />
+                    </BubbleContent>
+                  </Bubble>
+                );
+              } else if (segment.toolCall) {
+                return (
+                  <ToolCallCard
+                    key={`tool-${segment.toolCall.id}`}
+                    call={segment.toolCall}
+                  />
+                );
+              }
+              return null;
+            })}
           </div>
-        )}
-
-        {(hasContent || isStreaming) && (
+        ) : isStreaming ? (
           <Bubble variant="ghost" align="start">
             <BubbleContent>
-              {hasContent ? (
-                isStreaming ? (
-                  // 流式期间用纯文本渲染 —— 避免 MarkdownRenderer 每帧全文 re-parse O(n²)
-                  <p className="whitespace-pre-wrap break-words leading-relaxed">
-                    {message.content}
-                    <StreamingCursor />
-                  </p>
-                ) : (
-                  <Suspense
-                    fallback={
-                      <span className="text-muted-foreground animate-pulse">Loading...</span>
-                    }
-                  >
-                    <MarkdownRenderer content={message.content} />
-                  </Suspense>
-                )
-              ) : (
-                isStreaming && <StreamingCursor />
-              )}
+              <div className="flex items-center gap-2">
+                <ThinkingIndicator effect="shade-fire" />
+                <span className="text-sm text-muted-foreground">{t.agentChat.thinking}</span>
+              </div>
             </BubbleContent>
           </Bubble>
-        )}
+        ) : null}
 
-        {/* 操作栏：悬停显示 */}
         {!isStreaming && hasContent && (
           <MessageFooter>
             <Tooltip>

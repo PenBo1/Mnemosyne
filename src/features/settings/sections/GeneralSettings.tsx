@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GeneralSettings - 通用设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useTheme } from "@/lib/theme";
 import { useI18n } from "@/locales/i18n";
 import {
@@ -20,10 +26,20 @@ import {
 } from "@/components/shared/page-layout";
 import type { LogLevel } from "@/services/settings";
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 获取日志级别标签
+ */
 function getLogLevelLabel(t: ReturnType<typeof useI18n>["t"], level: LogLevel): string {
   return t.common.logLevels[level] || level;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 通用设置页面，包含语言、主题、通知、启动和日志配置
+ */
 export function GeneralSettings() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
@@ -37,8 +53,10 @@ export function GeneralSettings() {
     toggleRestoreWindow,
   } = useGeneralSettings();
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.general}</PageTitle>
@@ -46,6 +64,7 @@ export function GeneralSettings() {
         </PageHeading>
       </PageHeader>
 
+      {/* ── 语言设置 ────────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.field.language}>
         <SettingsRow label={t.settings.field.language} description={t.settings.description.language}>
           <Select value={locale} onValueChange={(v) => setLocale(v as "en" | "zh")}>
@@ -60,6 +79,7 @@ export function GeneralSettings() {
         </SettingsRow>
       </SettingsSection>
 
+      {/* ── 主题和通知设置 ────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.description.theme}>
         <SettingsRow label={t.settings.field.theme} description={t.settings.description.theme}>
           <Select value={theme} onValueChange={(v) => setTheme(v as "light" | "dark" | "system")}>
@@ -78,12 +98,14 @@ export function GeneralSettings() {
         </SettingsRow>
       </SettingsSection>
 
+      {/* ── 启动设置 ────────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.startup}>
         <SettingsRow label={t.settings.field.restoreWindow} description={t.settings.description.restoreWindow}>
           <Switch size="default" checked={restoreWindow} onCheckedChange={toggleRestoreWindow} />
         </SettingsRow>
       </SettingsSection>
 
+      {/* ── 日志级别设置 ──────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.field.logLevel}>
         <div className="flex flex-col gap-3 px-4 py-3">
           <div className="flex items-center justify-between">

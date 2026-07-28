@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ShortcutsSettings - 快捷键设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -60,7 +66,7 @@ export function ShortcutsSettings() {
   };
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.shortcuts}</PageTitle>

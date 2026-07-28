@@ -1,4 +1,10 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Sidebar - 侧边栏组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
@@ -22,12 +28,16 @@ import {
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -39,6 +49,8 @@ type SidebarContextProps = {
   toggleSidebar: () => void
 }
 
+// ── 上下文 ──────────────────────────────────────────────────────────────────
+
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
 
 function useSidebar() {
@@ -49,6 +61,8 @@ function useSidebar() {
 
   return context
 }
+
+// ── 侧边栏提供者组件 ────────────────────────────────────────────────────────
 
 function SidebarProvider({
   defaultOpen = true,
@@ -145,6 +159,8 @@ function SidebarProvider({
     </SidebarContext.Provider>
   )
 }
+
+// ── 侧边栏组件 ──────────────────────────────────────────────────────────────
 
 function Sidebar({
   side = "left",
@@ -248,6 +264,8 @@ function Sidebar({
   )
 }
 
+// ── 侧边栏触发器组件 ────────────────────────────────────────────────────────
+
 function SidebarTrigger({
   className,
   onClick,
@@ -274,6 +292,8 @@ function SidebarTrigger({
   )
 }
 
+// ── 侧边栏轨道组件 ──────────────────────────────────────────────────────────
+
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const { toggleSidebar } = useSidebar()
 
@@ -299,6 +319,8 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   )
 }
 
+// ── 侧边栏内嵌组件 ──────────────────────────────────────────────────────────
+
 function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
   return (
     <main
@@ -311,6 +333,8 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     />
   )
 }
+
+// ── 侧边栏输入组件 ──────────────────────────────────────────────────────────
 
 function SidebarInput({
   className,
@@ -329,6 +353,8 @@ function SidebarInput({
   )
 }
 
+// ── 侧边栏头部组件 ──────────────────────────────────────────────────────────
+
 function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -340,6 +366,8 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 侧边栏底部组件 ──────────────────────────────────────────────────────────
+
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -350,6 +378,8 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 侧边栏分隔符组件 ────────────────────────────────────────────────────────
 
 function SidebarSeparator({
   className,
@@ -365,6 +395,8 @@ function SidebarSeparator({
   )
 }
 
+// ── 侧边栏内容组件 ──────────────────────────────────────────────────────────
+
 function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -379,6 +411,8 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 侧边栏分组组件 ──────────────────────────────────────────────────────────
+
 function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -392,6 +426,8 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 侧边栏分组标签组件 ──────────────────────────────────────────────────────
 
 function SidebarGroupLabel({
   className,
@@ -413,6 +449,8 @@ function SidebarGroupLabel({
   )
 }
 
+// ── 侧边栏分组操作组件 ──────────────────────────────────────────────────────
+
 function SidebarGroupAction({
   className,
   asChild = false,
@@ -433,6 +471,8 @@ function SidebarGroupAction({
   )
 }
 
+// ── 侧边栏分组内容组件 ──────────────────────────────────────────────────────
+
 function SidebarGroupContent({
   className,
   ...props
@@ -447,6 +487,8 @@ function SidebarGroupContent({
   )
 }
 
+// ── 侧边栏菜单组件 ──────────────────────────────────────────────────────────
+
 function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
   return (
     <ul
@@ -458,6 +500,8 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
   )
 }
 
+// ── 侧边栏菜单项组件 ────────────────────────────────────────────────────────
+
 function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
   return (
     <li
@@ -468,6 +512,8 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
     />
   )
 }
+
+// ── 侧边栏菜单按钮样式变体 ────────────────────────────────────────────────
 
 const sidebarMenuButtonVariants = cva(
   "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-[calc(var(--radius-4)+2px)] p-2 text-left text-xs ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-[var(--bg-overlay-l2)] hover:text-[var(--text-default)] focus-visible:ring-2 active:bg-[var(--bg-overlay-l2)] active:text-[var(--text-default)] disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-[var(--bg-overlay-l2)] data-open:hover:text-[var(--text-default)] data-active:bg-[var(--bg-overlay-l2)] data-active:font-medium data-active:text-[var(--text-default)] [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
@@ -490,6 +536,8 @@ const sidebarMenuButtonVariants = cva(
     },
   }
 )
+
+// ── 侧边栏菜单按钮组件 ──────────────────────────────────────────────────────
 
 function SidebarMenuButton({
   asChild = false,
@@ -541,6 +589,8 @@ function SidebarMenuButton({
   )
 }
 
+// ── 侧边栏菜单操作组件 ──────────────────────────────────────────────────────
+
 function SidebarMenuAction({
   className,
   asChild = false,
@@ -567,6 +617,8 @@ function SidebarMenuAction({
   )
 }
 
+// ── 侧边栏菜单徽章组件 ──────────────────────────────────────────────────────
+
 function SidebarMenuBadge({
   className,
   ...props
@@ -583,6 +635,8 @@ function SidebarMenuBadge({
     />
   )
 }
+
+// ── 侧边栏菜单骨架屏组件 ────────────────────────────────────────────────────
 
 function SidebarMenuSkeleton({
   className,
@@ -622,6 +676,8 @@ function SidebarMenuSkeleton({
   )
 }
 
+// ── 侧边栏菜单子组件 ────────────────────────────────────────────────────────
+
 function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
   return (
     <ul
@@ -636,6 +692,8 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
   )
 }
 
+// ── 侧边栏菜单子项组件 ──────────────────────────────────────────────────────
+
 function SidebarMenuSubItem({
   className,
   ...props
@@ -649,6 +707,8 @@ function SidebarMenuSubItem({
     />
   )
 }
+
+// ── 侧边栏菜单子按钮组件 ────────────────────────────────────────────────────
 
 function SidebarMenuSubButton({
   asChild = false,

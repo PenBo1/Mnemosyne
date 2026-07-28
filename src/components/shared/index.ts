@@ -9,3 +9,4 @@ export {
 export { LoadingState, EmptyState, StatusBadge } from "./state"
 export { SearchInput } from "./search-input"
 export { SettingRow } from "./setting-row"
+export { SettingsSection, SettingsRow } from "./settings-section"

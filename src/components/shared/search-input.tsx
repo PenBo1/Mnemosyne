@@ -1,4 +1,11 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SearchInput - 搜索输入框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
+import { memo } from "react"
 import { SearchIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -7,7 +14,9 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 
-function SearchInput({
+// ── 搜索输入框组件 ──────────────────────────────────────────────────────────
+
+const SearchInput = memo(function SearchInput({
   className,
   icon,
   ...props
@@ -22,6 +31,6 @@ function SearchInput({
       <InputGroupInput type="search" {...props} />
     </InputGroup>
   )
-}
+})
 
 export { SearchInput }

@@ -1,7 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Popover - 弹出框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 弹出框组件 ──────────────────────────────────────────────────────────────
 
 function Popover({
   openDelay,
@@ -14,17 +22,23 @@ function Popover({
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
 
+// ── 弹出框触发器组件 ────────────────────────────────────────────────────────
+
 function PopoverTrigger({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
+// ── 弹出框锚点组件 ──────────────────────────────────────────────────────────
+
 function PopoverAnchor({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
 }
+
+// ── 弹出框内容组件 ──────────────────────────────────────────────────────────
 
 function PopoverContent({
   className,

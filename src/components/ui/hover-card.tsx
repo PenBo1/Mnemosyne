@@ -1,7 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HoverCard - 悬浮卡片组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+
+// ── 悬浮卡片组件 ────────────────────────────────────────────────────────────
 
 function HoverCard({
   ...props
@@ -15,6 +23,8 @@ function HoverCard({
   )
 }
 
+// ── 悬浮卡片触发器组件 ──────────────────────────────────────────────────────
+
 function HoverCardTrigger({
   ...props
 }: React.ComponentProps<typeof PopoverTrigger>) {
@@ -25,6 +35,8 @@ function HoverCardTrigger({
     />
   )
 }
+
+// ── 悬浮卡片内容组件 ────────────────────────────────────────────────────────
 
 function HoverCardContent({
   className,

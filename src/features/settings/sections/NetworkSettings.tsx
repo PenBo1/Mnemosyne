@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * NetworkSettings - 网络代理设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { useI18n } from "@/locales/i18n";
 import { Switch } from "@/components/ui/switch";
@@ -12,6 +18,11 @@ import {
   PageDescription,
 } from "@/components/shared/page-layout";
 import { useNetworkSettings } from "@/features/settings/hooks";
+
+// placeholder 中展示的默认值（与 settings.ts 的 DEFAULTS 保持一致）。
+const DEFAULT_PROXY_HOST = "127.0.0.1";
+const DEFAULT_PROXY_PORT = "7890";
+const DEFAULT_TIMEOUT_SECONDS = "30";
 
 export function NetworkSettings() {
   const { t } = useI18n();
@@ -34,7 +45,7 @@ export function NetworkSettings() {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.network}</PageTitle>
@@ -62,7 +73,7 @@ export function NetworkSettings() {
             >
               <Input
                 type="text"
-                placeholder="127.0.0.1"
+                placeholder={DEFAULT_PROXY_HOST}
                 value={proxyHost}
                 onChange={(e) => setProxyHost(e.target.value)}
                 onBlur={saveProxySettings}
@@ -76,7 +87,7 @@ export function NetworkSettings() {
             >
               <Input
                 type="number"
-                placeholder="7890"
+                placeholder={DEFAULT_PROXY_PORT}
                 value={proxyPort}
                 onChange={(e) => setProxyPort(e.target.value)}
                 onBlur={saveProxySettings}
@@ -131,7 +142,7 @@ export function NetworkSettings() {
         >
           <Input
             type="number"
-            placeholder="30"
+            placeholder={DEFAULT_TIMEOUT_SECONDS}
             value={timeout}
             onChange={(e) => setTimeout(e.target.value)}
             onBlur={saveProxySettings}

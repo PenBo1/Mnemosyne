@@ -1,10 +1,18 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ChatHeader - 聊天页面顶部标题栏组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { memo } from "react";
-import { Plus, Trash2, PanelRightOpen, ListChecks } from "lucide-react";
+import { Plus, Trash2, PanelRightOpen, ListChecks, Database, Repeat2 } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Spinner } from "@/components/ui/spinner";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface ChatHeaderProps {
   title: string;
@@ -12,23 +20,35 @@ interface ChatHeaderProps {
   hasSession: boolean;
   planModeActive: boolean;
   panelOpen: boolean;
+  memoryPanelOpen: boolean;
+  loopPanelOpen: boolean;
   onNewSession: () => void;
   onDeleteSession: () => void;
   onTogglePanel: () => void;
   onTogglePlanMode: () => void;
+  onToggleMemoryPanel: () => void;
+  onToggleLoopPanel: () => void;
 }
 
-/** 极简顶栏：左侧标题 + 状态，右侧操作按钮组 */
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 聊天页面顶部标题栏，包含标题、状态指示和操作按钮组
+ */
 export const ChatHeader = memo(function ChatHeader({
   title,
   streaming,
   hasSession,
   planModeActive,
   panelOpen,
+  memoryPanelOpen,
+  loopPanelOpen,
   onNewSession,
   onDeleteSession,
   onTogglePanel,
   onTogglePlanMode,
+  onToggleMemoryPanel,
+  onToggleLoopPanel,
 }: ChatHeaderProps) {
   const { t } = useI18n();
 
@@ -40,6 +60,42 @@ export const ChatHeader = memo(function ChatHeader({
       </div>
 
       <div className="flex items-center gap-0.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onToggleMemoryPanel}
+              aria-label={t.memory.title}
+              className={cn(
+                "text-muted-foreground hover:text-foreground",
+                memoryPanelOpen && "bg-muted text-foreground",
+              )}
+            >
+              <Database className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t.memory.title}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onToggleLoopPanel}
+              aria-label={t.loop.title}
+              className={cn(
+                "text-muted-foreground hover:text-foreground",
+                loopPanelOpen && "bg-muted text-foreground",
+              )}
+            >
+              <Repeat2 className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t.loop.title}</TooltipContent>
+        </Tooltip>
+
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

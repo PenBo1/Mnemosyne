@@ -1,9 +1,17 @@
-﻿"use client"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Tooltip - 工具提示组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+"use client"
 
 import * as React from "react"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 工具提示提供者组件 ──────────────────────────────────────────────────────
 
 function TooltipProvider({
   delayDuration = 0,
@@ -18,17 +26,23 @@ function TooltipProvider({
   )
 }
 
+// ── 工具提示组件 ────────────────────────────────────────────────────────────
+
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
+// ── 工具提示触发器组件 ──────────────────────────────────────────────────────
+
 function TooltipTrigger({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 }
+
+// ── 工具提示内容组件 ────────────────────────────────────────────────────────
 
 function TooltipContent({
   className,

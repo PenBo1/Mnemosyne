@@ -8,6 +8,7 @@
 // 5. Monitors token usage and fires ContextCompressionCallback when threshold exceeded (P2.6)
 
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useAgentStore } from "@/features/chat/store";
 import type { IpcResponse } from "@/services/ipc";
 import { DEFAULT_EFFORT, isValidEffort, type EffortLevel } from "@/types/effort";
@@ -18,6 +19,26 @@ import {
 } from "@/types/collaboration-style";
 import type { ContextCompressionCallback } from "@/types/context-compression";
 import { compactContextMessages, shouldCompact, type CompactMessage } from "../utils/compact";
+import {
+  FailureDetector,
+  type FailureReport,
+  type FailureCallback,
+  type AgentStep,
+  type ToolRegistry,
+} from "../failure-detection";
+
+// ── Module-level state safety limits ───────────────────────
+//
+// 防止模块级单例在长时间运行或会话切换时泄漏资源：
+// - MAX_TRACE_STEPS: currentTraceSteps 环形缓冲上限（超出时丢弃最旧 step）
+// - CHANNEL_TIMEOUT_MS: 后端无响应时强制 flush + setStreaming(false) 的阈值
+
+const MAX_TRACE_STEPS = 1000;
+const CHANNEL_TIMEOUT_MS = 5 * 60 * 1000; // 5 分钟
+
+// 上下文压缩建议的预算计算参数（finish 事件触发压缩回调时使用）
+const CONTEXT_COMPRESS_RATIO = 0.2; // 保留比例：原上下文的 20%
+const MAX_CONTEXT_TOKENS = 12000; // 压缩后预算上限
 
 // ── Chat Event Types (mirrors Rust ChatEvent enum) ───────────
 
@@ -41,6 +62,12 @@ interface ToolCallStartEvent extends ChatEventBase {
   name: string;
 }
 
+interface ToolCallDeltaEvent extends ChatEventBase {
+  kind: "toolCallDelta";
+  id: string;
+  argsDelta: string;
+}
+
 interface ToolCallEndEvent extends ChatEventBase {
   kind: "toolCallEnd";
   id: string;
@@ -51,6 +78,12 @@ interface ToolApprovalRequiredEvent extends ChatEventBase {
   requestId: string;
   name: string;
   args: Record<string, unknown>;
+}
+
+interface RetryEvent extends ChatEventBase {
+  kind: "retry";
+  attempt: number;
+  maxAttempts: number;
 }
 
 interface FinishEvent extends ChatEventBase {
@@ -68,8 +101,10 @@ type ChatEvent =
   | TextDeltaEvent
   | ReasoningDeltaEvent
   | ToolCallStartEvent
+  | ToolCallDeltaEvent
   | ToolCallEndEvent
   | ToolApprovalRequiredEvent
+  | RetryEvent
   | FinishEvent
   | ErrorEvent;
 
@@ -120,6 +155,96 @@ let currentWorkspacePath: string | null = null;
 
 export function setCurrentWorkspacePath(path: string | null): void {
   currentWorkspacePath = path;
+}
+
+// ── Failure Detection ───────────────────────────────────────
+//
+// 失败模式检测器用于检测 Agent 执行过程中的异常模式：
+// - HallucinatedAction: 调用不存在的工具
+// - ScopeCreep: 操作范围超出原始请求
+// - CascadingError: 错误级联传播
+// - ContextLoss: 约束遗忘
+// - ToolMisuse: 工具参数错误
+//
+// 检测器以非阻塞方式运行，不会停止 Agent 执行。
+
+let failureDetector: FailureDetector | null = null;
+let failureCallbacks: Set<FailureCallback> = new Set();
+let currentTraceSteps: AgentStep[] = [];
+let currentOriginalRequest: string | null = null;
+let currentConstraints: string[] = [];
+
+export function initFailureDetector(toolRegistry?: ToolRegistry): void {
+  failureDetector = new FailureDetector({ toolRegistry });
+}
+
+export function getFailureDetector(): FailureDetector | null {
+  return failureDetector;
+}
+
+export function onFailureDetected(callback: FailureCallback): () => void {
+  failureCallbacks.add(callback);
+  return () => {
+    failureCallbacks.delete(callback);
+  };
+}
+
+export function setOriginalRequest(request: string): void {
+  currentOriginalRequest = request;
+  currentTraceSteps = [];
+  if (failureDetector) {
+    failureDetector.setOriginalRequest(request);
+  }
+}
+
+export function setConstraints(constraints: string[]): void {
+  currentConstraints = constraints;
+  if (failureDetector) {
+    failureDetector.setConstraints(constraints);
+  }
+}
+
+function emitFailure(report: FailureReport): void {
+  for (const callback of failureCallbacks) {
+    try {
+      callback(report);
+    } catch (error) {
+      console.error("[chat-runtime] Failure callback error:", error);
+    }
+  }
+}
+
+function processToolCallForFailureDetection(
+  id: string,
+  name: string,
+  status: "pending" | "running" | "succeeded" | "failed",
+  error?: string,
+  args?: Record<string, unknown>,
+  result?: unknown,
+): void {
+  if (!failureDetector) return;
+
+  const step: AgentStep = {
+    id,
+    type: "tool_call",
+    toolName: name,
+    toolArgs: args,
+    toolResult: result,
+    status,
+    error,
+    timestamp: Date.now(),
+  };
+
+  // 环形缓冲：超过上限时丢弃最旧 step，防止长时间运行内存泄漏
+  if (currentTraceSteps.length >= MAX_TRACE_STEPS) {
+    currentTraceSteps.shift();
+  }
+  currentTraceSteps.push(step);
+
+  const reports = failureDetector.onStepFinish(step);
+  for (const report of reports) {
+    emitFailure(report);
+  }
 }
 
 // ── Effort Level (模块级状态,对齐 currentWorkspacePath 模式) ──
@@ -248,15 +373,6 @@ export function needsCompression(messages: readonly CompactMessage[]): boolean {
   return shouldCompact(messages, compressionThreshold);
 }
 
-// Legacy exports for backward compatibility during migration
-export function setCurrentModelConfig(_config: unknown): void {
-  // No-op: model config is managed by Rust backend now
-}
-
-export function setCurrentCustomInstructions(_text: string): void {
-  // No-op: custom instructions passed via IPC request
-}
-
 // ── Send message ────────────────────────────────────────────
 
 export async function sendMessage(
@@ -269,14 +385,24 @@ export async function sendMessage(
   // 当前传递仅用于协议预声明 —— 后端加字段后即可启用 per-agent 工具限制。
   toolWhitelist?: readonly string[],
 ): Promise<void> {
+  // 会话切换守卫：取消上一次会话遗留的 rafId 并 flush 残留 buffer，
+  // 防止 pending rAF 回调将旧 session 内容写入新 session 的 store
+  flushNow();
   const store = useAgentStore.getState();
   store.clearStreamingContent();
   store.clearStreamingReasoning();
   store.clearActiveToolCalls();
 
+  // 初始化失败检测器
+  if (!failureDetector) {
+    initFailureDetector();
+  }
+  setOriginalRequest(content);
+
   const onEvent = new Channel<ChatEvent>();
 
   onEvent.onmessage = (event: ChatEvent) => {
+    console.log("[chat-runtime] event received", event.kind);
     switch (event.kind) {
       case "textDelta":
         textBuffer += event.content;
@@ -287,10 +413,18 @@ export async function sendMessage(
         scheduleFlush();
         break;
       case "toolCallStart":
-        store.addToolCallStart({ id: event.id, name: event.name });
+        store.addToolCallStart({ id: event.id, name: event.name, startPosition: textBuffer.length });
+        // 失败检测：工具调用开始（pending 状态）
+        processToolCallForFailureDetection(event.id, event.name, "pending");
+        break;
+      case "toolCallDelta":
+        // 累积工具调用参数（流式），更新 store 中的工具调用状态
+        store.appendToolCallArgs(event.id, event.argsDelta);
         break;
       case "toolCallEnd":
         store.updateToolCallEnd(event.id);
+        // 失败检测：工具调用结束（succeeded 状态）
+        processToolCallForFailureDetection(event.id, "", "succeeded");
         break;
       case "toolApprovalRequired":
         store.setPendingConfirmation({
@@ -299,8 +433,16 @@ export async function sendMessage(
           args: event.args,
         });
         break;
+      case "retry":
+        // 重试事件：LLM 流式调用因临时性错误（503/429 等）重试，仅日志不阻塞主流程
+        console.log(
+          `[chat-runtime] Retrying (attempt ${event.attempt}/${event.maxAttempts})`,
+        );
+        break;
       case "finish":
         flushNow();
+        // 确保流式状态正确结束
+        store.setStreaming(false);
         // P2.6: 检查 token 是否超过压缩阈值
         if (compressionCallback && event.inputTokens > compressionThreshold) {
           compressionCallback({
@@ -308,8 +450,8 @@ export async function sendMessage(
             phase: "start",
             compressibleTokens: event.inputTokens,
             budgetTokens: Math.min(
-              Math.ceil(event.inputTokens * 0.2),
-              12000,
+              Math.ceil(event.inputTokens * CONTEXT_COMPRESS_RATIO),
+              MAX_CONTEXT_TOKENS,
             ),
             message: `Context ${event.inputTokens} tokens exceeds threshold ${compressionThreshold}`,
           });
@@ -318,11 +460,22 @@ export async function sendMessage(
             phase: "end",
             compressibleTokens: event.inputTokens,
             budgetTokens: Math.min(
-              Math.ceil(event.inputTokens * 0.2),
-              12000,
+              Math.ceil(event.inputTokens * CONTEXT_COMPRESS_RATIO),
+              MAX_CONTEXT_TOKENS,
             ),
             message: `Context compression suggested (${event.inputTokens} tokens)`,
           });
+        }
+        // 失败检测：完成后分析完整 trace
+        if (failureDetector && currentTraceSteps.length > 0) {
+          const traceReports = failureDetector.analyzeTrace({
+            steps: currentTraceSteps,
+            originalRequest: currentOriginalRequest ?? undefined,
+            constraints: currentConstraints.length > 0 ? currentConstraints : undefined,
+          });
+          for (const report of traceReports) {
+            emitFailure(report);
+          }
         }
         break;
       case "error":
@@ -330,9 +483,35 @@ export async function sendMessage(
         store.setStreaming(false);
         store.clearActiveToolCalls();
         store.setError(event.message);
+        toast.error(event.message);
+        // 失败检测：错误事件
+        if (failureDetector) {
+          const errorStep: AgentStep = {
+            id: `error-${Date.now()}`,
+            type: "tool_call",
+            status: "failed",
+            error: event.message,
+            timestamp: Date.now(),
+          };
+          const reports = failureDetector.onStepFinish(errorStep);
+          for (const report of reports) {
+            emitFailure(report);
+          }
+        }
         break;
     }
   };
+
+  // Channel 超时守卫：后端若 5 分钟内未完成（卡死/网络分区），强制 flush 并
+  // 结束流式状态，避免 await invoke 永久挂起。不抛错，让上层按"已结束"处理。
+  const channelTimeoutId = setTimeout(() => {
+    console.warn(
+      `[chat-runtime] Channel no completion within ${CHANNEL_TIMEOUT_MS}ms, force flushing`,
+    );
+    flushNow();
+    store.setStreaming(false);
+    store.clearActiveToolCalls();
+  }, CHANNEL_TIMEOUT_MS);
 
   try {
     await invoke<IpcResponse<void>>("chat_send_message", {
@@ -352,6 +531,7 @@ export async function sendMessage(
       onEvent,
     });
 
+    console.log("[chat-runtime] invoke completed successfully");
     flushNow();
     store.setStreaming(false);
     store.clearActiveToolCalls();
@@ -362,23 +542,29 @@ export async function sendMessage(
     // Reload from DB to sync with persisted state
     await store.loadMessages(sessionId);
   } catch (err) {
+    console.error("[chat-runtime] invoke failed", err);
     flushNow();
     store.setStreaming(false);
     store.clearActiveToolCalls();
     const msg = err instanceof Error ? err.message : "Failed to send message";
     store.setError(msg);
+    toast.error(msg);
     throw err;
+  } finally {
+    clearTimeout(channelTimeoutId);
   }
 }
 
 // ── Stop chat ───────────────────────────────────────────────
 
 export function stopChat(sessionId: string): void {
-  invoke("chat_stop", { sessionId }).catch(() => {
-    // Ignore errors on stop
+  invoke("chat_stop", { sessionId }).catch((err) => {
+    console.error("[chat-runtime] stopChat failed", err);
   });
   flushNow();
   const store = useAgentStore.getState();
   store.setStreaming(false);
   store.clearActiveToolCalls();
+  // 清空失败检测回调集合，防止模块级 Set 在多次 stop 后累积未释放的引用
+  failureCallbacks.clear();
 }

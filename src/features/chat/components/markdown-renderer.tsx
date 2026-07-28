@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MarkdownRenderer - Markdown 内容渲染组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -19,7 +25,10 @@ import {
 } from "@/components/ui/tooltip";
 import { Copy, Check } from "lucide-react";
 import { useCopy } from "@/features/chat/hooks/use-copy";
+import { useI18n } from "@/locales/i18n";
 import { createRehypeHighlight } from "@/features/chat/components/rehype-highlight-min";
+
+// ── 常量配置 ────────────────────────────────────────────────────────────────
 
 const LANGUAGES: Readonly<Record<string, LanguageFn>> = {
   javascript,
@@ -33,6 +42,11 @@ const LANGUAGES: Readonly<Record<string, LanguageFn>> = {
 
 const rehypeHighlight = createRehypeHighlight(LANGUAGES);
 
+// ── 子组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 代码块组件
+ */
 function CodeBlock({
   language,
   className,
@@ -43,13 +57,14 @@ function CodeBlock({
   children: React.ReactNode;
 }) {
   const { copied, copy } = useCopy();
+  const { t } = useI18n();
   const codeText = String(children).replace(/\n$/, "");
 
   return (
     <div className="relative my-3 rounded-lg border border-border bg-muted/30">
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border">
         <span className="text-xs font-medium text-muted-foreground">
-          {language ?? "code"}
+          {language ?? t.chat.codeBlock.defaultLanguage}
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -57,7 +72,7 @@ function CodeBlock({
               variant="ghost"
               size="icon-xs"
               onClick={() => copy(codeText)}
-              aria-label="Copy code"
+              aria-label={t.chat.codeBlock.copyCode}
             >
               {copied ? (
                 <Check className="size-3" />
@@ -66,7 +81,7 @@ function CodeBlock({
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Copy code</TooltipContent>
+          <TooltipContent>{t.chat.codeBlock.copyCode}</TooltipContent>
         </Tooltip>
       </div>
       <pre className="overflow-x-auto p-3 text-xs">
@@ -75,6 +90,8 @@ function CodeBlock({
     </div>
   );
 }
+
+// ── Markdown 组件配置 ──────────────────────────────────────────────────────
 
 const components: Components = {
   pre: (props) => <>{props.children}</>,
@@ -149,6 +166,11 @@ const components: Components = {
   ),
 };
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Markdown 渲染器组件，支持代码高亮、表格、列表等
+ */
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
 }: {

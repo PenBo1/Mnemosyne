@@ -1,5 +1,13 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 应用设置服务 - 提供应用配置的持久化存储与访问
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { LazyStore } from "@tauri-apps/plugin-store";
 import type { KeyBinding, ShortcutId } from "@/lib/shortcuts";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 export interface AiModelConfig {
   id: string;
@@ -63,6 +71,12 @@ type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
 
+// ── 默认值 ────────────────────────────────────────────────────────────────
+
+// 网络默认值（与 NetworkSettings.tsx 的 placeholder 常量保持一致）
+const DEFAULT_PROXY_PORT = "7890";
+const DEFAULT_TIMEOUT_SECONDS = "30";
+
 const DEFAULTS: AppSettings = {
   ui: {
     theme: "system",
@@ -86,12 +100,14 @@ const DEFAULTS: AppSettings = {
   network: {
     proxyEnabled: false,
     proxyHost: "",
-    proxyPort: "7890",
+    proxyPort: DEFAULT_PROXY_PORT,
     proxyUsername: "",
     proxyPassword: "",
-    timeout: "30",
+    timeout: DEFAULT_TIMEOUT_SECONDS,
   },
 };
+
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -110,7 +126,11 @@ function deepMerge<T>(base: T, override: unknown): T {
   return out as T;
 }
 
+// ── 存储实例 ────────────────────────────────────────────────────────────────
+
 const store = new LazyStore("config.json");
+
+// ── 设置读写 ────────────────────────────────────────────────────────────────
 
 export async function loadSettings(): Promise<AppSettings> {
   try {
@@ -148,6 +168,8 @@ export async function saveSettings(settings: DeepPartial<AppSettings>, current?:
     throw err;
   }
 }
+
+// ── AI 模型管理 ────────────────────────────────────────────────────────────────
 
 export async function getActiveModel(): Promise<AiModelConfig | null> {
   const settings = await loadSettings();
@@ -193,6 +215,8 @@ export async function updateModel(id: string, updates: Partial<Omit<AiModelConfi
   }
 }
 
+// ── 日志级别 ────────────────────────────────────────────────────────────────
+
 export async function getLogLevel(): Promise<LogLevel> {
   const settings = await loadSettings();
   return settings.system?.log_level ?? "info";
@@ -201,6 +225,8 @@ export async function getLogLevel(): Promise<LogLevel> {
 export async function setLogLevel(level: LogLevel): Promise<void> {
   await saveSettings({ system: { log_level: level } });
 }
+
+// ── 窗口状态 ────────────────────────────────────────────────────────────────
 
 export async function getRestoreWindowState(): Promise<boolean> {
   const settings = await loadSettings();
@@ -217,6 +243,8 @@ export async function setWindowBounds(bounds: WindowBounds | null): Promise<void
   await saveSettings({ window: { bounds } });
 }
 
+// ── 自定义指令 ────────────────────────────────────────────────────────────────
+
 export async function getCustomInstructions(): Promise<string> {
   const settings = await loadSettings();
   return settings.ai.custom_instructions;
@@ -227,6 +255,8 @@ export async function setCustomInstructions(text: string): Promise<void> {
   settings.ai.custom_instructions = text;
   await saveSettings({ ai: settings.ai }, settings);
 }
+
+// ── 代码片段管理 ────────────────────────────────────────────────────────────────
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -259,6 +289,8 @@ export async function saveSnippets(list: Snippet[]): Promise<void> {
   await saveSettings({ ai: settings.ai }, settings);
 }
 
+// ── 快捷键覆盖 ────────────────────────────────────────────────────────────────
+
 export async function getShortcutsOverrides(): Promise<Record<string, KeyBinding[]>> {
   const settings = await loadSettings();
   return settings.shortcuts;
@@ -279,6 +311,8 @@ export async function resetShortcutOverride(id: ShortcutId): Promise<Record<stri
 export async function resetAllShortcuts(): Promise<void> {
   await saveSettings({ shortcuts: {} });
 }
+
+// ── 网络设置 ────────────────────────────────────────────────────────────────
 
 export async function getNetworkSettings(): Promise<NetworkSettings> {
   const settings = await loadSettings();

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WorkspacePicker - 工作区选择器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { memo, useState } from "react";
 import { PlusIcon, FolderOpenIcon, FolderIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -26,15 +32,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-/** 新建工作区专属标识 —— 与真实 workspace id 区分（UUID 不会以 _ 开头） */
-const NEW_WORKSPACE_VALUE = "__new_workspace__";
+// ── 常量配置 ────────────────────────────────────────────────────────────────
 
 /**
- * 工作区选择器：shadcn Select 下拉 + 内置「新建工作区」弹窗。
- *
- * - 自包含：直接读写 useWorkspaceStore，不依赖父组件传参
- * - 新建工作区复用 pickDirectory + addWorkspace，与侧边栏逻辑一致
- * - 选择 __new_workspace__ 时不切换激活工作区，而是打开弹窗
+ * 新建工作区专属标识，与真实 workspace id 区分
+ */
+const NEW_WORKSPACE_VALUE = "__new_workspace__";
+
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 工作区选择器，下拉选择当前工作区并支持新建工作区
  */
 export const WorkspacePicker = memo(function WorkspacePicker() {
   const { t } = useI18n();
@@ -48,6 +56,9 @@ export const WorkspacePicker = memo(function WorkspacePicker() {
   const [path, setPath] = useState("");
   const [creating, setCreating] = useState(false);
 
+  /**
+   * 处理工作区切换
+   */
   const handleValueChange = (value: string) => {
     if (value === NEW_WORKSPACE_VALUE) {
       setDialogOpen(true);
@@ -56,6 +67,9 @@ export const WorkspacePicker = memo(function WorkspacePicker() {
     setActiveWorkspace(value);
   };
 
+  /**
+   * 选择目录
+   */
   const handlePickDirectory = async () => {
     const selected = await pickDirectory();
     if (selected) {
@@ -67,6 +81,9 @@ export const WorkspacePicker = memo(function WorkspacePicker() {
     }
   };
 
+  /**
+   * 创建工作区
+   */
   const handleCreate = async () => {
     if (!name.trim() || !path) return;
     setCreating(true);
@@ -83,6 +100,9 @@ export const WorkspacePicker = memo(function WorkspacePicker() {
     }
   };
 
+  /**
+   * 处理对话框状态变更
+   */
   const handleOpenChange = (open: boolean) => {
     setDialogOpen(open);
     if (!open) {
@@ -120,7 +140,7 @@ export const WorkspacePicker = memo(function WorkspacePicker() {
         </SelectContent>
       </Select>
 
-      {/* 新建工作区弹窗（受控，无 trigger） */}
+      {/* 新建工作区弹窗 */}
       <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
         <DialogContent>
           <DialogHeader>

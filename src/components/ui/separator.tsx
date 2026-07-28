@@ -1,7 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Separator - 分隔符组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 import { Separator as SeparatorPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 分隔符组件 ──────────────────────────────────────────────────────────────
 
 function Separator({
   className,

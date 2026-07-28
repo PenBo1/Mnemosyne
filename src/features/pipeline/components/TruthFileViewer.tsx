@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * TruthFileViewer - 真实性文件查看器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useEffect } from "react";
 import { useI18n } from "@/locales/i18n";
 import { Card } from "@/components/ui/card";
@@ -40,6 +46,7 @@ export function TruthFileViewer({ bookId }: TruthFileViewerProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     if (!bookId) {
       setContent(null);
       return;
@@ -49,12 +56,19 @@ export function TruthFileViewer({ bookId }: TruthFileViewerProps) {
     pipelineService
       .readTruthFile(bookId, activeKind)
       .then((text) => {
-        setContent(text);
+        if (!cancelled) setContent(text);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load truth file");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load truth file");
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [bookId, activeKind]);
 
   if (!bookId) {

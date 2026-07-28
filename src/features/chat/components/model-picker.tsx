@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ModelPicker - AI 模型选择器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { memo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { CpuIcon } from "lucide-react";
@@ -15,12 +21,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
 /**
- * 模型选择器：shadcn Select 下拉。
- *
- * - 自包含：从 config.json 读取 ai.models + active_model_id
- * - 切换时写入 config.json（Rust 后端在下次发送消息时读取最新配置）
- * - 无模型时显示「打开设置」按钮，跳转到模型设置页
+ * 模型选择器，下拉选择当前使用的 AI 模型
  */
 export const ModelPicker = memo(function ModelPicker() {
   const { t } = useI18n();
@@ -41,20 +45,27 @@ export const ModelPicker = memo(function ModelPicker() {
     };
   }, []);
 
+  /**
+   * 处理模型切换
+   */
   const handleValueChange = (value: string) => {
     setActiveModelId(value);
-    void setActiveModel(value).catch(() => {
+    void setActiveModel(value).catch((err) => {
+      console.error("[model-picker] setActiveModel failed:", err);
       toast.error(t.common.failedToSave);
     });
   };
 
+  /**
+   * 打开模型设置页
+   */
   const openModelSettings = () => {
-    dispatch({ type: "SET_PAGE", payload: "settings.model" });
+    dispatch({ type: "SET_PAGE", payload: "settings.ai" });
   };
 
   const activeModel = models.find((m) => m.id === activeModelId);
 
-  // 无模型时直接显示「打开设置」按钮，避免空下拉
+  // 无模型时直接显示「打开设置」按钮
   if (models.length === 0) {
     return (
       <Button variant="ghost" size="sm" onClick={openModelSettings} className="text-muted-foreground">

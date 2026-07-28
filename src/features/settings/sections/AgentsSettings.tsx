@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AgentsSettings - 智能体设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,14 +29,21 @@ import {
 import { isValidHandle, normalizeHandle, type Snippet } from "@/services/settings";
 import { AgentIdentityBlock } from "@/features/settings/sections/AgentIdentityBlock";
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 智能体设置页面，包含自定义指令、身份文件和代码片段管理
+ */
 export function AgentsSettings() {
   const { t } = useI18n();
   const customInstructions = useCustomInstructions();
   const snippets = useSnippets();
   const [editing, setEditing] = useState<Snippet | null>(null);
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.agents}</PageTitle>
@@ -47,6 +60,7 @@ export function AgentsSettings() {
 
       <AgentIdentityBlock />
 
+      {/* ── 代码片段管理 ────────────────────────────────────────────────────── */}
       <SettingsSection title={t.agents.snippets} description={t.agents.snippetsDesc}>
         <div className="flex flex-col gap-3 px-4 py-3">
           <div className="flex items-center justify-between">
@@ -132,6 +146,11 @@ export function AgentsSettings() {
   );
 }
 
+// ── 子组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 自定义指令编辑区块
+ */
 function CustomInstructionsBlock({
   value,
   loaded,
@@ -142,7 +161,6 @@ function CustomInstructionsBlock({
   onSave: (text: string) => void;
 }) {
   const { t } = useI18n();
-  // 用 key 重置后：每次 loaded 状态变化时父组件重挂，初始值即 value
   const [draft, setDraft] = useState(value);
 
   return (
@@ -172,6 +190,9 @@ function CustomInstructionsBlock({
   );
 }
 
+/**
+ * 代码片段编辑对话框
+ */
 function SnippetEditorDialog({
   snippet,
   existing,
@@ -184,10 +205,11 @@ function SnippetEditorDialog({
   onSave: (s: Snippet) => void;
 }) {
   const { t } = useI18n();
-  // 用 key 重置后：snippet 变化时父组件重挂，初始值即 snippet
   const [draft, setDraft] = useState<Snippet | null>(snippet);
 
   if (!draft) return null;
+
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
 
   const isNew = !existing.some((s) => s.id === draft.id);
   const handleErr = !draft.handle
@@ -199,6 +221,8 @@ function SnippetEditorDialog({
         : null;
   const canSave = !handleErr && draft.name.trim().length > 0 && draft.content.trim().length > 0;
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
     <Dialog open={!!snippet} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
@@ -206,6 +230,7 @@ function SnippetEditorDialog({
           <DialogTitle>{isNew ? t.agents.newSnippet : t.agents.editSnippet}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
+          {/* ── Handle 和名称 ──────────────────────────────────────────────── */}
           <div className="flex gap-2">
             <div className="flex w-32 flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">
@@ -240,6 +265,7 @@ function SnippetEditorDialog({
               />
             </div>
           </div>
+          {/* ── 描述 ──────────────────────────────────────────────────────── */}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">
               {t.agents.snippetDescription}
@@ -251,6 +277,7 @@ function SnippetEditorDialog({
               className="h-8 text-xs"
             />
           </div>
+          {/* ── 内容 ──────────────────────────────────────────────────────── */}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">
               {t.agents.snippetContent}

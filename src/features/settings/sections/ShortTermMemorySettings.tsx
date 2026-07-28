@@ -150,14 +150,14 @@ export function ShortTermMemorySettings() {
 
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
 
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>

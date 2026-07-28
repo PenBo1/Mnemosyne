@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EmbeddingSettings - 向量嵌入设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +30,9 @@ import {
   type VectorStats,
 } from "@/features/settings/services";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/** 默认嵌入配置 */
 const DEFAULT_CONFIG: EmbeddingConfig = {
   enabled: false,
   baseUrl: "http://localhost:11434/v1",
@@ -32,6 +41,11 @@ const DEFAULT_CONFIG: EmbeddingConfig = {
   dim: 768,
 };
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 向量嵌入设置页面，配置嵌入模型和查看索引统计
+ */
 export function EmbeddingSettings() {
   const { t } = useI18n();
   const [config, setConfig] = useState<EmbeddingConfig>(DEFAULT_CONFIG);
@@ -39,6 +53,8 @@ export function EmbeddingSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +75,11 @@ export function EmbeddingSettings() {
     return () => { cancelled = true; };
   }, []);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 切换启用状态
+   */
   const handleToggleEnabled = async (checked: boolean) => {
     const prev = config.enabled;
     setConfig({ ...config, enabled: checked });
@@ -71,6 +92,9 @@ export function EmbeddingSettings() {
     }
   };
 
+  /**
+   * 保存配置
+   */
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
@@ -83,6 +107,9 @@ export function EmbeddingSettings() {
     }
   };
 
+  /**
+   * 测试连接
+   */
   const handleTest = async () => {
     // 测试前先保存当前配置
     setTesting(true);
@@ -97,16 +124,20 @@ export function EmbeddingSettings() {
     }
   };
 
+  // ── 加载中状态 ────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.embedding}</PageTitle>
@@ -124,7 +155,7 @@ export function EmbeddingSettings() {
         )}
       </PageHeader>
 
-      {/* 功能开关 */}
+      {/* ── 功能开关 ────────────────────────────────────────────────────────── */}
       <SettingsSection title={t.settings.embeddingSettings.featureToggle}>
         <SettingsRow
           label={t.settings.embeddingSettings.featureToggle}
@@ -137,7 +168,7 @@ export function EmbeddingSettings() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* 配置表单 */}
+      {/* ── 配置表单 ────────────────────────────────────────────────────────── */}
       {config.enabled && (
         <SettingsSection title={t.settings.embeddingSettings.title}>
           <SettingsRow
@@ -171,7 +202,7 @@ export function EmbeddingSettings() {
             <Input
               type="password"
               value={config.apiKey}
-              placeholder="sk-... (本地可空)"
+              placeholder={t.settings.embeddingSettings.apiKeyPlaceholder}
               onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
               className="w-56"
             />
@@ -193,7 +224,7 @@ export function EmbeddingSettings() {
         </SettingsSection>
       )}
 
-      {/* 索引统计 */}
+      {/* ── 索引统计 ────────────────────────────────────────────────────────── */}
       {config.enabled && stats && (
         <SettingsSection title={t.settings.embeddingSettings.statsTitle}>
           <SettingsRow
@@ -213,7 +244,7 @@ export function EmbeddingSettings() {
         </SettingsSection>
       )}
 
-      {/* 未启用说明 */}
+      {/* ── 未启用说明 ──────────────────────────────────────────────────────── */}
       {!config.enabled && (
         <SettingsSection title={t.settings.embeddingSettings.title}>
           <div className="px-4 py-3">

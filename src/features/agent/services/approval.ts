@@ -6,7 +6,7 @@
 // 3. 用户点击 Approve/Deny → 调用 respondApproval
 // 4. respondApproval 调用 chat_tool_respond IPC → Rust 继续执行
 
-import { invoke } from "@tauri-apps/api/core";
+import { ipcVoid } from "@/services/ipc";
 import { useAgentStore } from "@/features/chat/store";
 
 /**
@@ -19,7 +19,7 @@ export async function respondApproval(
   approved: boolean,
 ): Promise<void> {
   try {
-    await invoke("chat_tool_respond", {
+    await ipcVoid("chat_tool_respond", {
       request: { sessionId, requestId, approved },
     });
   } catch {

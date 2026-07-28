@@ -1,4 +1,10 @@
-﻿"use client"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Sheet - 抽屉组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+"use client"
 
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "radix-ui"
@@ -7,9 +13,13 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+// ── 抽屉组件 ────────────────────────────────────────────────────────────────
+
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
+
+// ── 抽屉触发器组件 ──────────────────────────────────────────────────────────
 
 function SheetTrigger({
   ...props
@@ -17,17 +27,23 @@ function SheetTrigger({
   return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
 }
 
+// ── 抽屉关闭组件 ────────────────────────────────────────────────────────────
+
 function SheetClose({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Close>) {
   return <SheetPrimitive.Close data-slot="sheet-close" {...props} />
 }
 
+// ── 抽屉门户组件 ────────────────────────────────────────────────────────────
+
 function SheetPortal({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
 }
+
+// ── 抽屉遮罩组件 ────────────────────────────────────────────────────────────
 
 function SheetOverlay({
   className,
@@ -44,6 +60,8 @@ function SheetOverlay({
     />
   )
 }
+
+// ── 抽屉内容组件 ────────────────────────────────────────────────────────────
 
 function SheetContent({
   className,
@@ -86,6 +104,8 @@ function SheetContent({
   )
 }
 
+// ── 抽屉头部组件 ────────────────────────────────────────────────────────────
+
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -96,6 +116,8 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 抽屉底部组件 ────────────────────────────────────────────────────────────
+
 function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -105,6 +127,8 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 抽屉标题组件 ────────────────────────────────────────────────────────────
 
 function SheetTitle({
   className,
@@ -121,6 +145,8 @@ function SheetTitle({
     />
   )
 }
+
+// ── 抽屉描述组件 ────────────────────────────────────────────────────────────
 
 function SheetDescription({
   className,

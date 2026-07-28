@@ -1,6 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ContextPanel - 聊天上下文面板组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { memo } from "react";
 import { Database, Hash, Cpu } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface ContextPanelProps {
   open: boolean;
@@ -9,8 +18,17 @@ interface ContextPanelProps {
   totalTokens: number;
 }
 
-/** 右侧上下文面板 —— 使用 shadcn Card 组件 */
-export function ContextPanel({ open, workspacePath, sessionId, totalTokens }: ContextPanelProps) {
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 聊天上下文面板，展示当前工作区、会话和 Token 使用量信息
+ */
+export const ContextPanel = memo(function ContextPanel({ 
+  open, 
+  workspacePath, 
+  sessionId, 
+  totalTokens 
+}: ContextPanelProps) {
   const { t } = useI18n();
 
   if (!open) return null;
@@ -70,4 +88,4 @@ export function ContextPanel({ open, workspacePath, sessionId, totalTokens }: Co
       </div>
     </aside>
   );
-}
+});

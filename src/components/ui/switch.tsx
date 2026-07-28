@@ -1,9 +1,17 @@
-﻿"use client"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Switch - 开关组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+"use client"
 
 import * as React from "react"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 开关组件 ────────────────────────────────────────────────────────────────
 
 function Switch({
   className,

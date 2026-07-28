@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AuditSettings - 安全审计设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -15,20 +21,29 @@ import {
 } from "@/components/shared/page-layout";
 import { LoadingState } from "@/components/shared/state";
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 安全审计设置页面，展示沙箱安全级别和规则配置
+ */
 export function AuditSettings() {
   const { t } = useI18n();
   const { status, loading } = useSandboxStatus();
 
+  // ── 加载中状态 ────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.audit.securityLevel}</PageTitle>
@@ -51,7 +66,7 @@ export function AuditSettings() {
         </PageHeading>
       </PageHeader>
 
-      {/* 文件系统规则 */}
+      {/* ── 文件系统规则 ────────────────────────────────────────────────────── */}
       <Card className="py-0 gap-0">
         <CardContent className="flex items-center gap-2 border-b py-3">
           <CheckCircleIcon className="size-4 text-[var(--status-success-default)]" />
@@ -75,7 +90,7 @@ export function AuditSettings() {
         ))}
       </Card>
 
-      {/* 网络规则 */}
+      {/* ── 网络规则 ──────────────────────────────────────────────────────────── */}
       <Card className="py-0 gap-0">
         <CardContent className="flex items-center gap-2 border-b py-3">
           <InfoIcon className="size-4 text-primary" />
@@ -99,7 +114,7 @@ export function AuditSettings() {
         ))}
       </Card>
 
-      {/* 命令规则 */}
+      {/* ── 命令规则 ──────────────────────────────────────────────────────────── */}
       <Card>
         <CardContent className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -112,7 +127,7 @@ export function AuditSettings() {
         </CardContent>
       </Card>
 
-      {/* 资源限制 */}
+      {/* ── 资源限制 ──────────────────────────────────────────────────────────── */}
       <Card className="py-0 gap-0">
         <CardContent className="border-b py-3">
           <span className="text-sm font-medium">{t.audit.resourceLimits}</span>

@@ -110,7 +110,7 @@ export function parseChapterSummariesMarkdown(markdown: string): StoredSummary[]
     .filter((row) => /^\d+$/.test(row[0] ?? ""));
 
   return rows.map((row) => ({
-    chapter: parseInt(row[0]!, 10),
+    chapter: parseInt(row[0] ?? "", 10),
     title: row[1] ?? "",
     characters: row[2] ?? "",
     events: row[3] ?? "",

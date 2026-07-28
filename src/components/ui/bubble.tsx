@@ -1,8 +1,16 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Bubble - 气泡消息组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 气泡组组件 ──────────────────────────────────────────────────────────────
 
 function BubbleGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -13,6 +21,8 @@ function BubbleGroup({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 样式变体 ────────────────────────────────────────────────────────────────
 
 const bubbleVariants = cva(
   "group/bubble relative flex w-fit max-w-[80%] min-w-0 flex-col gap-1 group-data-[align=end]/message:self-end data-[align=end]:self-end data-[variant=ghost]:max-w-full",
@@ -41,6 +51,8 @@ const bubbleVariants = cva(
   }
 )
 
+// ── 气泡组件 ────────────────────────────────────────────────────────────────
+
 function Bubble({
   variant = "default",
   align = "start",
@@ -60,6 +72,8 @@ function Bubble({
     />
   )
 }
+
+// ── 气泡内容组件 ────────────────────────────────────────────────────────────
 
 function BubbleContent({
   asChild = false,
@@ -82,6 +96,8 @@ function BubbleContent({
   )
 }
 
+// ── 气泡反应样式变体 ────────────────────────────────────────────────────────
+
 const bubbleReactionsVariants = cva(
   "absolute z-10 flex w-fit shrink-0 items-center justify-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs ring-2 ring-card has-[button]:p-0",
   {
@@ -101,6 +117,8 @@ const bubbleReactionsVariants = cva(
     },
   }
 )
+
+// ── 气泡反应组件 ────────────────────────────────────────────────────────────
 
 function BubbleReactions({
   side = "bottom",

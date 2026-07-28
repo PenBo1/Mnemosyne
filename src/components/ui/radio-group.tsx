@@ -1,7 +1,15 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * RadioGroup - 单选组组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 单选组组件 ──────────────────────────────────────────────────────────────
 
 function RadioGroup({
   className,
@@ -15,6 +23,8 @@ function RadioGroup({
     />
   )
 }
+
+// ── 单选组项组件 ────────────────────────────────────────────────────────────
 
 function RadioGroupItem({
   className,

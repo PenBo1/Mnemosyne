@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { RadarScan } from "@/features/radar/types";
-import * as radarService from "@/features/radar/services";
+import { fetchRadarHistory, scanRadar, deleteRadarScan } from "@/features/radar/services";
 
 export function useRadar() {
   const { t } = useI18n();
@@ -15,7 +15,7 @@ export function useRadar() {
   const loadHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const scans = await radarService.fetchRadarHistory();
+      const scans = await fetchRadarHistory();
       setHistory(scans);
     } catch (err) {
       const message = err instanceof Error ? err.message : t.common.failedToLoad;
@@ -34,7 +34,7 @@ export function useRadar() {
     try {
       setScanning(true);
       setError(null);
-      const result = await radarService.scanRadar();
+      const result = await scanRadar();
       setCurrentResult(result);
       await loadHistory();
     } catch (err) {
@@ -48,7 +48,7 @@ export function useRadar() {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await radarService.deleteRadarScan(id);
+      await deleteRadarScan(id);
       setHistory((prev) => prev.filter((s) => s.id !== id));
       if (currentResult?.id === id) {
         setCurrentResult(null);

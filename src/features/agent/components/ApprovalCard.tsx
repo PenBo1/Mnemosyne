@@ -1,24 +1,34 @@
-// ApprovalCard — Tool approval card for Rust agent engine.
-//
-// Shows when the Rust agent calls a tool that requires user approval.
-// User clicks Approve/Deny → calls respondApproval IPC → Rust continues.
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ApprovalCard - 工具调用审批卡片组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import { AlertTriangle, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/locales/i18n";
 import type { PendingConfirmation } from "@/types";
 
-export function ApprovalCard({
-  confirmation,
-  submitting,
-  onRespond,
-}: {
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
+interface ApprovalCardProps {
   confirmation: PendingConfirmation | null;
   submitting: boolean;
   onRespond: (approvalId: string, approved: boolean) => void;
-}) {
+}
+
+// ── 组件实现 ────────────────────────────────────────────────────────────────
+
+/**
+ * 审批卡片组件，用于展示待审批的工具调用
+ */
+export const ApprovalCard = memo(function ApprovalCard({
+  confirmation,
+  submitting,
+  onRespond,
+}: ApprovalCardProps) {
   const { t } = useI18n();
   const argsStr = useMemo(
     () => (confirmation ? JSON.stringify(confirmation.args, null, 2) : ""),
@@ -67,4 +77,4 @@ export function ApprovalCard({
       </div>
     </Card>
   );
-}
+});

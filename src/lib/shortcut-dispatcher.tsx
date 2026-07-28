@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 快捷键派发器 - 全局快捷键管理与派发
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import {
   createContext,
   useContext,
@@ -11,34 +17,41 @@ import {
 import { getShortcutsOverrides } from "@/services/settings";
 import { SHORTCUTS, matchBinding, type ShortcutId, type KeyBinding } from "@/lib/shortcuts";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 type Handler = () => void;
 
 interface ShortcutContextValue {
-  /** 当前生效绑定（defaults + overrides），供组件局部匹配 */
+  /** 当前生效绑定（默认绑定与用户覆盖配置合并），供组件局部匹配 */
   bindings: Record<ShortcutId, KeyBinding[]>;
-  /** 注册全局快捷键 handler，返回注销函数 */
+  /** 注册全局快捷键处理函数，返回注销函数 */
   register: (id: ShortcutId, handler: Handler) => () => void;
 }
 
 const ShortcutContext = createContext<ShortcutContextValue | null>(null);
 
-/** 焦点是否在可编辑元素内 */
+// ── 工具函数 ────────────────────────────────────────────────────────────────
+
+/** 判断焦点是否在可编辑元素内 */
 function isEditable(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName.toLowerCase();
   return tag === "input" || tag === "textarea" || tag === "select" || (el as HTMLElement).isContentEditable;
 }
 
+// ── Provider 组件 ────────────────────────────────────────────────────────────────
+
 /**
- * 快捷键派发中心：加载用户覆盖配置，注册全局 keydown 监听，
- * 匹配后调用对应 handler。输入框内只响应带修饰键的快捷键，
- * 纯键（如 Enter/ArrowUp）交给组件自己处理。
+ * 快捷键派发中心
+ * 
+ * 加载用户覆盖配置，注册全局 keydown 监听，匹配后调用对应处理函数。
+ * 输入框内只响应带修饰键的快捷键，纯键（如 Enter/ArrowUp）交给组件自己处理。
  */
 export function ShortcutProvider({ children }: { children: ReactNode }) {
   const [overrides, setOverrides] = useState<Record<string, KeyBinding[]>>({});
   const handlersRef = useRef(new Map<ShortcutId, Handler>());
 
-  // 加载用户覆盖配置
+  // ── 加载用户覆盖配置 ────────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     void getShortcutsOverrides().then((map) => {
@@ -49,7 +62,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // 合并默认绑定与覆盖
+  // ── 合并默认绑定与覆盖 ────────────────────────────────────────────────────────────────
   const bindings = useMemo(() => {
     const map = {} as Record<ShortcutId, KeyBinding[]>;
     for (const s of SHORTCUTS) {
@@ -58,7 +71,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
     return map;
   }, [overrides]);
 
-  // 全局 keydown 派发
+  // ── 全局 keydown 派发 ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const inEditable = isEditable(e.target as Element);
@@ -95,13 +108,15 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
   return <ShortcutContext.Provider value={value}>{children}</ShortcutContext.Provider>;
 }
 
+// ── Hooks ────────────────────────────────────────────────────────────────
+
 /** 读取当前生效绑定（组件局部按键匹配用） */
 export function useShortcutBindings(): Record<ShortcutId, KeyBinding[]> {
   const ctx = useContext(ShortcutContext);
   return ctx?.bindings ?? ({} as Record<ShortcutId, KeyBinding[]>);
 }
 
-/** 注册全局快捷键 handler */
+/** 注册全局快捷键处理函数 */
 export function useShortcut(id: ShortcutId, handler: Handler): void {
   const ctx = useContext(ShortcutContext);
   const handlerRef = useRef(handler);

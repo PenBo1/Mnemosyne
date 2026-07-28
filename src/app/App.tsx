@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 应用入口组件 - 应用程序根组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { AppProvider } from "@/lib/app-context";
 import { ShortcutProvider } from "@/lib/shortcut-dispatcher";
 import { AppLayout } from "@/components/layout/AppLayout";

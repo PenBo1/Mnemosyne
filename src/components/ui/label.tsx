@@ -1,7 +1,15 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Label - 标签组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 import { Label as LabelPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+
+// ── 标签组件 ────────────────────────────────────────────────────────────────
 
 function Label({
   className,

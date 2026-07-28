@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EmptyState - 聊天页面空状态欢迎页组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { memo } from "react";
 import { BookOpen, Users, Globe, GitBranch, type LucideIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
@@ -10,15 +16,19 @@ import {
 } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 
-/** 空状态欢迎页 —— 使用 shadcn Empty 组件 */
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 空状态欢迎页，展示功能引导卡片
+ */
 export const EmptyState = memo(function EmptyState() {
   const { t } = useI18n();
 
   const cards: Array<{ icon: LucideIcon; title: string; prompt: string }> = [
-    { icon: BookOpen, title: t.agentChat.featureNovel, prompt: "帮我构思一个小说故事大纲" },
-    { icon: Users, title: t.agentChat.featureCharacter, prompt: "帮我设计一个角色档案" },
-    { icon: Globe, title: t.agentChat.featureWorldbuilding, prompt: "帮我构建一个世界观设定" },
-    { icon: GitBranch, title: t.agentChat.featurePlotAnalysis, prompt: "帮我分析并优化情节结构" },
+    { icon: BookOpen, title: t.agentChat.featureNovel, prompt: t.agentChat.featureNovelPrompt },
+    { icon: Users, title: t.agentChat.featureCharacter, prompt: t.agentChat.featureCharacterPrompt },
+    { icon: Globe, title: t.agentChat.featureWorldbuilding, prompt: t.agentChat.featureWorldbuildingPrompt },
+    { icon: GitBranch, title: t.agentChat.featurePlotAnalysis, prompt: t.agentChat.featurePlotAnalysisPrompt },
   ];
 
   return (

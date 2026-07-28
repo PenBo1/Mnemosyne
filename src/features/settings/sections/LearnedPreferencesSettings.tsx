@@ -1,10 +1,8 @@
-// 学习偏好设置页 —— 展示 learned_preferences 表数据。
-//
-// 核心功能:
-// 1. 列出所有学习到的偏好(按 confidence 降序)
-// 2. 支持高置信度过滤切换
-// 3. 支持删除偏好(用户否认)
-// 4. 支持主动分析 session 的偏好(调用 AgentEngine.analyze_user_preferences)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LearnedPreferencesSettings - 学习偏好设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -42,12 +40,20 @@ import {
   type LearnedPreferenceRow,
 } from "@/features/settings/types/learned-preferences";
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 获取置信度徽章变体
+ */
 function confidenceBadgeVariant(confidence: number) {
   if (confidence >= 0.8) return "default" as const;
   if (confidence >= 0.5) return "secondary" as const;
   return "outline" as const;
 }
 
+/**
+ * 格式化相对时间
+ */
 function formatRelativeTime(iso: string): string {
   try {
     const d = new Date(iso);
@@ -66,6 +72,11 @@ function formatRelativeTime(iso: string): string {
   }
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 学习偏好设置页面，展示和管理学习到的用户偏好
+ */
 export function LearnedPreferencesSettings() {
   const { t } = useI18n();
   const [prefs, setPrefs] = useState<LearnedPreferenceRow[]>([]);
@@ -74,6 +85,8 @@ export function LearnedPreferencesSettings() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [analyzeSessionId, setAnalyzeSessionId] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
     try {
@@ -94,6 +107,11 @@ export function LearnedPreferencesSettings() {
     void loadData();
   }, [loadData]);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 删除偏好
+   */
   const handleDelete = useCallback(async (id: string) => {
     if (!window.confirm(t.settings.learnedPreferences.deleteConfirm)) return;
     try {
@@ -109,6 +127,9 @@ export function LearnedPreferencesSettings() {
     }
   }, [loadData, t.settings.learnedPreferences.deleteConfirm, t.settings.learnedPreferences.deletedToast]);
 
+  /**
+   * 分析偏好
+   */
   const handleAnalyze = useCallback(async () => {
     const sid = analyzeSessionId.trim();
     if (!sid) {
@@ -131,6 +152,8 @@ export function LearnedPreferencesSettings() {
     }
   }, [analyzeSessionId, loadData, t.settings.learnedPreferences.analyzingToast, t.settings.learnedPreferences.analyzedToast]);
 
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
+
   const grouped = useMemo(() => {
     const m = new Map<string, LearnedPreferenceRow[]>();
     for (const p of prefs) {
@@ -141,16 +164,20 @@ export function LearnedPreferencesSettings() {
     return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length);
   }, [prefs]);
 
+  // ── 加载中状态 ────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <PageContainer scrollable={false}>
+      <PageContainer>
         <LoadingState label={t.common.loading} />
       </PageContainer>
     );
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>
@@ -172,7 +199,7 @@ export function LearnedPreferencesSettings() {
         </PageActions>
       </PageHeader>
 
-      {/* 1. 偏好分析触发 */}
+      {/* ── 偏好分析触发 ────────────────────────────────────────────────────── */}
       <SettingsSection
         title={t.settings.learnedPreferences.analyze}
         description={t.settings.learnedPreferences.analyzeHint}
@@ -203,7 +230,7 @@ export function LearnedPreferencesSettings() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* 2. 偏好列表 */}
+      {/* ── 偏好列表 ────────────────────────────────────────────────────────── */}
       <SettingsSection
         title={t.settings.learnedPreferences.label}
         description={t.settings.learnedPreferences.hint}
@@ -236,6 +263,7 @@ export function LearnedPreferencesSettings() {
                         key={p.id}
                         className="flex items-center justify-between gap-2 rounded border border-border/50 bg-muted/30 px-2 py-1.5"
                       >
+                        {/* ── 偏好信息 ────────────────────────────────────── */}
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span className="truncate text-sm">{p.preferenceValue}</span>
                           <span className="text-xs text-muted-foreground">
@@ -244,6 +272,7 @@ export function LearnedPreferencesSettings() {
                             {t.settings.learnedPreferences.lastSeenAt}: {formatRelativeTime(p.lastSeenAt)}
                           </span>
                         </div>
+                        {/* ── 置信度和操作 ──────────────────────────────── */}
                         <div className="flex items-center gap-2">
                           <Badge variant={confidenceBadgeVariant(p.confidence)} className={confidenceColor(p.confidence)}>
                             {confidenceLabel(p.confidence)}

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MessageScroller - 消息滚动器组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import * as React from "react"
 import {
   MessageScroller as MessageScrollerPrimitive,
@@ -10,11 +16,15 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ArrowDownIcon } from "lucide-react"
 
+// ── 消息滚动器提供者组件 ────────────────────────────────────────────────────
+
 function MessageScrollerProvider(
   props: React.ComponentProps<typeof MessageScrollerPrimitive.Provider>
 ) {
   return <MessageScrollerPrimitive.Provider {...props} />
 }
+
+// ── 消息滚动器组件 ──────────────────────────────────────────────────────────
 
 function MessageScroller({
   className,
@@ -32,6 +42,8 @@ function MessageScroller({
   )
 }
 
+// ── 消息滚动器视口组件 ──────────────────────────────────────────────────────
+
 function MessageScrollerViewport({
   className,
   ...props
@@ -48,6 +60,8 @@ function MessageScrollerViewport({
   )
 }
 
+// ── 消息滚动器内容组件 ──────────────────────────────────────────────────────
+
 function MessageScrollerContent({
   className,
   ...props
@@ -60,6 +74,8 @@ function MessageScrollerContent({
     />
   )
 }
+
+// ── 消息滚动器项组件 ────────────────────────────────────────────────────────
 
 function MessageScrollerItem({
   className,
@@ -78,6 +94,8 @@ function MessageScrollerItem({
     />
   )
 }
+
+// ── 消息滚动器按钮组件 ──────────────────────────────────────────────────────
 
 function MessageScrollerButton({
   direction = "end",

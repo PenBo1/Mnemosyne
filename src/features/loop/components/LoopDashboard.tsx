@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LoopDashboard - 循环任务仪表板组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useI18n } from "@/locales/i18n";
 import type { LoopState, LoopPattern } from "@/features/loop/types";
 import { cn } from "@/lib/utils";

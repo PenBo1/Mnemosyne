@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BookSourcesSettings - 书源设置页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +49,11 @@ import {
 import { LoadingState, EmptyState } from "@/components/shared/state";
 import type { BookSource } from "@/features/novel/types";
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 书源设置页面，用于管理小说书源配置
+ */
 export function BookSourcesSettings() {
   const { t } = useI18n();
   const [sources, setSources] = useState<BookSource[]>([]);
@@ -52,7 +63,8 @@ export function BookSourcesSettings() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
 
-  // 表单状态
+  // ── 表单状态 ──────────────────────────────────────────────────────────────
+
   const [formName, setFormName] = useState("");
   const [formUrl, setFormUrl] = useState("");
   const [formComment, setFormComment] = useState("");
@@ -65,6 +77,8 @@ export function BookSourcesSettings() {
   const [formChapterContent, setFormChapterContent] = useState("");
   const [formChapterFilter, setFormChapterFilter] = useState("");
 
+  // ── 数据加载 ──────────────────────────────────────────────────────────────
+
   const loadSources = useCallback(async () => {
     setLoading(true);
     try {
@@ -72,6 +86,7 @@ export function BookSourcesSettings() {
       setSources(data);
     } catch (err) {
       console.error("Failed to load book sources:", err);
+      toast.error(t.common.failedToLoad);
     } finally {
       setLoading(false);
     }
@@ -81,6 +96,11 @@ export function BookSourcesSettings() {
     loadSources();
   }, [loadSources]);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 切换书源启用状态
+   */
   async function handleToggle(source: BookSource) {
     setToggling(source.name);
     try {
@@ -90,11 +110,15 @@ export function BookSourcesSettings() {
       );
     } catch (err) {
       console.error("Failed to toggle source:", err);
+      toast.error(t.common.failedToUpdate);
     } finally {
       setToggling(null);
     }
   }
 
+  /**
+   * 重置表单
+   */
   function resetForm() {
     setFormName("");
     setFormUrl("");
@@ -109,12 +133,18 @@ export function BookSourcesSettings() {
     setFormChapterFilter("");
   }
 
+  /**
+   * 打开创建对话框
+   */
   function openCreateDialog() {
     setEditingSource(null);
     resetForm();
     setDialogOpen(true);
   }
 
+  /**
+   * 打开编辑对话框
+   */
   function openEditDialog(source: BookSource) {
     setEditingSource(source);
     setFormName(source.name);
@@ -131,6 +161,9 @@ export function BookSourcesSettings() {
     setDialogOpen(true);
   }
 
+  /**
+   * 保存书源
+   */
   async function handleSave() {
     const source: BookSource = {
       name: formName,
@@ -181,6 +214,9 @@ export function BookSourcesSettings() {
     }
   }
 
+  /**
+   * 删除书源
+   */
   async function handleDelete(name: string) {
     try {
       await ipc("novel_source_delete", { name });
@@ -192,8 +228,10 @@ export function BookSourcesSettings() {
     }
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
-    <PageContainer scrollable={false}>
+    <PageContainer>
       <PageHeader>
         <PageHeading>
           <PageTitle>{t.settings.bookSources}</PageTitle>
@@ -223,6 +261,7 @@ export function BookSourcesSettings() {
           <CardContent className="divide-y px-0">
             {sources.map((source) => (
               <div key={source.name} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-accent">
+                {/* ── 书源标题 ──────────────────────────────────────────────── */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <GlobeIcon className="size-4 shrink-0" />
@@ -255,10 +294,12 @@ export function BookSourcesSettings() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                {/* ── 书源信息 ──────────────────────────────────────────────── */}
                 <p className="line-clamp-1 text-xs text-muted-foreground">{source.url}</p>
                 {source.comment && (
                   <p className="line-clamp-2 text-xs text-muted-foreground">{source.comment}</p>
                 )}
+                {/* ── 启用开关 ──────────────────────────────────────────────── */}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
                     {source.search?.disabled ? t.settings.bookSourceNoSearch : t.settings.bookSourceSearchable}
@@ -275,7 +316,7 @@ export function BookSourcesSettings() {
         </Card>
       )}
 
-      {/* 创建/编辑对话框 */}
+      {/* ── 创建/编辑对话框 ────────────────────────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -286,6 +327,7 @@ export function BookSourcesSettings() {
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <FieldGroup>
+              {/* ── 基本信息 ────────────────────────────────────────────────── */}
               <Field>
                 <FieldLabel>{t.settings.bookSourceName}</FieldLabel>
                 <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder={t.settings.bookSourceNamePlaceholder} />
@@ -305,6 +347,7 @@ export function BookSourcesSettings() {
 
               <FieldSeparator />
 
+              {/* ── 搜索配置 ────────────────────────────────────────────────── */}
               <Field>
                 <FieldLabel>{t.settings.bookSourceSearchUrl}</FieldLabel>
                 <Input value={formSearchUrl} onChange={(e) => setFormSearchUrl(e.target.value)} placeholder={t.settings.bookSourceSearchUrlPlaceholder} />
@@ -320,6 +363,7 @@ export function BookSourcesSettings() {
 
               <FieldSeparator />
 
+              {/* ── 目录配置 ────────────────────────────────────────────────── */}
               <Field>
                 <FieldLabel>{t.settings.bookSourceTocItem}</FieldLabel>
                 <Input value={formTocItem} onChange={(e) => setFormTocItem(e.target.value)} placeholder={t.settings.bookSourceTocItemPlaceholder} />
@@ -327,6 +371,7 @@ export function BookSourcesSettings() {
 
               <FieldSeparator />
 
+              {/* ── 章节配置 ────────────────────────────────────────────────── */}
               <Field>
                 <FieldLabel>{t.settings.bookSourceChapterTitle}</FieldLabel>
                 <Input value={formChapterTitle} onChange={(e) => setFormChapterTitle(e.target.value)} placeholder={t.settings.bookSourceChapterTitlePlaceholder} />
@@ -352,7 +397,7 @@ export function BookSourcesSettings() {
         </DialogContent>
       </Dialog>
 
-      {/* 删除确认对话框 */}
+      {/* ── 删除确认对话框 ──────────────────────────────────────────────────── */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
           <DialogHeader>

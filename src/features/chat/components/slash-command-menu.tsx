@@ -1,7 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SlashCommandMenu - 斜杠命令弹出菜单组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { createPortal } from "react-dom";
 import { useI18n } from "@/locales/i18n";
 import { cn } from "@/lib/utils";
 import type { SlashCommand } from "./slash-commands";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface SlashCommandMenuProps {
   suggestions: SlashCommand[];
@@ -11,7 +19,11 @@ interface SlashCommandMenuProps {
   anchorRect: DOMRect | null;
 }
 
-/** 斜杠命令弹出菜单 —— portal to body，fixed 定位锚定输入框 */
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 斜杠命令弹出菜单，通过 portal 渲染到 body，fixed 定位锚定输入框
+ */
 export function SlashCommandMenu({
   suggestions,
   selectedIndex,

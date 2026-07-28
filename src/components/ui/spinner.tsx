@@ -1,5 +1,13 @@
-﻿import { cn } from "@/lib/utils"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Spinner - 加载旋转组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { cn } from "@/lib/utils"
 import { Loader2Icon } from "lucide-react"
+
+// ── 加载旋转组件 ────────────────────────────────────────────────────────────
 
 function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
   return (

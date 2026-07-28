@@ -2,7 +2,14 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { SkillMeta, Skill } from "@/features/skill/types";
-import * as skillService from "@/features/skill/services";
+import {
+  listSkills,
+  refreshSkills,
+  getSkill as fetchSkill,
+  createSkill,
+  updateSkill,
+  deleteSkill,
+} from "@/features/skill/services";
 
 export function useSkills() {
   const { t } = useI18n();
@@ -15,7 +22,7 @@ export function useSkills() {
     try {
       setLoading(true);
       setError(null);
-      const result = await skillService.listSkills();
+      const result = await listSkills();
       setSkills(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : t.common.failedToLoad;
@@ -33,7 +40,7 @@ export function useSkills() {
   const refresh = useCallback(async () => {
     try {
       setLoading(true);
-      await skillService.refreshSkills();
+      await refreshSkills();
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : t.common.failedToLoad;
@@ -45,7 +52,7 @@ export function useSkills() {
   }, [load]);
 
   const getSkill = useCallback(async (name: string): Promise<Skill> => {
-    return skillService.getSkill(name);
+    return fetchSkill(name);
   }, []);
 
   const create = useCallback(async (params: {
@@ -55,7 +62,7 @@ export function useSkills() {
     content: string;
   }) => {
     try {
-      await skillService.createSkill(params);
+      await createSkill(params);
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -70,7 +77,7 @@ export function useSkills() {
     content: string;
   }) => {
     try {
-      await skillService.updateSkill(params);
+      await updateSkill(params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -80,7 +87,7 @@ export function useSkills() {
 
   const remove = useCallback(async (name: string) => {
     try {
-      await skillService.deleteSkill(name);
+      await deleteSkill(name);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {

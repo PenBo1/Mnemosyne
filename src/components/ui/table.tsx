@@ -1,6 +1,14 @@
-﻿import * as React from "react"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Table - 表格组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
+
+// ── 表格组件 ────────────────────────────────────────────────────────────────
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
@@ -17,6 +25,8 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   )
 }
 
+// ── 表格头部组件 ────────────────────────────────────────────────────────────
+
 function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
@@ -27,6 +37,8 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   )
 }
 
+// ── 表格主体组件 ────────────────────────────────────────────────────────────
+
 function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
   return (
     <tbody
@@ -36,6 +48,8 @@ function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
     />
   )
 }
+
+// ── 表格底部组件 ────────────────────────────────────────────────────────────
 
 function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   return (
@@ -50,6 +64,8 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   )
 }
 
+// ── 表格行组件 ──────────────────────────────────────────────────────────────
+
 function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   return (
     <tr
@@ -62,6 +78,8 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     />
   )
 }
+
+// ── 表格头单元格组件 ────────────────────────────────────────────────────────
 
 function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
@@ -76,6 +94,8 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   )
 }
 
+// ── 表格单元格组件 ──────────────────────────────────────────────────────────
+
 function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   return (
     <td
@@ -88,6 +108,8 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     />
   )
 }
+
+// ── 表格标题组件 ────────────────────────────────────────────────────────────
 
 function TableCaption({
   className,

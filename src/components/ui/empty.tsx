@@ -1,6 +1,14 @@
-﻿import { cva, type VariantProps } from "class-variance-authority"
+﻿/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Empty - 空状态组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+
+// ── 空状态容器组件 ──────────────────────────────────────────────────────────
 
 function Empty({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -15,6 +23,8 @@ function Empty({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 空状态头部组件 ──────────────────────────────────────────────────────────
+
 function EmptyHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -24,6 +34,8 @@ function EmptyHeader({ className, ...props }: React.ComponentProps<"div">) {
     />
   )
 }
+
+// ── 空状态媒体样式变体 ──────────────────────────────────────────────────────
 
 const emptyMediaVariants = cva(
   "mb-2 flex shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg]:shrink-0",
@@ -40,6 +52,8 @@ const emptyMediaVariants = cva(
   }
 )
 
+// ── 空状态媒体组件 ──────────────────────────────────────────────────────────
+
 function EmptyMedia({
   className,
   variant = "default",
@@ -55,6 +69,8 @@ function EmptyMedia({
   )
 }
 
+// ── 空状态标题组件 ──────────────────────────────────────────────────────────
+
 function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -68,6 +84,8 @@ function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// ── 空状态描述组件 ──────────────────────────────────────────────────────────
+
 function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <div
@@ -80,6 +98,8 @@ function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
     />
   )
 }
+
+// ── 空状态内容组件 ──────────────────────────────────────────────────────────
 
 function EmptyContent({ className, ...props }: React.ComponentProps<"div">) {
   return (

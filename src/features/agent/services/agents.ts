@@ -11,26 +11,9 @@
 //   （后端 SendMessageRequest 需新增 tool_whitelist 字段才能生效，当前 serde 忽略未知字段）。
 
 import { LazyStore } from "@tauri-apps/plugin-store";
+import type { Agent, AgentIconId } from "../types";
 
-export type AgentIconId =
-  | "coder"
-  | "architect"
-  | "reviewer"
-  | "security"
-  | "designer"
-  | "spark";
-
-export type Agent = {
-  id: string;
-  name: string;
-  description: string;
-  instructions: string;
-  icon: AgentIconId;
-  builtIn: boolean;
-  /** 工具白名单。undefined = 全工具集；readonly string[] = 仅这些工具。
-   *  按 agent 角色限定可用工具集（P2.8 启用）。 */
-  toolWhitelist?: readonly string[];
-};
+export type { Agent, AgentIconId };
 
 export const BUILTIN_AGENTS: readonly Agent[] = [
   {

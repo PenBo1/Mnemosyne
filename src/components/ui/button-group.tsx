@@ -1,8 +1,16 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ButtonGroup - 按钮组组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Separator } from "@/components/ui/separator"
+
+// ── 样式变体 ────────────────────────────────────────────────────────────────
 
 const buttonGroupVariants = cva(
   "group/button-group flex w-fit items-stretch *:focus-visible:relative *:focus-visible:z-10 has-[>[data-slot=button-group]]:gap-2 has-[select[aria-hidden=true]:last-child]:[&>[data-slot=select-trigger]:last-of-type]:rounded-r-md [&>[data-slot=select-trigger]:not([class*='w-'])]:w-fit [&>input]:flex-1",
@@ -21,6 +29,8 @@ const buttonGroupVariants = cva(
   }
 )
 
+// ── 按钮组组件 ──────────────────────────────────────────────────────────────
+
 function ButtonGroup({
   className,
   orientation,
@@ -36,6 +46,8 @@ function ButtonGroup({
     />
   )
 }
+
+// ── 按钮组文本组件 ──────────────────────────────────────────────────────────
 
 function ButtonGroupText({
   className,
@@ -56,6 +68,8 @@ function ButtonGroupText({
     />
   )
 }
+
+// ── 按钮组分隔符组件 ────────────────────────────────────────────────────────
 
 function ButtonGroupSeparator({
   className,

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HookLedgerPanel - Hook 账本面板组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useMemo } from "react";
 import { BookmarkIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";

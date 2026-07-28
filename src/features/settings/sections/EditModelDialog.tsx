@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EditModelDialog - 编辑 AI 模型对话框
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,12 +21,19 @@ import { useI18n } from "@/locales/i18n";
 import { useModelSettings } from "@/features/settings/hooks";
 import type { AiModelConfig } from "@/services/settings";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface EditModelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   model: AiModelConfig | null;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 编辑 AI 模型对话框，用于修改已存在的模型配置
+ */
 export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogProps) {
   const { t } = useI18n();
   const { updateModel } = useModelSettings();
@@ -30,6 +43,11 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
   const [baseUrl, setBaseUrl] = useState(model?.base_url ?? "");
   const [saving, setSaving] = useState(false);
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 保存模型配置
+   */
   async function handleSave() {
     if (!model || !name.trim()) return;
     setSaving(true);
@@ -48,6 +66,8 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
     }
   }
 
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -56,6 +76,7 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
           <DialogDescription>{t.settings.modelSettings.subtitle}</DialogDescription>
         </DialogHeader>
         <FieldGroup>
+          {/* ── 配置名称 ──────────────────────────────────────────────────── */}
           <Field>
             <FieldLabel>{t.agents.name}</FieldLabel>
             <Input
@@ -64,6 +85,7 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
               placeholder="My OpenAI Config"
             />
           </Field>
+          {/* ── 模型名称 ──────────────────────────────────────────────────── */}
           <Field>
             <FieldLabel>{t.settings.modelSettings.model}</FieldLabel>
             <Input
@@ -72,6 +94,7 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
               placeholder={t.settings.modelSettings.modelPlaceholder}
             />
           </Field>
+          {/* ── API 密钥 ──────────────────────────────────────────────────── */}
           <Field>
             <FieldLabel>{t.settings.modelSettings.apiKey}</FieldLabel>
             <Input
@@ -81,6 +104,7 @@ export function EditModelDialog({ open, onOpenChange, model }: EditModelDialogPr
               placeholder={t.settings.modelSettings.apiKeyPlaceholder}
             />
           </Field>
+          {/* ── 基础 URL ──────────────────────────────────────────────────── */}
           <Field>
             <FieldLabel>{t.settings.modelSettings.baseUrl}</FieldLabel>
             <Input

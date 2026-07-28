@@ -3,7 +3,12 @@ import { toast } from "sonner";
 import { useI18n } from "@/locales/i18n";
 import type { TimelineEvent, TimelineEventType } from "@/features/story/types";
 import { ipc } from "@/services/ipc";
-import * as timelineService from "@/features/story/services";
+import {
+  listTimelineEvents,
+  createTimelineEvent,
+  updateTimelineEvent,
+  deleteTimelineEvent,
+} from "@/features/story/services";
 
 export function useTimelineEvents(workspaceId: string | null) {
   const { t } = useI18n();
@@ -17,7 +22,7 @@ export function useTimelineEvents(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) { setEvents([]); return; }
-      const data = await timelineService.listTimelineEvents(novel.id);
+      const data = await listTimelineEvents(novel.id);
       setEvents(data);
     } catch {
       setEvents([]);
@@ -44,7 +49,7 @@ export function useTimelineEvents(workspaceId: string | null) {
       const novelList = await ipc<{ id: string; workspace_id: string }[]>("list_novels");
       const novel = novelList.find((n) => n.workspace_id === workspaceId);
       if (!novel) return;
-      await timelineService.createTimelineEvent({ ...params, novelId: novel.id });
+      await createTimelineEvent({ ...params, novelId: novel.id });
       await load();
       toast.success(t.common.createdSuccessfully);
     } catch {
@@ -62,7 +67,7 @@ export function useTimelineEvents(workspaceId: string | null) {
     tags: string[];
   }) => {
     try {
-      await timelineService.updateTimelineEvent(params);
+      await updateTimelineEvent(params);
       await load();
       toast.success(t.common.updatedSuccessfully);
     } catch {
@@ -72,7 +77,7 @@ export function useTimelineEvents(workspaceId: string | null) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await timelineService.deleteTimelineEvent(id);
+      await deleteTimelineEvent(id);
       await load();
       toast.success(t.common.deletedSuccessfully);
     } catch {
