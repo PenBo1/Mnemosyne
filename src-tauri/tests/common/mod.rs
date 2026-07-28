@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use mnemosyne_lib::domain::git::operations;
-use mnemosyne_lib::domain::git::types::GitConfig;
 
 // ── Git 仓库测试 Fixture ─────────────────────────────────────────────────────
 
