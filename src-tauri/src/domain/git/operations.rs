@@ -98,14 +98,27 @@ pub fn get_status(path: &Path) -> Result<GitStatus, AppError> {
 
 /// 获取当前分支名
 fn get_current_branch(repo: &Repository) -> Result<String, AppError> {
-    let head = repo.head()
-        .map_err(|e| AppError::internal(format!("获取 HEAD 失败: {}", e)))?;
-    
-    let branch_name = head.shorthand()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "HEAD".to_string());
-    
-    Ok(branch_name)
+    // 空仓库（ unborn branch ）时 head() 会失败，返回默认分支名
+    match repo.head() {
+        Ok(head) => {
+            let branch_name = head.shorthand()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "HEAD".to_string());
+            Ok(branch_name)
+        }
+        Err(_) => {
+            // 尝试获取 HEAD 文件内容（ unborn branch 情况）
+            if let Ok(head_content) = std::fs::read_to_string(repo.path().join("HEAD")) {
+                if head_content.starts_with("ref: refs/heads/") {
+                    return Ok(head_content.trim()
+                        .strip_prefix("ref: refs/heads/")
+                        .unwrap_or("master")
+                        .to_string());
+                }
+            }
+            Ok("master".to_string())
+        }
+    }
 }
 
 /// 将 git2 状态转换为自定义状态
