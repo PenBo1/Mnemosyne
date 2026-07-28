@@ -147,7 +147,7 @@ pub struct LogFileInfo {
     pub modified: Option<String>,
 }
 
-/// 校验日志文件名：仅允许 `mnemosyne.log*` 形式，禁止路径分隔与目录穿越
+/// 校验日志文件名：仅允许 `mnemosyne*.log` 形式，禁止路径分隔与目录穿越
 fn validate_log_file_name(name: &str) -> Result<String, AppError> {
     if name.is_empty()
         || name.contains('/')
@@ -157,7 +157,8 @@ fn validate_log_file_name(name: &str) -> Result<String, AppError> {
     {
         return Err(AppError::path_traversal());
     }
-    if !name.starts_with("mnemosyne.log") {
+    // 匹配 mnemosyne.YYYY-MM-DD.log 或 mnemosyne.log 格式
+    if !name.starts_with("mnemosyne") || !name.ends_with(".log") {
         return Err(AppError::invalid_input("Invalid log file name"));
     }
     Ok(name.to_string())
@@ -180,7 +181,8 @@ pub fn list_log_files(state: State<'_, DbState>) -> Result<IpcResponse<Vec<LogFi
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("mnemosyne.log") {
+        // 匹配 mnemosyne.YYYY-MM-DD.log 格式
+        if !name.starts_with("mnemosyne") || !name.ends_with(".log") {
             continue;
         }
         let metadata = entry.metadata()

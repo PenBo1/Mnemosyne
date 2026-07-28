@@ -28,8 +28,13 @@ export function LogViewer() {
       if (!selectedFile && files.length > 0) {
         setSelectedFile(files[0].name);
       }
+      // 没有日志文件时，也要关闭 loading 状态
+      if (files.length === 0) {
+        setIsLoading(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "获取日志文件列表失败");
+      setIsLoading(false);
     }
   }, [selectedFile]);
 
