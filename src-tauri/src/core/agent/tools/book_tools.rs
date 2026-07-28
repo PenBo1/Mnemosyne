@@ -1,43 +1,23 @@
-// 小说创作工具集：8 个工具，覆盖确认闸门、pipeline 委托、真相文件编辑、
-// 实体重命名、章节局部/整章编辑、章节导入、封面生成。
-//
-// 工具清单：
-// - ProposeActionTool:       提议动作（确认闸门，纯 JSON，无副作用）
-// - PipelineDelegateTool:    委托 pipeline agent 执行（plan/write/audit/revise/consolidate）
-// - WriteTruthFileTool:      编辑真相文件（白名单内）
-// - RenameEntityTool:        全书实体改名
-// - PatchChapterTextTool:    章节局部编辑（三级文本匹配）
-// - ReplaceChapterTextTool:  章节整章替换
-// - ImportChaptersTool:      从源文件批量导入章节
-// - GenerateCoverTool:       落盘封面提示词（图片生成未实现）
-//
-// 注：本文件位于 core/agent/tools，但需调用 domain 层函数（edit_controller /
-// pipeline runner / consolidator），属于任务要求的显式指令。与 AGENTS.md
-// "core/agent 不依赖 domain" 规则存在张力，此处遵循任务指令实现。
-//
-// 安全约束：
-// - 所有路径以 DataDir.books_dir() 为根锚定，拒绝 `..` 与绝对路径
-// - book_id 走 validate_id 校验
-// - truth 文件名走 assert_safe_truth_file_name 校验（由 edit_controller 执行）
-// - 写操作均需 ApprovalManager 审批
+//! ═══════════════════════════════════════════════════════════════════════════
+//! BookTools - 小说创作工具集
+//! ═══════════════════════════════════════════════════════════════════════════
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::core::agent::approval::ApprovalManager;
 use crate::core::agent::engine::AgentEngine;
-use crate::domain::interaction::edit_controller::{self, EditRequest};
-use crate::domain::pipeline::agents::consolidator;
-use crate::domain::pipeline::agents::reviser::ReviseMode;
-use crate::domain::pipeline::runner::{PipelineConfig, PipelineRunner};
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::infrastructure::fs::fs_utils::MAX_READ_SIZE;
+use crate::infrastructure::llm::tool::{Tool, ToolDefinition, ToolError};
 use crate::infrastructure::validation::validate_id;
 use crate::shared::error::AppError;
+
+use super::book_ops::{BookEditOps, PipelineDelegateOps};
 
 // ── 统一错误类型 ────────────────────────────────────────────
 
@@ -67,6 +47,27 @@ impl From<std::io::Error> for BookToolError {
     }
 }
 
+// ── BookToolError → ToolError 转换 ─────────────────────────
+
+impl From<BookToolError> for ToolError {
+    fn from(e: BookToolError) -> Self {
+        match e {
+            BookToolError::Io(s) => ToolError::Io(s),
+            BookToolError::PathTraversal => ToolError::PathTraversal,
+            BookToolError::Denied => ToolError::Execution("Permission denied".to_string()),
+            BookToolError::InvalidInput(s) => ToolError::InvalidArgs(s),
+            BookToolError::Failed(s) => ToolError::Execution(s),
+        }
+    }
+}
+
+// AppError 直接转 ToolError（保留供未来 pipeline 操作的错误传播使用）
+impl From<AppError> for ToolError {
+    fn from(e: AppError) -> Self {
+        ToolError::Execution(e.to_string())
+    }
+}
+
 // ── ProposeActionTool（确认闸门）────────────────────────────
 
 /// 提议动作工具：让 agent 显式声明意图，供前端/用户确认后再执行破坏性操作。
@@ -84,16 +85,15 @@ pub struct ProposeActionArgs {
     pub reason: String,
 }
 
+#[async_trait]
 impl Tool for ProposeActionTool {
-    const NAME: &'static str = "propose_action";
+    fn name(&self) -> &str {
+        "propose_action"
+    }
 
-    type Error = BookToolError;
-    type Args = ProposeActionArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "propose_action".to_string(),
             description: "提议一个需要用户确认的操作。本身不执行任何副作用，仅声明意图与载荷，等待审批。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -116,27 +116,40 @@ impl Tool for ProposeActionTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(serde_json::json!({
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: ProposeActionArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "propose_action", action = %args.action, "[tool] call");
+
+        let result = serde_json::json!({
             "action": args.action,
             "payload": args.payload,
             "reason": args.reason,
             "requiresConfirmation": true,
-        }))
+        });
+
+        tracing::info!(tool = "propose_action", action = %args.action, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(result)
     }
 }
 
 // ── PipelineDelegateTool（pipeline 委托）────────────────────
 
-/// 委托 pipeline agent 执行重操作。按 agent_type 分派到 PipelineRunner 方法。
+/// 委托 pipeline agent 执行重操作。按 agent_type 分派到 PipelineDelegateOps trait 方法。
 ///
 /// 注意：与 core/agent/subagent/tools.rs 的 SubAgentTool（NAME="subagent"）不同，
 /// 本工具面向书籍 pipeline（plan/write/audit/revise/consolidate），命名为
 /// pipeline_delegate 以避免工具名冲突。
+///
+/// 实际 pipeline 调用由 `pipeline_ops` trait 提供方实现（application/bridges.rs），
+/// 本工具仅负责参数校验、审批、分派，不直接依赖 domain 层。
 pub struct PipelineDelegateTool {
     pub engine: Arc<AgentEngine>,
     pub data_dir: DataDir,
     pub approval: Arc<ApprovalManager>,
+    pub pipeline_ops: Arc<dyn PipelineDelegateOps>,
 }
 
 #[derive(Deserialize)]
@@ -152,16 +165,15 @@ pub struct PipelineDelegateArgs {
     pub params: serde_json::Value,
 }
 
+#[async_trait]
 impl Tool for PipelineDelegateTool {
-    const NAME: &'static str = "pipeline_delegate";
+    fn name(&self) -> &str {
+        "pipeline_delegate"
+    }
 
-    type Error = BookToolError;
-    type Args = PipelineDelegateArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "pipeline_delegate".to_string(),
             description: "委托书籍 pipeline 执行一个阶段（plan_chapter/write_draft/audit_draft/revise_draft/write_next_chapter/consolidate）。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -189,9 +201,18 @@ impl Tool for PipelineDelegateTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: PipelineDelegateArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "pipeline_delegate", agent_type = %args.agent_type, book_id = %args.book_id, "[tool] call");
+
         validate_id(&args.book_id, "book_id")
-            .map_err(BookToolError::InvalidInput)?;
+            .map_err(|e| {
+                tracing::error!(tool = "pipeline_delegate", book_id = %args.book_id, error = %e, "[tool] invalid book_id");
+                BookToolError::InvalidInput(e)
+            })?;
 
         // 统一审批：pipeline 阶段均为重操作
         let approved = self.approval.request_approval(
@@ -199,65 +220,81 @@ impl Tool for PipelineDelegateTool {
             &serde_json::json!({ "agent_type": args.agent_type, "book_id": args.book_id, "params": args.params }),
         ).await;
         if !approved {
-            return Err(BookToolError::Denied);
+            tracing::error!(tool = "pipeline_delegate", agent_type = %args.agent_type, book_id = %args.book_id, "[tool] approval denied");
+            return Err(BookToolError::Denied.into());
         }
 
-        let config = PipelineConfig {
-            books_dir: self.data_dir.books_dir(),
-            ..Default::default()
-        };
-        let runner = PipelineRunner::new(config);
         let engine = self.engine.clone();
+        let pipeline_ops = self.pipeline_ops.clone();
 
-        match args.agent_type.as_str() {
-            "plan_chapter" => {
-                let r = runner.plan_chapter(&engine, &args.book_id).await?;
-                serde_json::to_value(&r).map_err(|e| BookToolError::Failed(e.to_string()))
-            }
+        let result: Result<serde_json::Value, BookToolError> = match args.agent_type.as_str() {
+            "plan_chapter" => pipeline_ops
+                .plan_chapter(&engine, &args.book_id)
+                .await
+                .map_err(BookToolError::Failed),
             "write_draft" => {
                 let wc = parse_word_count_override(&args.params)?;
-                let r = runner.write_draft(&engine, &args.book_id, wc).await?;
-                serde_json::to_value(&r).map_err(|e| BookToolError::Failed(e.to_string()))
+                pipeline_ops
+                    .write_draft(&engine, &args.book_id, wc)
+                    .await
+                    .map_err(BookToolError::Failed)
             }
             "audit_draft" => {
                 let cn = parse_chapter_number(&args.params)?;
-                let r = runner.audit_draft(&engine, &args.book_id, cn).await?;
-                serde_json::to_value(&r).map_err(|e| BookToolError::Failed(e.to_string()))
+                pipeline_ops
+                    .audit_draft(&engine, &args.book_id, cn)
+                    .await
+                    .map_err(BookToolError::Failed)
             }
             "revise_draft" => {
                 let cn = parse_chapter_number(&args.params)?;
                 let mode = parse_revise_mode(&args.params)?;
-                let r = runner.revise_draft(&engine, &args.book_id, cn, mode).await?;
-                serde_json::to_value(&r).map_err(|e| BookToolError::Failed(e.to_string()))
+                pipeline_ops
+                    .revise_draft(&engine, &args.book_id, cn, &mode)
+                    .await
+                    .map_err(BookToolError::Failed)
             }
             "write_next_chapter" => {
                 let wc = parse_word_count_override(&args.params)?;
-                let r = runner.write_next_chapter(&engine, &args.book_id, wc).await?;
-                serde_json::to_value(&r).map_err(|e| BookToolError::Failed(e.to_string()))
+                pipeline_ops
+                    .write_next_chapter(&engine, &args.book_id, wc)
+                    .await
+                    .map_err(BookToolError::Failed)
             }
             "consolidate" => {
                 let book_dir = self.data_dir.books_dir().join(&args.book_id);
                 if !book_dir.exists() {
+                    tracing::error!(tool = "pipeline_delegate", agent_type = %args.agent_type, book_id = %args.book_id, "[tool] book directory not found");
                     return Err(BookToolError::InvalidInput(format!(
                         "书籍目录不存在: {}", args.book_id
-                    )));
+                    )).into());
                 }
-                let r = consolidator::consolidate(&engine, &book_dir).await?;
-                serde_json::to_value(&r).map_err(|e| BookToolError::Failed(e.to_string()))
+                pipeline_ops
+                    .consolidate(&engine, &args.book_id)
+                    .await
+                    .map_err(BookToolError::Failed)
             }
-            other => Err(BookToolError::InvalidInput(format!(
-                "未知 agent_type: {}", other
-            ))),
+            other => {
+                tracing::error!(tool = "pipeline_delegate", agent_type = %other, "[tool] unknown agent_type");
+                Err(BookToolError::InvalidInput(format!(
+                    "未知 agent_type: {}", other
+                )))
+            }
+        };
+
+        if result.is_ok() {
+            tracing::info!(tool = "pipeline_delegate", agent_type = %args.agent_type, book_id = %args.book_id, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
         }
+        result.map_err(ToolError::from)
     }
 }
 
 // ── WriteTruthFileTool ─────────────────────────────────────
 
-/// 编辑真相文件（白名单内）。委托 edit_controller::TruthFileEdit。
+/// 编辑真相文件（白名单内）。委托 BookEditOps::truth_file_edit。
 pub struct WriteTruthFileTool {
-    pub data_dir: DataDir,
     pub approval: Arc<ApprovalManager>,
+    pub edit_ops: Arc<dyn BookEditOps>,
 }
 
 #[derive(Deserialize)]
@@ -271,16 +308,15 @@ pub struct WriteTruthFileArgs {
     pub new_content: String,
 }
 
+#[async_trait]
 impl Tool for WriteTruthFileTool {
-    const NAME: &'static str = "write_truth_file";
+    fn name(&self) -> &str {
+        "write_truth_file"
+    }
 
-    type Error = BookToolError;
-    type Args = WriteTruthFileArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "write_truth_file".to_string(),
             description: "编辑书籍的真相文件（白名单内），整体覆盖。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -297,27 +333,32 @@ impl Tool for WriteTruthFileTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        execute_edit_with_approval(
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: WriteTruthFileArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let edit_ops = self.edit_ops.clone();
+        execute_with_approval(
             &self.approval,
             "write_truth_file",
             &serde_json::json!({ "book_id": args.book_id, "file_name": args.file_name }),
-            EditRequest::TruthFileEdit {
-                book_id: args.book_id,
-                file_name: args.file_name,
-                new_content: args.new_content,
+            move || async move {
+                edit_ops
+                    .truth_file_edit(args.book_id, args.file_name, args.new_content)
+                    .await
             },
-            &self.data_dir,
-        ).await
+        )
+        .await
+        .map_err(ToolError::from)
     }
 }
 
 // ── RenameEntityTool ───────────────────────────────────────
 
-/// 全书实体改名。委托 edit_controller::EntityRename。
+/// 全书实体改名。委托 BookEditOps::entity_rename。
 pub struct RenameEntityTool {
-    pub data_dir: DataDir,
     pub approval: Arc<ApprovalManager>,
+    pub edit_ops: Arc<dyn BookEditOps>,
 }
 
 #[derive(Deserialize)]
@@ -327,16 +368,15 @@ pub struct RenameEntityArgs {
     pub new_name: String,
 }
 
+#[async_trait]
 impl Tool for RenameEntityTool {
-    const NAME: &'static str = "rename_entity";
+    fn name(&self) -> &str {
+        "rename_entity"
+    }
 
-    type Error = BookToolError;
-    type Args = RenameEntityArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "rename_entity".to_string(),
             description: "在全书范围内将旧实体名替换为新名（含文件内容与文件改名）。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -350,28 +390,33 @@ impl Tool for RenameEntityTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        execute_edit_with_approval(
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: RenameEntityArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let edit_ops = self.edit_ops.clone();
+        execute_with_approval(
             &self.approval,
             "rename_entity",
             &serde_json::json!({ "book_id": args.book_id, "old_name": args.old_name, "new_name": args.new_name }),
-            EditRequest::EntityRename {
-                book_id: args.book_id,
-                old_name: args.old_name,
-                new_name: args.new_name,
+            move || async move {
+                edit_ops
+                    .entity_rename(args.book_id, args.old_name, args.new_name)
+                    .await
             },
-            &self.data_dir,
-        ).await
+        )
+        .await
+        .map_err(ToolError::from)
     }
 }
 
 // ── PatchChapterTextTool ───────────────────────────────────
 
 /// 章节局部编辑（三级文本匹配：精确 → 弹性空格 → 段落近似）。
-/// 委托 edit_controller::ChapterLocalEdit。
+/// 委托 BookEditOps::chapter_local_edit。
 pub struct PatchChapterTextTool {
-    pub data_dir: DataDir,
     pub approval: Arc<ApprovalManager>,
+    pub edit_ops: Arc<dyn BookEditOps>,
 }
 
 #[derive(Deserialize)]
@@ -384,16 +429,15 @@ pub struct PatchChapterTextArgs {
     pub replace: String,
 }
 
+#[async_trait]
 impl Tool for PatchChapterTextTool {
-    const NAME: &'static str = "patch_chapter_text";
+    fn name(&self) -> &str {
+        "patch_chapter_text"
+    }
 
-    type Error = BookToolError;
-    type Args = PatchChapterTextArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "patch_chapter_text".to_string(),
             description: "在指定章节内查找目标文本并替换（三级匹配：精确 → 弹性空格 → 段落近似）。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -408,28 +452,32 @@ impl Tool for PatchChapterTextTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        execute_edit_with_approval(
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: PatchChapterTextArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let edit_ops = self.edit_ops.clone();
+        execute_with_approval(
             &self.approval,
             "patch_chapter_text",
             &serde_json::json!({ "book_id": args.book_id, "chapter_number": args.chapter_number }),
-            EditRequest::ChapterLocalEdit {
-                book_id: args.book_id,
-                chapter_number: args.chapter_number,
-                find: args.find,
-                replace: args.replace,
+            move || async move {
+                edit_ops
+                    .chapter_local_edit(args.book_id, args.chapter_number, args.find, args.replace)
+                    .await
             },
-            &self.data_dir,
-        ).await
+        )
+        .await
+        .map_err(ToolError::from)
     }
 }
 
 // ── ReplaceChapterTextTool ─────────────────────────────────
 
-/// 章节整章替换。委托 edit_controller::ChapterReplace。
+/// 章节整章替换。委托 BookEditOps::chapter_replace。
 pub struct ReplaceChapterTextTool {
-    pub data_dir: DataDir,
     pub approval: Arc<ApprovalManager>,
+    pub edit_ops: Arc<dyn BookEditOps>,
 }
 
 #[derive(Deserialize)]
@@ -439,16 +487,15 @@ pub struct ReplaceChapterTextArgs {
     pub new_content: String,
 }
 
+#[async_trait]
 impl Tool for ReplaceChapterTextTool {
-    const NAME: &'static str = "replace_chapter_text";
+    fn name(&self) -> &str {
+        "replace_chapter_text"
+    }
 
-    type Error = BookToolError;
-    type Args = ReplaceChapterTextArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "replace_chapter_text".to_string(),
             description: "用新内容整体覆盖指定章节正文。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -462,18 +509,23 @@ impl Tool for ReplaceChapterTextTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        execute_edit_with_approval(
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: ReplaceChapterTextArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let edit_ops = self.edit_ops.clone();
+        execute_with_approval(
             &self.approval,
             "replace_chapter_text",
             &serde_json::json!({ "book_id": args.book_id, "chapter_number": args.chapter_number }),
-            EditRequest::ChapterReplace {
-                book_id: args.book_id,
-                chapter_number: args.chapter_number,
-                new_content: args.new_content,
+            move || async move {
+                edit_ops
+                    .chapter_replace(args.book_id, args.chapter_number, args.new_content)
+                    .await
             },
-            &self.data_dir,
-        ).await
+        )
+        .await
+        .map_err(ToolError::from)
     }
 }
 
@@ -497,16 +549,15 @@ pub struct ImportChaptersArgs {
     pub split_pattern: Option<String>,
 }
 
+#[async_trait]
 impl Tool for ImportChaptersTool {
-    const NAME: &'static str = "import_chapters";
+    fn name(&self) -> &str {
+        "import_chapters"
+    }
 
-    type Error = BookToolError;
-    type Args = ImportChaptersArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "import_chapters".to_string(),
             description: "从源文件批量导入章节到书籍。源文件须位于书籍目录下，按章节标题切分写入 chapters/。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -526,23 +577,34 @@ impl Tool for ImportChaptersTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: ImportChaptersArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "import_chapters", book_id = %args.book_id, source = %args.source_path, "[tool] call");
+
         validate_id(&args.book_id, "book_id")
-            .map_err(BookToolError::InvalidInput)?;
+            .map_err(|e| {
+                tracing::error!(tool = "import_chapters", book_id = %args.book_id, error = %e, "[tool] invalid book_id");
+                BookToolError::InvalidInput(e)
+            })?;
 
         let book_dir = self.data_dir.books_dir().join(&args.book_id);
         if !book_dir.exists() {
+            tracing::error!(tool = "import_chapters", book_id = %args.book_id, "[tool] book directory not found");
             return Err(BookToolError::InvalidInput(format!(
                 "书籍目录不存在: {}", args.book_id
-            )));
+            )).into());
         }
 
         // 源文件路径须锁定在 book_dir 之下
         let source = resolve_under_book(&book_dir, &args.source_path)?;
         if !source.is_file() {
+            tracing::error!(tool = "import_chapters", source = %args.source_path, "[tool] source file not found");
             return Err(BookToolError::InvalidInput(format!(
                 "源文件不存在: {}", args.source_path
-            )));
+            )).into());
         }
 
         let approved = self.approval.request_approval(
@@ -550,7 +612,8 @@ impl Tool for ImportChaptersTool {
             &serde_json::json!({ "book_id": args.book_id, "source_path": args.source_path }),
         ).await;
         if !approved {
-            return Err(BookToolError::Denied);
+            tracing::error!(tool = "import_chapters", book_id = %args.book_id, source = %args.source_path, "[tool] approval denied");
+            return Err(BookToolError::Denied.into());
         }
 
         let split_pattern = args.split_pattern.clone();
@@ -558,8 +621,12 @@ impl Tool for ImportChaptersTool {
         let written = tokio::task::spawn_blocking(move || -> Result<Vec<serde_json::Value>, BookToolError> {
             // 大小检查：防止一次性读入超大文件
             let metadata = std::fs::metadata(&source)
-                .map_err(|e| BookToolError::Io(e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(tool = "import_chapters", error = %e, "[tool] metadata failed");
+                    BookToolError::Io(e.to_string())
+                })?;
             if metadata.len() > MAX_READ_SIZE as u64 {
+                tracing::error!(tool = "import_chapters", size = metadata.len(), max = MAX_READ_SIZE, "[tool] source file too large");
                 return Err(BookToolError::InvalidInput(format!(
                     "Source file too large ({} bytes > {} max)", metadata.len(), MAX_READ_SIZE
                 )));
@@ -567,6 +634,7 @@ impl Tool for ImportChaptersTool {
             let content = std::fs::read_to_string(&source)?;
             let chunks = split_into_chapters(&content, split_pattern.as_deref())?;
             if chunks.is_empty() {
+                tracing::error!(tool = "import_chapters", "[tool] no chapters extracted");
                 return Err(BookToolError::InvalidInput("切分后未得到任何章节".to_string()));
             }
 
@@ -591,8 +659,12 @@ impl Tool for ImportChaptersTool {
             Ok(written)
         })
         .await
-        .map_err(|e| BookToolError::Failed(format!("spawn_blocking join failed: {}", e)))??;
+        .map_err(|e| {
+            tracing::error!(tool = "import_chapters", error = %e, "[tool] spawn_blocking join failed");
+            BookToolError::Failed(format!("spawn_blocking join failed: {}", e))
+        })??;
 
+        tracing::info!(tool = "import_chapters", book_id = %args.book_id, imported_count = written.len(), duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
         Ok(serde_json::json!({
             "imported_count": written.len(),
             "chapters": written,
@@ -616,16 +688,15 @@ pub struct GenerateCoverArgs {
     pub description: String,
 }
 
+#[async_trait]
 impl Tool for GenerateCoverTool {
-    const NAME: &'static str = "generate_cover";
+    fn name(&self) -> &str {
+        "generate_cover"
+    }
 
-    type Error = BookToolError;
-    type Args = GenerateCoverArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "generate_cover".to_string(),
             description: "为书籍生成封面提示词并落盘（图片生成未实现，仅写 cover-prompt.md）。需用户确认。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -641,36 +712,59 @@ impl Tool for GenerateCoverTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: GenerateCoverArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "generate_cover", book_id = %args.book_id, "[tool] call");
+
         validate_id(&args.book_id, "book_id")
-            .map_err(BookToolError::InvalidInput)?;
+            .map_err(|e| {
+                tracing::error!(tool = "generate_cover", book_id = %args.book_id, error = %e, "[tool] invalid book_id");
+                BookToolError::InvalidInput(e)
+            })?;
 
         let approved = self.approval.request_approval(
             "generate_cover",
             &serde_json::json!({ "book_id": args.book_id }),
         ).await;
         if !approved {
-            return Err(BookToolError::Denied);
+            tracing::error!(tool = "generate_cover", book_id = %args.book_id, "[tool] approval denied");
+            return Err(BookToolError::Denied.into());
         }
 
         let book_dir = self.data_dir.books_dir().join(&args.book_id);
         if !book_dir.exists() {
+            tracing::error!(tool = "generate_cover", book_id = %args.book_id, "[tool] book directory not found");
             return Err(BookToolError::InvalidInput(format!(
                 "书籍目录不存在: {}", args.book_id
-            )));
+            )).into());
         }
         let description = args.description.clone();
         // create_dir + write 卸载到阻塞线程池
         tokio::task::spawn_blocking(move || -> Result<(), BookToolError> {
             let story_dir = book_dir.join("story");
-            std::fs::create_dir_all(&story_dir)?;
+            std::fs::create_dir_all(&story_dir)
+                .map_err(|e| {
+                    tracing::error!(tool = "generate_cover", error = %e, "[tool] create_dir_all failed");
+                    BookToolError::Io(e.to_string())
+                })?;
             let cover_path = story_dir.join("cover-prompt.md");
-            std::fs::write(&cover_path, ensure_trailing_newline(&description))?;
+            std::fs::write(&cover_path, ensure_trailing_newline(&description))
+                .map_err(|e| {
+                    tracing::error!(tool = "generate_cover", error = %e, "[tool] write failed");
+                    BookToolError::Io(e.to_string())
+                })?;
             Ok(())
         })
         .await
-        .map_err(|e| BookToolError::Failed(format!("spawn_blocking join failed: {}", e)))??;
+        .map_err(|e| {
+            tracing::error!(tool = "generate_cover", error = %e, "[tool] spawn_blocking join failed");
+            BookToolError::Failed(format!("spawn_blocking join failed: {}", e))
+        })??;
 
+        tracing::info!(tool = "generate_cover", book_id = %args.book_id, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
         Ok(serde_json::json!({
             "saved": true,
             "path": "story/cover-prompt.md",
@@ -679,23 +773,36 @@ impl Tool for GenerateCoverTool {
     }
 }
 
-// ── 共享：审批 + edit_controller 执行 ──────────────────────
+// ── 共享：审批 + trait 操作执行 ─────────────────────────────
 
-/// 通用流程：审批 → plan_edit_transaction → execute_edit_transaction → 序列化返回。
-async fn execute_edit_with_approval(
+/// 通用流程：审批 → 调用 trait 操作（返回 Value）→ 日志。
+///
+/// `op` 是一个返回 `Future<Output = Result<serde_json::Value, String>>` 的闭包，
+/// 由各 Tool 提供，封装对 BookEditOps / PipelineDelegateOps / ResearchOps 的调用。
+/// 这样各 Tool 只需关注参数解析与 trait 方法选择，审批/日志/错误转换统一在此处理。
+async fn execute_with_approval<F, Fut>(
     approval: &Arc<ApprovalManager>,
     tool_name: &str,
     payload: &serde_json::Value,
-    request: EditRequest,
-    data_dir: &DataDir,
-) -> Result<serde_json::Value, BookToolError> {
+    op: F,
+) -> Result<serde_json::Value, BookToolError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<serde_json::Value, String>>,
+{
+    let start = Instant::now();
+    tracing::info!(tool = %tool_name, "[tool] call");
+
     let approved = approval.request_approval(tool_name, payload).await;
     if !approved {
+        tracing::error!(tool = %tool_name, "[tool] approval denied");
         return Err(BookToolError::Denied);
     }
-    let planned = edit_controller::plan_edit_transaction(request)?;
-    let executed = edit_controller::execute_edit_transaction(planned, data_dir)?;
-    serde_json::to_value(&executed).map_err(|e| BookToolError::Failed(e.to_string()))
+
+    let result = op().await.map_err(BookToolError::Failed)?;
+
+    tracing::info!(tool = %tool_name, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+    Ok(result)
 }
 
 // ── 辅助：参数解析 ─────────────────────────────────────────
@@ -718,16 +825,15 @@ fn parse_chapter_number(params: &serde_json::Value) -> Result<Option<u32>, BookT
     }
 }
 
-/// 从 params 中解析 revise mode（缺省 Auto）
-fn parse_revise_mode(params: &serde_json::Value) -> Result<ReviseMode, BookToolError> {
+/// 从 params 中解析 revise mode（缺省 "auto"）。
+/// 返回字符串形式（auto/polish/rewrite/rework/antidetect/spotfix），
+/// 由 PipelineDelegateOps 实现方映射到 domain::pipeline::agents::reviser::ReviseMode。
+fn parse_revise_mode(params: &serde_json::Value) -> Result<String, BookToolError> {
     let s = params.get("mode").and_then(|v| v.as_str()).unwrap_or("auto");
     match s.to_lowercase().as_str() {
-        "auto" => Ok(ReviseMode::Auto),
-        "polish" => Ok(ReviseMode::Polish),
-        "rewrite" => Ok(ReviseMode::Rewrite),
-        "rework" => Ok(ReviseMode::Rework),
-        "antidetect" => Ok(ReviseMode::AntiDetect),
-        "spotfix" => Ok(ReviseMode::SpotFix),
+        "auto" | "polish" | "rewrite" | "rework" | "antidetect" | "spotfix" => {
+            Ok(s.to_lowercase())
+        }
         other => Err(BookToolError::InvalidInput(format!("未知 revise mode: {}", other))),
     }
 }
@@ -735,7 +841,7 @@ fn parse_revise_mode(params: &serde_json::Value) -> Result<ReviseMode, BookToolE
 // ── 辅助：路径与章节切分 ───────────────────────────────────
 
 /// 将相对路径解析到 book_dir 之下，拒绝 `..` 与绝对路径。
-fn resolve_under_book(book_dir: &PathBuf, rel: &str) -> Result<PathBuf, BookToolError> {
+fn resolve_under_book(book_dir: &Path, rel: &str) -> Result<PathBuf, BookToolError> {
     let trimmed = rel.trim();
     if trimmed.is_empty() {
         return Err(BookToolError::InvalidInput("路径不能为空".to_string()));

@@ -1,24 +1,6 @@
-// Loop-Engineering 预算守卫 —— 三档阈值决策。
-//
-// 决策矩阵(以 audit-revise-loop 为例,daily_cap=1_500_000):
-// ┌─────────────────────────────┬─────────────────────────────────┐
-// │ 条件                        │ 决策                            │
-// ├─────────────────────────────┼─────────────────────────────────┤
-// │ 累计 ≥ 100% daily_cap       │ Exit(立即停止,防止超支)         │
-// │ 累计 ≥ 80% daily_cap        │ DegradeToReportOnly(只看不修)    │
-// │ 累计 ≥ tokens_per_run_cap   │ DegradeToReportOnly(单次超限)    │
-// │ 累计 < early_exit_tokens     │ EarlyExit(空 watchlist,跳过)    │
-// │ 否则                        │ Allow(正常执行)                │
-// └─────────────────────────────┴─────────────────────────────────┘
-//
-// early_exit 语义(对齐 operating-loops.md 第 4 节):
-// - 当循环刚开始、watchlist 为空、预计 token < early_exit_tokens 时直接退出
-// - 避免 spawn sub-agent 的固定开销
-// - high-cadence pattern(audit-revise)强制 early_exit_required = true
-//
-// attempt cap(不在此处检查,由 chapter_review_cycle 在循环内自行检查):
-// - max_attempts = 3(对齐 failure-modes.md S2 缓解)
-// - 超出后 outcome = Escalated
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Budget - 循环预算守卫，三档阈值决策
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use chrono::Utc;
 
@@ -26,6 +8,8 @@ use crate::infrastructure::db::connection::Database;
 use crate::shared::error::AppError;
 
 use super::types::{BudgetCheckResult, LoopPattern, LoopPatternId};
+
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 /// 今日 UTC 日期边界(返回 [start_iso, end_iso])
 ///
@@ -39,6 +23,8 @@ fn today_utc_bounds() -> (String, String) {
     // 用 LIKE 'YYYY-MM-DD%' 等价于 >= start AND < next_day
     (format!("{}T00:00:00Z", start), format!("{}T00:00:00Z", next))
 }
+
+// ── Token 用量查询 ──────────────────────────────────────────────────────────
 
 /// 查询今日累计 token 用量(所有 pattern 合计)
 ///
@@ -80,6 +66,8 @@ pub fn run_count_today(db: &Database, pattern_id: &LoopPatternId) -> Result<u32,
     Ok(count.unwrap_or(0) as u32)
 }
 
+// ── 预算检查 ────────────────────────────────────────────────────────────────
+
 /// 检查预算,返回三档决策之一。
 ///
 /// 参数:
@@ -106,54 +94,87 @@ pub fn check_budget(
     let daily_used = daily_token_usage(db)?;
     let projected = daily_used.saturating_add(run_tokens_estimate);
 
+    tracing::debug!(
+        pattern_id = %pattern_id.as_str(),
+        daily_used = daily_used,
+        run_estimate = run_tokens_estimate,
+        projected = projected,
+        daily_cap = pattern.tokens_daily_cap,
+        "[loop] budget check started"
+    );
+
     // 1. 累计 + 本次 ≥ 100% daily_cap → Exit
     if projected >= pattern.tokens_daily_cap {
-        return Ok(BudgetCheckResult::Exit {
-            reason: format!(
-                "Projected {} tokens ≥ daily cap {} (used {})",
-                projected, pattern.tokens_daily_cap, daily_used
-            ),
-        });
+        let reason = format!(
+            "Projected {} tokens ≥ daily cap {} (used {})",
+            projected, pattern.tokens_daily_cap, daily_used
+        );
+        tracing::warn!(
+            pattern_id = %pattern_id.as_str(),
+            projected = projected,
+            daily_cap = pattern.tokens_daily_cap,
+            reason = %reason,
+            "[loop] budget check: exit (cap exceeded)"
+        );
+        return Ok(BudgetCheckResult::Exit { reason });
     }
 
     // 2. 累计 ≥ 80% daily_cap → DegradeToReportOnly
     let degrade_threshold = pattern.tokens_daily_cap * 4 / 5; // 80%
     if daily_used >= degrade_threshold {
-        return Ok(BudgetCheckResult::DegradeToReportOnly {
-            reason: format!(
-                "Daily used {} ≥ 80% of cap {}",
-                daily_used, pattern.tokens_daily_cap
-            ),
-        });
+        let reason = format!(
+            "Daily used {} ≥ 80% of cap {}",
+            daily_used, pattern.tokens_daily_cap
+        );
+        tracing::info!(
+            pattern_id = %pattern_id.as_str(),
+            daily_used = daily_used,
+            degrade_threshold = degrade_threshold,
+            "[loop] budget check: degrade to report-only"
+        );
+        return Ok(BudgetCheckResult::DegradeToReportOnly { reason });
     }
 
     // 3. 本次 + 累计 ≥ tokens_per_run_cap → DegradeToReportOnly
     if projected >= pattern.tokens_per_run_cap {
-        return Ok(BudgetCheckResult::DegradeToReportOnly {
-            reason: format!(
-                "Projected {} ≥ per-run cap {}",
-                projected, pattern.tokens_per_run_cap
-            ),
-        });
+        let reason = format!(
+            "Projected {} ≥ per-run cap {}",
+            projected, pattern.tokens_per_run_cap
+        );
+        tracing::info!(
+            pattern_id = %pattern_id.as_str(),
+            projected = projected,
+            per_run_cap = pattern.tokens_per_run_cap,
+            "[loop] budget check: degrade to report-only (per-run cap)"
+        );
+        return Ok(BudgetCheckResult::DegradeToReportOnly { reason });
     }
 
     // 4. 本次 < early_exit_tokens 且 pattern 强制早退 → EarlyExit
-    //    语义:watchlist 为空、预计开销很小、且 pattern 标记 early_exit_required
-    //    (caller 应当只在 watchlist 为空时传入小值)
     if pattern.early_exit_required && run_tokens_estimate < pattern.early_exit_tokens {
-        return Ok(BudgetCheckResult::EarlyExit {
-            reason: format!(
-                "Run estimate {} < early-exit threshold {} (required for {})",
-                run_tokens_estimate,
-                pattern.early_exit_tokens,
-                pattern_id.as_str()
-            ),
-        });
+        let reason = format!(
+            "Run estimate {} < early-exit threshold {} (required for {})",
+            run_tokens_estimate,
+            pattern.early_exit_tokens,
+            pattern_id.as_str()
+        );
+        tracing::info!(
+            pattern_id = %pattern_id.as_str(),
+            run_estimate = run_tokens_estimate,
+            early_exit_threshold = pattern.early_exit_tokens,
+            "[loop] budget check: early exit"
+        );
+        return Ok(BudgetCheckResult::EarlyExit { reason });
     }
 
-    // 5. 默认 → Allow
+    tracing::debug!(
+        pattern_id = %pattern_id.as_str(),
+        "[loop] budget check: allow"
+    );
     Ok(BudgetCheckResult::Allow)
 }
+
+// ── 单元测试 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

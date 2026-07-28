@@ -1,7 +1,9 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! AgentOrchestrator - 代理编排器
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::path::PathBuf;
 use std::collections::HashMap;
-
-use rig::client::CompletionClient;
 
 use crate::shared::error::AppError;
 use crate::infrastructure::llm::registry::ProviderRegistry;
@@ -18,9 +20,9 @@ pub struct AgentOrchestrator {
 impl AgentOrchestrator {
     pub fn new(registry: ProviderRegistry, workspace_root: PathBuf) -> Self {
         let mut subagents = HashMap::new();
-        
+
         for role in [SubAgentRole::Researcher, SubAgentRole::Outliner, SubAgentRole::Critic] {
-            subagents.insert(role, SubAgent::new(role, workspace_root.clone()));
+            subagents.insert(role, SubAgent::new(role));
         }
 
         Self {
@@ -36,61 +38,37 @@ impl AgentOrchestrator {
         task: &str,
         context: &str,
     ) -> Result<SubAgentResult, AppError> {
-        let subagent = self.subagents.get(&role)
-            .ok_or_else(|| AppError::internal(format!("Sub-agent {:?} not initialized", role)))?;
+        let start = std::time::Instant::now();
+        tracing::info!(role = ?role, task_len = task.len(), "delegate_to_subagent: enter");
 
-        let config = self.registry.active_model_config()
-            .ok_or_else(|| AppError::model_not_found("active"))?;
+        let result = async {
+            let subagent = self.subagents.get(&role)
+                .ok_or_else(|| AppError::internal(format!("Sub-agent {:?} not initialized", role)))?;
 
-        let provider = config.provider.clone();
-        let base_url = config.base_url.clone();
-        let api_key = config.api_key.clone();
-        let model = config.model.clone();
+            let config = self.registry.active_model_config()
+                .ok_or_else(AppError::no_active_model)?;
 
-        match provider.to_lowercase().as_str() {
-            "openai" => {
-                let client = rig::providers::openai::Client::builder()
-                    .api_key(api_key)
-                    .base_url(&base_url)
-                    .build()
-                    .map_err(|e| AppError::stream_error(e.to_string()))?;
+            let model = config.model.clone();
+            let provider = self.registry.active_provider()?;
 
-                let builder = client.agent(&model);
-                subagent.execute(builder, task, context, None).await
-            }
-            "anthropic" => {
-                let client = rig::providers::anthropic::Client::builder()
-                    .api_key(api_key)
-                    .base_url(&base_url)
-                    .build()
-                    .map_err(|e| AppError::stream_error(e.to_string()))?;
+            subagent.execute(&provider, &model, task, context, None).await
+        }.await;
 
-                let builder = client.agent(&model);
-                subagent.execute(builder, task, context, None).await
-            }
-            "ollama" => {
-                let client = rig::providers::ollama::Client::builder()
-                    .api_key(api_key)
-                    .base_url(&base_url)
-                    .build()
-                    .map_err(|e| AppError::stream_error(e.to_string()))?;
-
-                let builder = client.agent(&model);
-                subagent.execute(builder, task, context, None).await
-            }
-            "deepseek" | "agnes" | "openrouter" => {
-                let client = rig::providers::openai::Client::builder()
-                    .api_key(api_key)
-                    .base_url(&base_url)
-                    .build()
-                    .map_err(|e| AppError::stream_error(e.to_string()))?
-                    .completions_api();
-
-                let builder = client.agent(&model);
-                subagent.execute(builder, task, context, None).await
-            }
-            _ => Err(AppError::provider_not_found(&provider)),
+        match &result {
+            Ok(r) => tracing::info!(
+                role = ?role,
+                tokens_used = r.tokens_used,
+                duration_ms = start.elapsed().as_millis(),
+                "delegate_to_subagent: exit"
+            ),
+            Err(e) => tracing::error!(
+                role = ?role,
+                error = %e,
+                duration_ms = start.elapsed().as_millis(),
+                "delegate_to_subagent: error"
+            ),
         }
+        result
     }
 
     pub fn workspace_root(&self) -> &PathBuf {

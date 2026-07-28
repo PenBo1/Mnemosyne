@@ -1,17 +1,20 @@
-use std::path::PathBuf;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! SubAgentTool - 子代理工具
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::sync::Arc;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use async_trait::async_trait;
 use serde::Deserialize;
 
+use crate::infrastructure::llm::tool::{Tool, ToolDefinition, ToolError};
+
 use super::executor::SubAgentTask;
-use super::types::{SubAgentRole, SubAgentResult};
+use super::types::SubAgentRole;
 use crate::core::agent::engine::AgentEngine;
 
 pub struct SubAgentTool {
     pub engine: Arc<AgentEngine>,
-    pub workspace_root: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -19,26 +22,19 @@ pub struct SubAgentToolArgs {
     pub role: SubAgentRole,
     pub task: String,
     pub context: String,
+    #[serde(default)]
+    pub skill: Option<String>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum SubAgentToolError {
-    #[error("Execution failed: {0}")]
-    ExecutionFailed(String),
-    #[error("Invalid role: {0}")]
-    InvalidRole(String),
-}
-
+#[async_trait]
 impl Tool for SubAgentTool {
-    const NAME: &'static str = "subagent";
+    fn name(&self) -> &str {
+        "subagent"
+    }
 
-    type Error = SubAgentToolError;
-    type Args = SubAgentToolArgs;
-    type Output = SubAgentResult;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: self.name().to_string(),
             description: "Delegate a task to a specialized sub-agent (researcher/outliner/critic)".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -55,6 +51,11 @@ impl Tool for SubAgentTool {
                     "context": {
                         "type": "string",
                         "description": "Context information for the sub-agent (files, code, requirements)"
+                    },
+                    "skill": {
+                        "type": "string",
+                        "enum": ["loop-triage", "loop-verifier", "minimal-fix"],
+                        "description": "Optional skill behavior constraint to inject (loop-engineering skills)"
                     }
                 },
                 "required": ["role", "task", "context"]
@@ -62,13 +63,19 @@ impl Tool for SubAgentTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let executor = self.engine.subagent_executor(self.workspace_root.clone());
-        let task = SubAgentTask::new(args.role, args.task, args.context);
-        let outcome = executor.execute(task).await
-            .map_err(|e| SubAgentToolError::ExecutionFailed(e.to_string()))?;
-        // ExecutionResult.result 现为 Arc<SubAgentResult>，在 Tool 边界 deref + clone
-        // （rig 的 Tool::Output 必须是 owned SubAgentResult，无法直接返回 Arc）。
-        Ok((*outcome.result).clone())
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: SubAgentToolArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let executor = self.engine.subagent_executor();
+        let mut task = SubAgentTask::new(args.role, args.task, args.context);
+        if let Some(skill) = args.skill {
+            task = task.with_skill_prompt(&skill);
+        }
+        let outcome = executor
+            .execute(task)
+            .await
+            .map_err(|e| ToolError::Execution(e.to_string()))?;
+        Ok(serde_json::to_value(&*outcome.result).map_err(|e| ToolError::Other(e.to_string()))?)
     }
 }

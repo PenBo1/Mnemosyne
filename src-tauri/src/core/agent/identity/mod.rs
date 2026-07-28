@@ -1,34 +1,26 @@
-// Agent 身份文件加载器 —— 从 <data_dir>/agents/<role>/ 读取 SOUL/CONTEXT/MEMORY.md。
-//
-// AGENTS.md:Agent identity files 由 core/init.rs 生成,运行时加载
-//
-// 加载策略:
-// 1. 优先读磁盘文件(允许用户热编辑,无需重启)
-// 2. 文件不存在或为空时回退到 prompts 模块中的默认模板
-// 3. 读取失败只 log warn,不阻塞 agent 启动
-//
-// 体积管控:
-// - 单段身份文件超过 `IDENTITY_MAX_CHARS` 时 head/tail 截断 + 插入 read_file 兜底 marker
-// - 防止用户编辑超长 SOUL.md/CONTEXT.md 导致 system prompt 超过模型上下文窗口
-// - marker 明确告知模型用 read_file 工具读取完整内容,把上下文负载转移到工具调用阶段
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Identity - Agent 身份管理模块
+//! ═══════════════════════════════════════════════════════════════════════════
+
+mod agents_md_tracker;
+
+pub use agents_md_tracker::AgentsMdTracker;
 
 use std::path::PathBuf;
 
-use crate::domain::user::types::UserProfile;
 use crate::infrastructure::fs::data_dir::DataDir;
 use super::prompts;
+use super::user_profile::UserProfileSnapshot;
 
-/// 单段身份文件的字符上限。
-///
-/// 超过此值时 head/tail 截断,保留头部 70% + 尾部 20%,中间 10% 留给 marker。
-/// 默认 20K 字符 ≈ 5K-7K tokens,加上其他段后总 system prompt 仍在可控范围。
+// ── 常量定义 ────────────────────────────────────────────────────────────────
+
 const IDENTITY_MAX_CHARS: usize = 20_000;
 
-/// head/tail 截断比例。
 const IDENTITY_TRUNCATE_HEAD_RATIO: f64 = 0.7;
 const IDENTITY_TRUNCATE_TAIL_RATIO: f64 = 0.2;
 
-/// 三种身份文件的种类。
+// ── 身份类型枚举 ────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityKind {
     Soul,
@@ -45,27 +37,17 @@ impl IdentityKind {
         }
     }
 
-    /// main role 的默认内容(向后兼容)。
     pub fn default_content(self) -> &'static str {
         prompts::default_for(self.filename()).unwrap_or("")
     }
 
-    /// 任意 role 的默认内容。
-    ///
-    /// - main role:返回完整默认模板
-    /// - pipeline role:返回对应 role 的简短种子
-    /// - 未知 role:返回空字符串(理论不会发生,ALL_ROLES 已覆盖)
     pub fn default_content_for(self, role: &str) -> &'static str {
         prompts::default_for_role(role, self.filename()).unwrap_or("")
     }
 }
 
-/// 加载身份文件:磁盘优先,空则回退默认。
-///
-/// 返回 None 当且仅当磁盘和默认都为空(理论不会发生,默认非空)。
-///
-/// 异步:使用 `tokio::fs::read_to_string` 避免阻塞 async runtime。
-/// 身份文件体积小(默认内容 < 20K 字符),但仍走异步 I/O 以遵循 async 路径约定。
+// ── 身份文件加载 ────────────────────────────────────────────────────────────
+
 pub async fn load_identity(data_dir: &DataDir, role: &str, kind: IdentityKind) -> Option<String> {
     let path = identity_path(data_dir, role, kind);
     match tokio::fs::read_to_string(&path).await {
@@ -79,7 +61,6 @@ pub async fn load_identity(data_dir: &DataDir, role: &str, kind: IdentityKind) -
             Some(content)
         }
         Ok(_) => {
-            // 文件存在但为空,使用默认
             tracing::debug!(
                 role = role,
                 kind = kind.filename(),
@@ -99,24 +80,12 @@ pub async fn load_identity(data_dir: &DataDir, role: &str, kind: IdentityKind) -
     }
 }
 
-/// 计算身份文件路径(不读磁盘)。
 pub fn identity_path(data_dir: &DataDir, role: &str, kind: IdentityKind) -> PathBuf {
     data_dir.agents_dir().join(role).join(kind.filename())
 }
 
-/// Token 估算。
-///
-/// 算法：
-/// - 中文（CJK 统一表意文字 + 扩展 A）：1 字 ≈ 1.5 token
-/// - 英文：按词计数，1 词 ≈ 1.3 token（连续 ascii_alphabetic 序列视为一个词）
-/// - 代码/符号字符（含空白、标点、数字、符号）：字符数 ÷ 3.5
-///
-/// 单次遍历实现，每个字符精确归入一类（CJK / 英文字母 / 代码符号），
-/// 避免 `total - cjk - english_chars` 间接相减导致的漏算（原实现中
-/// `english_chars` 含词内标点，被减去后既未计入英文也未计入代码）。
-///
-/// 与前端 `src/features/agent/services/utils/context-assembly.ts::estimateTextTokens`
-/// 保持算法口径一致。
+// ── Token 估算 ──────────────────────────────────────────────────────────────
+
 pub fn estimate_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;
@@ -125,7 +94,7 @@ pub fn estimate_tokens(text: &str) -> usize {
     let mut cjk_chars: usize = 0;
     let mut english_words: usize = 0;
     let mut code_chars: usize = 0;
-    let mut in_word = false; // 是否处于连续 ascii_alphabetic 序列中
+    let mut in_word = false;
 
     for ch in text.chars() {
         let is_cjk_char = ('\u{4e00}'..='\u{9fff}').contains(&ch)
@@ -140,9 +109,7 @@ pub fn estimate_tokens(text: &str) -> usize {
                 english_words += 1;
                 in_word = true;
             }
-            // 英文字母不计入 code_chars，避免双重计算
         } else {
-            // 空白、标点、数字、符号一律归入 code/symbol
             code_chars += 1;
             in_word = false;
         }
@@ -155,17 +122,8 @@ pub fn estimate_tokens(text: &str) -> usize {
     (cjk_tokens + english_tokens + code_tokens).ceil() as usize
 }
 
-/// 单段身份文件超限时 head/tail 截断 + 插入 read_file 兜底 marker。
-///
-/// 截断规则：
-/// - 保留头部 `IDENTITY_TRUNCATE_HEAD_RATIO`（0.7）
-/// - 保留尾部 `IDENTITY_TRUNCATE_TAIL_RATIO`（0.2）
-/// - 中间 0.1 留给 marker，明确告知模型用 read_file 读取完整内容
-///
-/// `filename` 仅用于 marker 提示，让模型知道去读哪个文件。
-/// `role` 用于构造 read_file 路径提示（agents/<role>/<filename>）。
-///
-/// 未超限时原样返回。
+// ── 身份内容截断 ────────────────────────────────────────────────────────────
+
 fn truncate_identity_section(content: &str, filename: &str, role: &str) -> String {
     if content.chars().count() <= IDENTITY_MAX_CHARS {
         return content.to_string();
@@ -199,50 +157,53 @@ fn truncate_identity_section(content: &str, filename: &str, role: &str) -> Strin
     format!("{head}{marker}{tail}")
 }
 
-/// 拼装完整 system prompt:SOUL + CONTEXT + (可选)UserProfile + (可选)custom_instructions + MEMORY。
-///
-/// 顺序对齐 stable/context/volatile 三层思路,但简化为单函数:
-/// - stable:   SOUL.md(身份)
-/// - context:  CONTEXT.md(任务上下文) + UserProfile(用户画像) + custom_instructions
-/// - volatile: MEMORY.md(累积教训)
-///
-/// 各段以 `\n\n---\n\n` 分隔,避免内容粘连。
-///
-/// 体积管控：
-/// - 每段身份文件加载后调用 `truncate_identity_section`,超过 `IDENTITY_MAX_CHARS` 时
-///   head/tail 截断 + 插入 read_file 兜底 marker,把上下文负载转移到工具调用阶段
-/// - 防止用户编辑超长 SOUL.md/CONTEXT.md 导致 system prompt 超过模型上下文窗口
+// ── 系统提示构建 ────────────────────────────────────────────────────────────
+
 pub async fn build_system_prompt(
     data_dir: &DataDir,
     role: &str,
     custom_instructions: Option<&str>,
-    user_profile: Option<&UserProfile>,
+    user_profile: Option<&UserProfileSnapshot>,
+    load_extended_context: bool,
 ) -> String {
-    let mut parts: Vec<String> = Vec::with_capacity(5);
+    tracing::debug!(
+        role = %role,
+        has_custom_instructions = custom_instructions.is_some(),
+        has_user_profile = user_profile.is_some(),
+        load_extended_context,
+        "[identity] build_system_prompt: starting"
+    );
 
-    if let Some(soul) = load_identity(data_dir, role, IdentityKind::Soul).await {
-        parts.push(truncate_identity_section(&soul, "SOUL.md", role));
-    }
-    if let Some(context) = load_identity(data_dir, role, IdentityKind::Context).await {
-        parts.push(truncate_identity_section(&context, "CONTEXT.md", role));
-    }
-    if let Some(profile) = user_profile {
-        let formatted = profile.format_for_prompt();
-        if !formatted.trim().is_empty() {
-            parts.push(formatted);
-        }
-    }
-    if let Some(extra) = custom_instructions {
-        if !extra.trim().is_empty() {
-            parts.push(format!("# Additional Instructions\n\n{}", extra));
-        }
-    }
-    if let Some(memory) = load_identity(data_dir, role, IdentityKind::Memory).await {
-        parts.push(truncate_identity_section(&memory, "MEMORY.md", role));
-    }
+    // 通过三层架构构建 parts：tiered 内部加载 SOUL/CONTEXT(core[+extended])/MEMORY
+    // + caller_context(custom_instructions) + user_profile + timestamp
+    let mut parts = prompts::tiered::build_system_prompt_parts(
+        data_dir,
+        role,
+        custom_instructions,
+        user_profile,
+        load_extended_context,
+    )
+    .await;
 
-    parts.join("\n\n---\n\n")
+    // 保留 truncate 保护：防止超大 identity 文件撑爆 context
+    // （tiered 当前不截断，由 identity 层兜底；engine 缓存路径见 engine.build_system_prompt）
+    parts.stable.soul = truncate_identity_section(&parts.stable.soul, "SOUL.md", role);
+    parts.stable.environment_hints =
+        truncate_identity_section(&parts.stable.environment_hints, "CONTEXT.md", role);
+    parts.volatile.memory_snapshot =
+        truncate_identity_section(&parts.volatile.memory_snapshot, "MEMORY.md", role);
+
+    let result = prompts::tiered::render_system_prompt(&parts);
+    tracing::info!(
+        role = %role,
+        total_chars = result.len(),
+        estimated_tokens = estimate_tokens(&result),
+        "[identity] build_system_prompt: completed"
+    );
+    result
 }
+
+// ── 单元测试 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -266,7 +227,6 @@ mod tests {
     async fn load_identity_falls_back_to_default_when_missing() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
-        // 不创建文件,直接读 —— 应回退到默认
         let soul = load_identity(&data_dir, "main", IdentityKind::Soul).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("Mnemosyne"));
@@ -294,40 +254,38 @@ mod tests {
 
         let soul = load_identity(&data_dir, "main", IdentityKind::Soul).await;
         assert!(soul.is_some());
-        assert!(soul.unwrap().contains("Mnemosyne")); // 回退默认
+        assert!(soul.unwrap().contains("Mnemosyne"));
     }
 
     #[tokio::test]
     async fn build_prompt_joins_sections() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
-        let prompt = build_system_prompt(&data_dir, "main", Some("Be extra careful"), None).await;
-        assert!(prompt.contains("Mnemosyne"));        // SOUL
-        assert!(prompt.contains("Tauri"));            // CONTEXT
-        assert!(prompt.contains("Be extra careful")); // custom
-        assert!(prompt.contains("user_preferences")); // MEMORY
-        assert!(prompt.contains("---"));              // 分隔符
+        let prompt = build_system_prompt(&data_dir, "main", Some("Be extra careful"), None, false).await;
+        assert!(prompt.contains("Mnemosyne"));
+        assert!(prompt.contains("Tauri"));
+        assert!(prompt.contains("Be extra careful"));
+        assert!(prompt.contains("user_preferences"));
+        assert!(prompt.contains("---"));
     }
 
     #[tokio::test]
     async fn build_prompt_includes_user_profile_when_provided() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
-        let profile = UserProfile::default();
-        let prompt = build_system_prompt(&data_dir, "main", None, Some(&profile)).await;
+        let profile = UserProfileSnapshot::default();
+        let prompt = build_system_prompt(&data_dir, "main", None, Some(&profile), false).await;
         assert!(prompt.contains("## User Profile"));
-        assert!(prompt.contains("Mnemosyne")); // SOUL 仍在
+        assert!(prompt.contains("Mnemosyne"));
     }
 
     #[tokio::test]
     async fn build_prompt_omits_user_profile_when_none() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data_dir = DataDir::new(tmp.path().to_path_buf());
-        let prompt = build_system_prompt(&data_dir, "main", None, None).await;
+        let prompt = build_system_prompt(&data_dir, "main", None, None, false).await;
         assert!(!prompt.contains("## User Profile"));
     }
-
-    // ── estimate_tokens 单元测试 ──────────────────────────────────
 
     #[test]
     fn estimate_tokens_empty_string() {
@@ -336,27 +294,22 @@ mod tests {
 
     #[test]
     fn estimate_tokens_pure_english() {
-        // 5 个英文单词 ≈ 5 * 1.3 = 6.5 → 7 tokens
         let tokens = estimate_tokens("hello world from the agent");
         assert!(tokens >= 6 && tokens <= 8, "got {tokens}");
     }
 
     #[test]
     fn estimate_tokens_pure_chinese() {
-        // 14 个中文字 ≈ 14 * 1.5 = 21 tokens
         let tokens = estimate_tokens("你好世界我是一个人工智能助手");
         assert!(tokens >= 20 && tokens <= 22, "got {tokens}");
     }
 
     #[test]
     fn estimate_tokens_mixed_content() {
-        // 混合内容应大于纯中文或纯英文
         let text = "Hello 你好 World 世界 — Code: fn main() { println!(\"hi\"); }";
         let tokens = estimate_tokens(text);
         assert!(tokens > 10, "got {tokens}");
     }
-
-    // ── truncate_identity_section 单元测试 ────────────────────────
 
     #[test]
     fn truncate_short_section_unchanged() {
@@ -367,21 +320,17 @@ mod tests {
 
     #[test]
     fn truncate_long_section_inserts_marker() {
-        // 构造超过 IDENTITY_MAX_CHARS 的超长内容
         let long_content = "A".repeat(IDENTITY_MAX_CHARS + 5000);
         let result = truncate_identity_section(&long_content, "SOUL.md", "main");
         assert!(result.contains("[...truncated SOUL.md"));
         assert!(result.contains("read_file tool: agents/main/SOUL.md"));
-        // 应保留头部和尾部
         assert!(result.starts_with('A'));
         assert!(result.ends_with('A'));
-        // 结果长度应小于原始长度
         assert!(result.chars().count() < long_content.chars().count());
     }
 
     #[test]
     fn truncate_preserves_head_and_tail_content() {
-        // 头部 "HEAD" + 中间填充 + 尾部 "TAIL"
         let mut content = String::from("HEAD_START\n");
         content.push_str(&"X".repeat(IDENTITY_MAX_CHARS * 2));
         content.push_str("\nTAIL_END");
@@ -397,14 +346,12 @@ mod tests {
         let data_dir = DataDir::new(tmp.path().to_path_buf());
         let role_dir = data_dir.agents_dir().join("main");
         std::fs::create_dir_all(&role_dir).unwrap();
-        // 写入超长 SOUL.md 触发截断
         let oversized = format!("# Custom Soul\n\n{}\n\n# End", "B".repeat(IDENTITY_MAX_CHARS + 1000));
         std::fs::write(role_dir.join("SOUL.md"), &oversized).unwrap();
 
-        let prompt = build_system_prompt(&data_dir, "main", None, None).await;
+        let prompt = build_system_prompt(&data_dir, "main", None, None, false).await;
         assert!(prompt.contains("[...truncated SOUL.md"));
         assert!(prompt.contains("read_file tool: agents/main/SOUL.md"));
-        // 截断后总长度应远小于原始
         assert!(prompt.chars().count() < oversized.chars().count() + 5000);
     }
 }

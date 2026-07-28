@@ -1,12 +1,10 @@
-// Loop-Engineering 核心类型 —— 循环模式、预算、运行记录。
-//
-// 核心抽象:
-// - LoopPattern:声明式循环配置(id/cadence/budget/skills/state_file)
-// - LoopBudget:运行时预算阈值(80% 降级 / 100% 退出 / <5k early-exit)
-// - LoopRun:单次运行记录(start/end/tokens/outcome/attempts)
-// - LoopOutcome:运行结果分类(running/report-only/fix-proposed/escalated/no-op/failed)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Types - 循环模式、预算、运行记录核心类型
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
+
+// ── 循环模式 ID ─────────────────────────────────────────────────────────────
 
 /// 循环模式 ID(对应 registry.yaml 中的 id 字段)
 ///
@@ -48,6 +46,8 @@ impl std::fmt::Display for LoopPatternId {
         write!(f, "{}", self.as_str())
     }
 }
+
+// ── 循环模式配置 ────────────────────────────────────────────────────────────
 
 /// 循环模式配置(对应 registry.yaml 中的单条 pattern)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +124,8 @@ pub static BUILTIN_PATTERNS: [LoopPattern; 4] = [
     },
 ];
 
+// ── 运行结果分类 ────────────────────────────────────────────────────────────
+
 /// 运行结果分类(对应 loop-run-log.md 中的 outcome 字段)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LoopOutcome {
@@ -153,16 +155,20 @@ impl LoopOutcome {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
-        Some(match s {
-            "running" => Self::Running,
-            "report-only" => Self::ReportOnly,
-            "fix-proposed" => Self::FixProposed,
-            "escalated" => Self::Escalated,
-            "no-op" => Self::NoOp,
-            "failed" => Self::Failed,
-            _ => return None,
-        })
+}
+
+impl std::str::FromStr for LoopOutcome {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "running" => Ok(Self::Running),
+            "report-only" => Ok(Self::ReportOnly),
+            "fix-proposed" => Ok(Self::FixProposed),
+            "escalated" => Ok(Self::Escalated),
+            "no-op" => Ok(Self::NoOp),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("Unknown LoopOutcome '{}'", s)),
+        }
     }
 }
 
@@ -171,6 +177,8 @@ impl Default for LoopOutcome {
         Self::Running
     }
 }
+
+// ── 循环运行记录 ────────────────────────────────────────────────────────────
 
 /// 单次循环运行记录(对应 loop-run-log.md 中的 JSON 条目)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +268,8 @@ impl LoopRun {
     }
 }
 
+// ── 预算检查结果 ────────────────────────────────────────────────────────────
+
 /// 预算检查结果(对应 loop-budget skill 的三档阈值)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BudgetCheckResult {
@@ -272,6 +282,8 @@ pub enum BudgetCheckResult {
     /// 早退(空 watchlist,< early_exit_tokens)
     EarlyExit { reason: String },
 }
+
+// ── 单元测试 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -310,9 +322,9 @@ mod tests {
             LoopOutcome::NoOp,
             LoopOutcome::Failed,
         ] {
-            assert_eq!(LoopOutcome::from_str(o.as_str()), Some(o));
+            assert_eq!(o.as_str().parse::<LoopOutcome>(), Ok(o));
         }
-        assert_eq!(LoopOutcome::from_str("unknown"), None);
+        assert!("unknown".parse::<LoopOutcome>().is_err());
     }
 
     #[test]

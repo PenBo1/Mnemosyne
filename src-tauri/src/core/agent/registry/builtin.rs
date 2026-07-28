@@ -1,23 +1,16 @@
-// 内置 Agent 定义 —— 22 个 agent 的元数据。
-//
-// 分布:
-// - Main:       1 个（main）
-// - Pipeline:   15 个（architect/planner/writer/continuity/reviser/polisher/
-//               length_normalizer/foundation_reviewer/state_validator/consolidator/
-//               chapter_analyzer/composer/short_fiction/fanfic_canon_importer/script_storyboard）
-// - SubAgent:   3 个（researcher/outliner/critic）
-// - LoopSkill:  3 个（loop_triage/loop_verifier/minimal_fix）
-//
-// 数据来源:
-// - role 与 prompts::ALL_ROLES 对齐（main + 15 pipeline）
-// - SubAgentRole 与 core/agent/subagent/types.rs 对齐
-// - LoopSkill 与 core/agent/loop_engine/prompts.rs::prompt_for 对齐
-// - description 引用各模块的职责说明
-//
-// 注意:
-// - 本注册表不接管 agent 执行逻辑，仅提供元数据
-// - system_prompt 字段为 None（运行时由 identity::build_system_prompt 组装）
-//   例外：SubAgent 的 system_prompt 引用 SubAgentRole::system_prompt()，便于前端预览
+//! ═══════════════════════════════════════════════════════════════════════════
+//! BuiltinAgents - 内置 Agent 定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 22 个 agent 的元数据定义。
+//!
+//! 分布：
+//! - Main:       1 个（main）
+//! - Pipeline:   15 个（architect/planner/writer/continuity/reviser/polisher/...）
+//! - SubAgent:   3 个（researcher/outliner/critic）
+//! - LoopSkill:  3 个（loop_triage/loop_verifier/minimal_fix）
+//!
+//! 注意：本注册表不接管 agent 执行逻辑，仅提供元数据。
 
 use super::types::{AgentCategory, AgentDescriptor};
 

@@ -1,26 +1,15 @@
-// AgentRegistry —— 统一 Agent 元数据注册表。
-//
-// 职责:
-// - 加载内置 agent（main + 15 pipeline + 3 subagent + 3 loopskill = 22）
-// - 提供 list_all / list_by_category / get / register 查询接口
-// - 支持 register() 用于未来扩展（如用户自定义 agent）
-//
-// 不负责:
-// - agent 执行（仍由 AgentEngine / PipelineRunner / SubAgentExecutor 负责）
-// - agent 身份文件管理（仍由 core/init.rs + identity.rs 负责）
-// - 权限校验（仍由 SecurityKernel 负责）
-//
-// 线程安全:
-// - 内置 agent 列表在构造时确定，只读
-// - register() 通过 RwLock 保护自定义 agent 列表
-// - 整体 Send + Sync，可作为 Tauri State
-//
-// 锁中毒策略:
-// - 所有 RwLock 读写都用 `unwrap_or_else(|e| e.into_inner())` 恢复中毒锁。
-//   原因：AgentRegistry 是非关键元数据缓存，中毒（某持锁线程 panic）不应
-//   导致整个注册表不可用。恢复中毒锁返回的可能是部分更新的数据，但鉴于
-//   register() 只做 push（无原地修改），最坏情况是丢失一次未完成的注册，
-//   不会读到结构不一致的状态。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! AgentRegistry - Agent 元数据注册表
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 统一 Agent 元数据注册表。
+//!
+//! 职责：
+//! - 加载内置 agent（main + 15 pipeline + 3 subagent + 3 loopskill = 22）
+//! - 提供 list_all / list_by_category / get / register 查询接口
+//! - 支持 register() 用于未来扩展（如用户自定义 agent）
+//!
+//! 线程安全：内置 agent 列表只读，register() 通过 RwLock 保护。
 
 use std::sync::RwLock;
 

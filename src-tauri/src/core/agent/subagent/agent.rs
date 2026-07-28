@@ -1,37 +1,50 @@
-use std::path::PathBuf;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! SubAgent - 子代理执行器
+//! ═══════════════════════════════════════════════════════════════════════════
 
-use rig::completion::Prompt;
-use rig::agent::AgentBuilder;
+use std::sync::Arc;
+use std::time::Instant;
 
 use crate::shared::error::AppError;
+use crate::infrastructure::llm::types::{Message, Provider};
+use crate::core::agent::effort::EffortLevel;
 
 use super::types::{SubAgentRole, SubAgentResult};
 
 pub struct SubAgent {
     role: SubAgentRole,
-    #[allow(dead_code)]
-    workspace_root: PathBuf,
 }
 
 impl SubAgent {
-    pub fn new(role: SubAgentRole, workspace_root: PathBuf) -> Self {
-        Self { role, workspace_root }
+    pub fn new(role: SubAgentRole) -> Self {
+        Self { role }
     }
 
     pub fn role(&self) -> SubAgentRole {
         self.role
     }
 
-    pub async fn execute<M>(
+    pub async fn execute(
         &self,
-        agent_builder: AgentBuilder<M>,
+        provider: &Arc<dyn Provider>,
+        model: &str,
         task: &str,
         context: &str,
         skill_prompt: Option<&str>,
-    ) -> Result<SubAgentResult, AppError>
-    where
-        M: rig::completion::CompletionModel + Send + Sync + 'static,
-    {
+    ) -> Result<SubAgentResult, AppError> {
+        let start = Instant::now();
+        let task_preview = if task.len() > 100 {
+            format!("{}...", &task[..100])
+        } else {
+            task.to_string()
+        };
+        tracing::info!(
+            role = %self.role.as_str(),
+            task_preview = %task_preview,
+            has_skill_prompt = skill_prompt.is_some(),
+            "[subagent] execute: starting"
+        );
+
         let full_prompt = format!(
             "Context:\n{}\n\nTask: {}\n\nPlease complete the task based on the context provided.",
             context, task
@@ -47,13 +60,34 @@ impl SubAgent {
             None => self.role.system_prompt().to_string(),
         };
 
-        let agent = agent_builder
-            .preamble(&preamble)
-            .max_tokens(4096)
-            .build();
+        // Provider::complete 签名：(model, system, messages, max_tokens)
+        // system 单独传，messages 只含 user/assistant 消息
+        // sub-agent 为单次非工具调用，取默认 EffortLevel(Medium) 的 max_tokens_per_call 作为输出上限
+        let max_tokens = EffortLevel::default().params().max_tokens_per_call;
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: full_prompt,
+            tool_calls: None,
+            tool_call_id: None,
+        }];
 
-        let response = agent.prompt(&full_prompt).await
-            .map_err(|e| AppError::stream_error(format!("Sub-agent {} failed: {}", self.role.as_str(), e)))?;
+        let response = provider.complete(model, &preamble, &messages, max_tokens).await
+            .map_err(|e| {
+                tracing::error!(
+                    role = %self.role.as_str(),
+                    task_preview = %task_preview,
+                    error = %e,
+                    "[subagent] execute: prompt failed"
+                );
+                AppError::stream_error(format!("Sub-agent {} failed: {}", self.role.as_str(), e))
+            })?;
+
+        tracing::info!(
+            role = %self.role.as_str(),
+            task_preview = %task_preview,
+            duration_ms = start.elapsed().as_millis() as u64,
+            "[subagent] execute: completed"
+        );
 
         Ok(SubAgentResult {
             role: self.role,
@@ -66,15 +100,14 @@ impl SubAgent {
 
 pub struct SubAgentBuilder {
     role: SubAgentRole,
-    workspace_root: PathBuf,
 }
 
 impl SubAgentBuilder {
-    pub fn new(role: SubAgentRole, workspace_root: PathBuf) -> Self {
-        Self { role, workspace_root }
+    pub fn new(role: SubAgentRole) -> Self {
+        Self { role }
     }
 
     pub fn build(self) -> SubAgent {
-        SubAgent::new(self.role, self.workspace_root)
+        SubAgent::new(self.role)
     }
 }

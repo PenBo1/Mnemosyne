@@ -1,6 +1,13 @@
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! TodoTools - Todo 列表工具
+//! ═══════════════════════════════════════════════════════════════════════════
+
+use std::time::Instant;
+
+use async_trait::async_trait;
 use serde::Deserialize;
+
+use crate::infrastructure::llm::tool::{Tool, ToolDefinition, ToolError};
 
 pub struct TodoWriteTool;
 
@@ -17,20 +24,15 @@ pub struct TodoWriteArgs {
     pub todos: Vec<TodoItem>,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("Todo error: {0}")]
-pub struct TodoError(String);
-
+#[async_trait]
 impl Tool for TodoWriteTool {
-    const NAME: &'static str = "todo_write";
+    fn name(&self) -> &str {
+        "todo_write"
+    }
 
-    type Error = TodoError;
-    type Args = TodoWriteArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "todo_write".to_string(),
             description: "Replace the current task list for a session. At most one todo can be in_progress at a time.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -58,15 +60,23 @@ impl Tool for TodoWriteTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: TodoWriteArgs = serde_json::from_value(args)
+            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "todo_write", session_id = %args.session_id, todo_count = args.todos.len(), "[tool] call");
+
         let in_progress_count = args.todos.iter()
             .filter(|t| t.status == "in_progress")
             .count();
         if in_progress_count > 1 {
-            return Err(TodoError("At most one todo can be in_progress".to_string()));
+            tracing::error!(tool = "todo_write", session_id = %args.session_id, in_progress_count, "[tool] multiple in_progress todos");
+            return Err(ToolError::Execution("At most one todo can be in_progress".to_string()));
         }
 
         let count = args.todos.len();
-        Ok(format!("Updated {} todos for session {}", count, args.session_id))
+        tracing::info!(tool = "todo_write", session_id = %args.session_id, todo_count = count, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(serde_json::Value::String(format!("Updated {} todos for session {}", count, args.session_id)))
     }
 }

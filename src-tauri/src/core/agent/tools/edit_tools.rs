@@ -1,16 +1,19 @@
-use std::path::PathBuf;
-use std::sync::Arc;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! EditTools - 文件编辑工具
+//! ═══════════════════════════════════════════════════════════════════════════
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
+
+use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::core::agent::approval::ApprovalManager;
+use crate::infrastructure::llm::tool::{Tool, ToolDefinition, ToolError};
 use crate::security_kernel::validation::path::{
     check_symlink_target, validate_path_with_base,
 };
-
-// ── EditTool (single string replace) ─────────────────────
 
 pub struct EditTool {
     pub workspace_root: PathBuf,
@@ -24,30 +27,15 @@ pub struct EditArgs {
     pub new_string: String,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum EditError {
-    #[error("IO error: {0}")]
-    Io(String),
-    #[error("Path traversal not allowed")]
-    PathTraversal,
-    #[error("Permission denied")]
-    Denied,
-    #[error("Old string not found in file")]
-    NotFound,
-    #[error("Old string found multiple times — provide more context")]
-    MultipleMatches,
-}
-
+#[async_trait]
 impl Tool for EditTool {
-    const NAME: &'static str = "edit";
+    fn name(&self) -> &str {
+        "edit"
+    }
 
-    type Error = EditError;
-    type Args = EditArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "edit".to_string(),
             description: "Replace an exact string in a file. The old_string must be found exactly once. Requires user approval.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -70,27 +58,45 @@ impl Tool for EditTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: EditArgs = serde_json::from_value(args)
+            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "edit", path = %args.path, "[tool] call");
+
         let path = resolve_path(&self.workspace_root, &args.path);
 
-        // 路径校验：canonicalize-based，防止符号链接绕过 workspace 边界
-        // （EditTool 要求文件已存在，因为后续要读其内容做替换）
         let canonical = validate_path_with_base(&path, &self.workspace_root)
-            .map_err(|_| EditError::PathTraversal)?;
-        // 若目标为符号链接，校验其 target 仍在 workspace 内
+            .map_err(|e| {
+                tracing::error!(tool = "edit", path = %args.path, error = ?e, "[tool] path validation failed");
+                ToolError::PathTraversal
+            })?;
         check_symlink_target(canonical.as_path(), &self.workspace_root)
-            .map_err(|_| EditError::PathTraversal)?;
+            .map_err(|e| {
+                tracing::error!(tool = "edit", path = %args.path, error = ?e, "[tool] symlink check failed");
+                ToolError::PathTraversal
+            })?;
+
+        tracing::debug!(tool = "edit", path = %canonical.as_path().display(), "[tool] reading file");
 
         let content = tokio::fs::read_to_string(&canonical).await
-            .map_err(|e| EditError::Io(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(tool = "edit", path = %args.path, error = %e, "[tool] read failed");
+                ToolError::Io(e.to_string())
+            })?;
 
         let count = content.matches(&args.old_string).count();
         if count == 0 {
-            return Err(EditError::NotFound);
+            tracing::warn!(tool = "edit", path = %args.path, "[tool] old string not found");
+            return Err(ToolError::Execution("Old string not found in file".to_string()));
         }
         if count > 1 {
-            return Err(EditError::MultipleMatches);
+            tracing::warn!(tool = "edit", path = %args.path, count, "[tool] old string found multiple times");
+            return Err(ToolError::Execution("Old string found multiple times — provide more context".to_string()));
         }
+
+        tracing::info!(tool = "edit", path = %args.path, "[tool] requesting approval");
 
         let approved = self.approval.request_approval(
             "edit",
@@ -98,18 +104,23 @@ impl Tool for EditTool {
         ).await;
 
         if !approved {
-            return Err(EditError::Denied);
+            tracing::warn!(tool = "edit", path = %args.path, "[tool] approval denied");
+            return Err(ToolError::Execution("Permission denied".to_string()));
         }
+
+        tracing::debug!(tool = "edit", path = %args.path, "[tool] writing changes");
 
         let new_content = content.replacen(&args.old_string, &args.new_string, 1);
         tokio::fs::write(&canonical, &new_content).await
-            .map_err(|e| EditError::Io(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(tool = "edit", path = %args.path, error = %e, "[tool] write failed");
+                ToolError::Io(e.to_string())
+            })?;
 
-        Ok(format!("Edited {}", args.path))
+        tracing::info!(tool = "edit", path = %args.path, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(serde_json::Value::String(format!("Edited {}", args.path)))
     }
 }
-
-// ── MultiEditTool (atomic batch replace) ──────────────────
 
 pub struct MultiEditTool {
     pub workspace_root: PathBuf,
@@ -128,30 +139,15 @@ pub struct MultiEditArgs {
     pub edits: Vec<EditOperation>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum MultiEditError {
-    #[error("IO error: {0}")]
-    Io(String),
-    #[error("Path traversal not allowed")]
-    PathTraversal,
-    #[error("Permission denied")]
-    Denied,
-    #[error("Edit {0}: old string not found")]
-    NotFound(usize),
-    #[error("Edit {0}: old string found multiple times")]
-    MultipleMatches(usize),
-}
-
+#[async_trait]
 impl Tool for MultiEditTool {
-    const NAME: &'static str = "multi_edit";
+    fn name(&self) -> &str {
+        "multi_edit"
+    }
 
-    type Error = MultiEditError;
-    type Args = MultiEditArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "multi_edit".to_string(),
             description: "Apply multiple edits to a file atomically. All edits must succeed or none are applied. Requires user approval.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -178,26 +174,41 @@ impl Tool for MultiEditTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: MultiEditArgs = serde_json::from_value(args)
+            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+
+        let start = Instant::now();
+        tracing::info!(tool = "multi_edit", path = %args.path, edit_count = args.edits.len(), "[tool] call");
+
         let path = resolve_path(&self.workspace_root, &args.path);
 
-        // 路径校验：canonicalize-based，防止符号链接绕过 workspace 边界
         let canonical = validate_path_with_base(&path, &self.workspace_root)
-            .map_err(|_| MultiEditError::PathTraversal)?;
+            .map_err(|e| {
+                tracing::error!(tool = "multi_edit", path = %args.path, error = ?e, "[tool] path validation failed");
+                ToolError::PathTraversal
+            })?;
         check_symlink_target(canonical.as_path(), &self.workspace_root)
-            .map_err(|_| MultiEditError::PathTraversal)?;
+            .map_err(|e| {
+                tracing::error!(tool = "multi_edit", path = %args.path, error = ?e, "[tool] symlink check failed");
+                ToolError::PathTraversal
+            })?;
 
         let mut content = tokio::fs::read_to_string(&canonical).await
-            .map_err(|e| MultiEditError::Io(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(tool = "multi_edit", path = %args.path, error = %e, "[tool] read failed");
+                ToolError::Io(e.to_string())
+            })?;
 
-        // Validate all edits can apply
         for (i, edit) in args.edits.iter().enumerate() {
             let count = content.matches(&edit.old_string).count();
             if count == 0 {
-                return Err(MultiEditError::NotFound(i));
+                tracing::error!(tool = "multi_edit", edit_index = i, "[tool] old string not found");
+                return Err(ToolError::Execution(format!("Edit {}: old string not found", i)));
             }
             if count > 1 {
-                return Err(MultiEditError::MultipleMatches(i));
+                tracing::error!(tool = "multi_edit", edit_index = i, count, "[tool] old string found multiple times");
+                return Err(ToolError::Execution(format!("Edit {}: old string found multiple times", i)));
             }
         }
 
@@ -207,24 +218,26 @@ impl Tool for MultiEditTool {
         ).await;
 
         if !approved {
-            return Err(MultiEditError::Denied);
+            tracing::error!(tool = "multi_edit", path = %args.path, "[tool] approval denied");
+            return Err(ToolError::Execution("Permission denied".to_string()));
         }
 
-        // Apply edits sequentially
         for edit in &args.edits {
             content = content.replacen(&edit.old_string, &edit.new_string, 1);
         }
 
         tokio::fs::write(&canonical, &content).await
-            .map_err(|e| MultiEditError::Io(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(tool = "multi_edit", path = %args.path, error = %e, "[tool] write failed");
+                ToolError::Io(e.to_string())
+            })?;
 
-        Ok(format!("Applied {} edits to {}", args.edits.len(), args.path))
+        tracing::info!(tool = "multi_edit", path = %args.path, edit_count = args.edits.len(), duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(serde_json::Value::String(format!("Applied {} edits to {}", args.edits.len(), args.path)))
     }
 }
 
-// ── Helper ────────────────────────────────────────────────
-
-fn resolve_path(workspace_root: &PathBuf, path: &str) -> PathBuf {
+fn resolve_path(workspace_root: &Path, path: &str) -> PathBuf {
     let p = PathBuf::from(path);
     if p.is_absolute() {
         p

@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! SubAgentCache - 子代理缓存
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::hash::{Hash, Hasher};
@@ -54,7 +58,7 @@ impl CacheEntry {
     }
 
     pub fn result(&self) -> &SubAgentResult {
-        &*self.result
+        &self.result
     }
 
     pub fn increment_hits(&mut self) {
@@ -96,6 +100,9 @@ impl SubAgentCache {
     }
 
     pub async fn set(&self, role: SubAgentRole, task: &str, context: &str, result: SubAgentResult) {
+        let start = std::time::Instant::now();
+        tracing::info!(role = ?role, "subagent_cache_set: enter");
+        
         let key = CacheKey::new(role, task, context);
         let entry = CacheEntry::new(result);
 
@@ -106,6 +113,13 @@ impl SubAgentCache {
         }
 
         entries.insert(key, entry);
+        
+        tracing::info!(
+            role = ?role,
+            entries = entries.len(),
+            duration_ms = start.elapsed().as_millis(),
+            "subagent_cache_set: exit"
+        );
     }
 
     // TODO(perf): evict_oldest 是 O(n) 全表扫描。max_entries 默认 100，开销可忽略；
@@ -129,6 +143,10 @@ impl SubAgentCache {
     pub async fn len(&self) -> usize {
         let entries = self.entries.read().await;
         entries.len()
+    }
+
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
     }
 
     pub async fn stats(&self) -> CacheStats {

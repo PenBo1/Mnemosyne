@@ -1,33 +1,24 @@
-// 研究与材料工具：ResearchWebTool / IngestMaterialTool / RetrieveMaterialTool。
-//
-// 这三个工具均为只读或外部输入型，无破坏性副作用，可无条件注入 agent。
-// - ResearchWebTool 调用 researcher::report::run_research_report（依赖 AgentEngine）
-// - IngestMaterialTool 调用 materials::ingest::ingest_material（落盘 markdown + JSON 清单）
-// - RetrieveMaterialTool 调用 materials::retrieve::retrieve_materials（纯读）
-//
-// 注：本文件位于 core/agent/tools，但需调用 domain 层函数，属于任务要求的
-// 显式指令（见任务描述）。与 AGENTS.md "core/agent 不依赖 domain" 规则存在张力，
-// 此处遵循任务指令实现，后续可考虑通过 application 层注入 trait 解耦。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! ResearchTools - 研究与材料工具
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::sync::Arc;
+use std::time::Instant;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::core::agent::engine::AgentEngine;
-use crate::domain::materials::ingest::ingest_material;
-use crate::domain::materials::retrieve::retrieve_materials;
-use crate::domain::materials::types::{IngestMaterialInput, RetrieveMaterialsInput};
-use crate::domain::researcher::report::run_research_report;
-use crate::domain::researcher::types::ResearchInput;
-use crate::infrastructure::fs::data_dir::DataDir;
+use crate::infrastructure::llm::tool::{Tool, ToolDefinition, ToolError};
+
+use super::book_ops::ResearchOps;
 
 // ── ResearchWebTool ───────────────────────────────────────
 
 /// 研究工具：基于 LLM 知识库生成结构化研究报告。
 pub struct ResearchWebTool {
     pub engine: Arc<AgentEngine>,
+    pub research_ops: Arc<dyn ResearchOps>,
 }
 
 #[derive(Deserialize)]
@@ -39,22 +30,15 @@ pub struct ResearchWebArgs {
     pub depth: Option<String>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ResearchWebError {
-    #[error("研究失败: {0}")]
-    Failed(String),
-}
-
+#[async_trait]
 impl Tool for ResearchWebTool {
-    const NAME: &'static str = "research_web";
+    fn name(&self) -> &str {
+        "research_web"
+    }
 
-    type Error = ResearchWebError;
-    type Args = ResearchWebArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "research_web".to_string(),
             description: "对一个主题进行研究并返回结构化研究报告（claims/conflicts/unknowns/creativeImplications + markdown）。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -74,17 +58,28 @@ impl Tool for ResearchWebTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let input = ResearchInput {
-            query: args.query,
-            depth: args.depth,
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: ResearchWebArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let start = Instant::now();
+        let query_preview = if args.query.len() > 100 {
+            format!("{}...", &args.query[..100])
+        } else {
+            args.query.clone()
         };
-        let report = run_research_report(&self.engine, &input)
+        tracing::info!(tool = "research_web", query = %query_preview, depth = ?args.depth, "[tool] call");
+
+        let result = self
+            .research_ops
+            .run_research_report(&self.engine, args.query, args.depth)
             .await
-            .map_err(|e| ResearchWebError::Failed(e.to_string()))?;
-        // ResearchReport 已实现 Serialize(camelCase)，直接转 Value
-        serde_json::to_value(&report)
-            .map_err(|e| ResearchWebError::Failed(e.to_string()))
+            .map_err(|e| {
+                tracing::error!(tool = "research_web", error = %e, "[tool] run_research_report failed");
+                ToolError::Execution(e)
+            })?;
+
+        tracing::info!(tool = "research_web", query = %query_preview, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(result)
     }
 }
 
@@ -92,7 +87,7 @@ impl Tool for ResearchWebTool {
 
 /// 材料导入工具：从 URL 或本地文件抓取并落盘，返回资产清单。
 pub struct IngestMaterialTool {
-    pub data_dir: DataDir,
+    pub research_ops: Arc<dyn ResearchOps>,
 }
 
 #[derive(Deserialize)]
@@ -119,22 +114,15 @@ pub struct IngestMaterialArgs {
     pub purpose: Option<String>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum IngestMaterialError {
-    #[error("导入失败: {0}")]
-    Failed(String),
-}
-
+#[async_trait]
 impl Tool for IngestMaterialTool {
-    const NAME: &'static str = "ingest_material";
+    fn name(&self) -> &str {
+        "ingest_material"
+    }
 
-    type Error = IngestMaterialError;
-    type Args = IngestMaterialArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "ingest_material".to_string(),
             description: "导入一份材料（URL 或本地文件），提取正文并落盘，返回材料资产清单。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -156,21 +144,31 @@ impl Tool for IngestMaterialTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let input = IngestMaterialInput {
-            source_kind: args.source_kind,
-            url: args.url,
-            file_path: args.file_path,
-            filename: args.filename,
-            mime_type: args.mime_type,
-            title: args.title,
-            purpose: args.purpose,
-        };
-        let asset = ingest_material(&self.data_dir, &input)
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: IngestMaterialArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let start = Instant::now();
+        tracing::info!(tool = "ingest_material", source_kind = %args.source_kind, "[tool] call");
+
+        let result = self
+            .research_ops
+            .ingest_material(
+                args.source_kind.clone(),
+                args.url,
+                args.file_path,
+                args.filename,
+                args.mime_type,
+                args.title,
+                args.purpose,
+            )
             .await
-            .map_err(|e| IngestMaterialError::Failed(e.to_string()))?;
-        serde_json::to_value(&asset)
-            .map_err(|e| IngestMaterialError::Failed(e.to_string()))
+            .map_err(|e| {
+                tracing::error!(tool = "ingest_material", error = %e, "[tool] ingest_material failed");
+                ToolError::Execution(e)
+            })?;
+
+        tracing::info!(tool = "ingest_material", source_kind = %args.source_kind, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(result)
     }
 }
 
@@ -178,7 +176,7 @@ impl Tool for IngestMaterialTool {
 
 /// 材料检索工具：按关键词匹配已导入材料，返回相关片段。
 pub struct RetrieveMaterialTool {
-    pub data_dir: DataDir,
+    pub research_ops: Arc<dyn ResearchOps>,
 }
 
 #[derive(Deserialize)]
@@ -193,22 +191,15 @@ pub struct RetrieveMaterialArgs {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum RetrieveMaterialError {
-    #[error("检索失败: {0}")]
-    Failed(String),
-}
-
+#[async_trait]
 impl Tool for RetrieveMaterialTool {
-    const NAME: &'static str = "retrieve_material";
+    fn name(&self) -> &str {
+        "retrieve_material"
+    }
 
-    type Error = RetrieveMaterialError;
-    type Args = RetrieveMaterialArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "retrieve_material".to_string(),
             description: "检索已导入的辅助材料，按相关度倒序返回命中的片段（含 score/excerpt）。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -222,15 +213,27 @@ impl Tool for RetrieveMaterialTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let input = RetrieveMaterialsInput {
-            query: args.query,
-            purpose: args.purpose,
-            limit: args.limit,
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: RetrieveMaterialArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let start = Instant::now();
+        let query_preview = if args.query.len() > 50 {
+            format!("{}...", &args.query[..50])
+        } else {
+            args.query.clone()
         };
-        let results = retrieve_materials(&self.data_dir, &input)
-            .map_err(|e| RetrieveMaterialError::Failed(e.to_string()))?;
-        serde_json::to_value(&results)
-            .map_err(|e| RetrieveMaterialError::Failed(e.to_string()))
+        tracing::info!(tool = "retrieve_material", query = %query_preview, purpose = ?args.purpose, limit = ?args.limit, "[tool] call");
+
+        let result = self
+            .research_ops
+            .retrieve_materials(args.query, args.purpose, args.limit)
+            .await
+            .map_err(|e| {
+                tracing::error!(tool = "retrieve_material", error = %e, "[tool] retrieve_materials failed");
+                ToolError::Execution(e)
+            })?;
+
+        tracing::info!(tool = "retrieve_material", query = %query_preview, duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
+        Ok(result)
     }
 }

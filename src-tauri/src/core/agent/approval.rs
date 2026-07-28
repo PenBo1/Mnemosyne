@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Approval - 工具审批管理器
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,36 +9,41 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use super::types::ChatEvent;
 
-/// 审批请求的等待超时（秒）。
-///
-/// 超过此时间未收到前端响应视为拒绝，避免 agent 在用户离开时永久阻塞。
+/// 审批请求超时时间（秒）
 const APPROVAL_TIMEOUT_SECS: u64 = 300;
 
-/// Manages tool approval flow: sends approval requests to the frontend,
-/// waits for user response, and resolves pending tool calls.
+/// 工具审批管理器
+/// 
+/// 管理需要用户审批的工具调用请求，支持异步等待用户响应。
 pub struct ApprovalManager {
     tx: mpsc::Sender<ChatEvent>,
     pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
 }
 
 impl ApprovalManager {
+    /// 创建审批管理器实例
+    /// 
+    /// # 参数
+    /// - `tx`: 用于发送审批事件的消息发送端
+    /// 
+    /// # 返回值
+    /// 返回包装在 Arc 中的审批管理器实例
     pub fn new(tx: mpsc::Sender<ChatEvent>) -> Arc<Self> {
+        tracing::debug!("[approval] ApprovalManager created");
         Arc::new(Self {
             tx,
             pending: Mutex::new(HashMap::new()),
         })
     }
 
-    /// Request user approval. Returns true if approved, false if rejected or timed out.
-    ///
-    /// # Cancel Safety
-    ///
-    /// This method is **cancel safe**. If cancelled while waiting for response,
-    /// the pending request is automatically removed from the registry,
-    /// preventing orphaned entries and memory leaks.
-    ///
-    /// 超时策略：超过 `APPROVAL_TIMEOUT_SECS` 未响应视为拒绝（避免 agent 永久阻塞）。
-    /// 超时时显式清理 pending 表项，并在下方 `pending.remove` 兜底。
+    /// 请求用户审批
+    /// 
+    /// # 参数
+    /// - `name`: 工具名称
+    /// - `args`: 工具参数
+    /// 
+    /// # 返回值
+    /// 返回用户是否批准该工具调用
     pub async fn request_approval(
         &self,
         name: &str,
@@ -43,38 +52,68 @@ impl ApprovalManager {
         let request_id = uuid::Uuid::new_v4().to_string();
         let (response_tx, response_rx) = oneshot::channel();
 
+        tracing::info!(
+            request_id = %request_id,
+            tool_name = %name,
+            args_preview = %serde_json::to_string(args).unwrap_or_default(),
+            "[approval] requesting user approval"
+        );
+
         {
             let mut pending = self.pending.lock().await;
             pending.insert(request_id.clone(), response_tx);
+            tracing::debug!(
+                request_id = %request_id,
+                pending_count = pending.len(),
+                "[approval] request registered"
+            );
         }
 
-        let _ = self.tx.send(ChatEvent::ToolApprovalRequired {
+        if let Err(e) = self.tx.send(ChatEvent::ToolApprovalRequired {
             request_id: request_id.clone(),
             name: name.to_string(),
             args: args.clone(),
-        }).await;
+        }).await {
+            tracing::error!(
+                request_id = %request_id,
+                error = %e,
+                "[approval] failed to send ToolApprovalRequired event"
+            );
+            return false;
+        }
 
-        // 用 timeout 包裹 oneshot，超时视为拒绝（No silent fallback：超时显式 log warn）
+        tracing::debug!(
+            request_id = %request_id,
+            timeout_secs = APPROVAL_TIMEOUT_SECS,
+            "[approval] waiting for user response"
+        );
+
         let result = match tokio::time::timeout(
             Duration::from_secs(APPROVAL_TIMEOUT_SECS),
             response_rx,
         ).await {
-            Ok(Ok(approved)) => approved,
+            Ok(Ok(approved)) => {
+                tracing::info!(
+                    request_id = %request_id,
+                    approved = approved,
+                    "[approval] user response received"
+                );
+                approved
+            }
             Ok(Err(_)) => {
-                // sender 被 drop（不应发生，但 cancel-safe 处理）
                 tracing::warn!(
                     request_id = %request_id,
-                    name = name,
-                    "Approval response channel closed without response"
+                    tool_name = %name,
+                    "[approval] response channel closed without response"
                 );
                 false
             }
             Err(_) => {
                 tracing::warn!(
                     request_id = %request_id,
-                    name = name,
+                    tool_name = %name,
                     timeout_secs = APPROVAL_TIMEOUT_SECS,
-                    "Approval request timed out, treating as rejected"
+                    "[approval] request timed out, treating as rejected"
                 );
                 false
             }
@@ -83,17 +122,50 @@ impl ApprovalManager {
         {
             let mut pending = self.pending.lock().await;
             pending.remove(&request_id);
+            tracing::debug!(
+                request_id = %request_id,
+                pending_count = pending.len(),
+                "[approval] request removed from pending"
+            );
         }
 
         result
     }
 
-    /// Resolve a pending approval request (called by chat_tool_respond IPC).
+    /// 响应审批请求
+    /// 
+    /// # 参数
+    /// - `request_id`: 请求标识符
+    /// - `approved`: 是否批准
+    /// 
+    /// # 返回值
+    /// 返回是否成功找到并响应了该请求
     pub async fn respond(&self, request_id: &str, approved: bool) -> bool {
-        if let Some(tx) = self.pending.lock().await.remove(request_id) {
-            let _ = tx.send(approved);
+        tracing::debug!(
+            request_id = %request_id,
+            approved = approved,
+            "[approval] respond called"
+        );
+
+        let mut pending = self.pending.lock().await;
+        if let Some(tx) = pending.remove(request_id) {
+            if tx.send(approved).is_err() {
+                tracing::warn!(
+                    request_id = %request_id,
+                    "[approval] failed to send response (receiver dropped)"
+                );
+            }
+            tracing::debug!(
+                request_id = %request_id,
+                pending_count = pending.len(),
+                "[approval] response sent"
+            );
             true
         } else {
+            tracing::warn!(
+                request_id = %request_id,
+                "[approval] request not found (may have timed out)"
+            );
             false
         }
     }

@@ -1,14 +1,16 @@
-// 统一 Agent 类型定义 —— 跨 Main / Pipeline / SubAgent / LoopSkill 四类。
-//
-// 设计动机(AGENTS.md):
-// - 前端 Persona(coder/architect/...)、后端 SubAgentRole、pipeline agents、loop skill
-//   四者此前无统一抽象，IPC 调用方需要分别知道每类的入口
-// - 本注册表提供统一 AgentDescriptor，便于仪表盘/调度器/权限系统按统一模型查询
-//
-// 轻量原则:
-// - 不强制重构现有 agent 实现（pipeline agents 仍在 domain/pipeline/agents/ 各自实现）
-// - 不接管 agent 执行逻辑（仍由 AgentEngine / PipelineRunner / SubAgentExecutor 负责）
-// - 仅作为元数据注册表，描述 "有哪些 agent、各自什么角色、用什么工具"
+//! ═══════════════════════════════════════════════════════════════════════════
+//! RegistryTypes - Agent 注册表类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 统一 Agent 类型定义 —— 跨 Main / Pipeline / SubAgent / LoopSkill 四类。
+//!
+//! 设计动机：
+//! - 前端 Persona、后端 SubAgentRole、pipeline agents、loop skill 四者此前无统一抽象
+//! - 本注册表提供统一 AgentDescriptor，便于仪表盘/调度器/权限系统按统一模型查询
+//!
+//! 轻量原则：
+//! - 不强制重构现有 agent 实现
+//! - 仅作为元数据注册表，描述 "有哪些 agent、各自什么角色、用什么工具"
 
 use serde::{Deserialize, Serialize};
 
@@ -37,8 +39,12 @@ impl AgentCategory {
         }
     }
 
+}
+
+impl std::str::FromStr for AgentCategory {
+    type Err = String;
     /// 从字符串解析类别。未知值返回 Err。
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "main" => Ok(AgentCategory::Main),
             "pipeline" => Ok(AgentCategory::Pipeline),

@@ -1,15 +1,8 @@
-// Loop-Engineering skill prompts —— sub-agent 行为模板。
-//
-// 用途:
-// - loop_engine 在 spawn sub-agent 时将对应 prompt 注入 system message
-// - 例如 audit-revise-loop 调用 minimal-fix 修稿、调用 loop-verifier 验证
-// - 这些 prompt 是行为模板,不带身份(身份由 SOUL/CONTEXT/MEMORY.md 提供)
-//
-// 集成方式:
-// - 当前 AgentEngine 未实现 per-agent prompt 注入
-// - 这些 const 作为"准备好"的 prompt 库,等 sub-agent 注入流程落地后接入
-// - 与 prompts/mod.rs(SOUL/CONTEXT/MEMORY 身份模板)的区别:
-//   身份模板是 agent 自描述,skill 模板是 agent 在某次任务中的行为约束
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Prompts - Sub-agent 行为模板
+//! ═══════════════════════════════════════════════════════════════════════════
+
+// ── Skill Prompts ───────────────────────────────────────────────────────────
 
 /// loop-triage skill —— 信号整理,产出可操作项清单。
 ///
@@ -153,6 +146,8 @@ You fix **one specific problem** with the **smallest diff** that could work.
 - Do not mark your own work done — the verifier decides.
 "#;
 
+// ── Skill Prompt 查找 ──────────────────────────────────────────────────────
+
 /// 按 skill 名查找 prompt。
 ///
 /// 同时支持 hyphen 与 underscore 两种命名格式:
@@ -171,6 +166,8 @@ pub fn prompt_for(skill_name: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
+// ── 单元测试 ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

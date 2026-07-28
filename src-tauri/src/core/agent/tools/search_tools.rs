@@ -1,16 +1,16 @@
-// 书籍目录搜索工具：GrepTool（内容搜索）+ LsTool（列目录）。
-//
-// 与 fs_tools 的区别：根目录锁定为 DataDir.books_dir()，path 参数相对该根解析，
-// 防止 agent 越权访问书籍工作区之外的文件。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! SearchTools - 书籍目录搜索工具
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::path::PathBuf;
+use std::time::Instant;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::infrastructure::fs::fs_utils::MAX_READ_SIZE;
+use crate::infrastructure::llm::tool::{Tool, ToolDefinition, ToolError};
 
 // ── GrepTool ──────────────────────────────────────────────
 
@@ -44,16 +44,15 @@ pub enum GrepError {
 /// 单次返回的匹配行上限，避免超大输出压垮 LLM 上下文。
 const MAX_GREP_LINES: usize = 200;
 
+#[async_trait]
 impl Tool for GrepTool {
-    const NAME: &'static str = "grep";
+    fn name(&self) -> &str {
+        "grep"
+    }
 
-    type Error = GrepError;
-    type Args = GrepArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "grep".to_string(),
             description: "在书籍工作区下按正则搜索文件内容，返回匹配的行（含文件相对路径与行号）。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -76,21 +75,41 @@ impl Tool for GrepTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: GrepArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let start = Instant::now();
+        let path_display = if args.path.is_empty() || args.path == "." { "books/" } else { &args.path };
+        let pattern_preview = if args.pattern.len() > 50 {
+            format!("{}...", &args.pattern[..50])
+        } else {
+            args.pattern.clone()
+        };
+        tracing::info!(tool = "grep", path = %path_display, pattern = %pattern_preview, glob = ?args.glob, "[tool] call");
+
         // GrepTool 内部使用 `std::fs::read_dir` / `std::fs::read_to_string` / `std::fs::metadata`
         // 等同步 I/O，整体卸载到 `spawn_blocking` 避免阻塞 tokio runtime。
         let root = self.data_dir.books_dir();
         let root_clone = root.clone();
+        let pattern = args.pattern.clone();
+        let path_arg = args.path.clone();
+        let glob_arg = args.glob.clone();
         let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, GrepError> {
-            let re = regex::Regex::new(&args.pattern)
-                .map_err(|e| GrepError::InvalidRegex(e.to_string()))?;
+            let re = regex::Regex::new(&pattern)
+                .map_err(|e| {
+                    tracing::error!(tool = "grep", error = %e, "[tool] invalid regex");
+                    GrepError::InvalidRegex(e.to_string())
+                })?;
 
-            let search_root = resolve_under_root(&root_clone, &args.path)?;
-            let ext_filter = args.glob.as_deref().map(normalize_glob);
+            let search_root = resolve_under_root(&root_clone, &path_arg)?;
+            let ext_filter = glob_arg.as_deref().map(normalize_glob);
 
             let mut matches: Vec<serde_json::Value> = Vec::new();
             collect_matches(&search_root, &root_clone, &re, ext_filter.as_deref(), &mut matches)
-                .map_err(|e| GrepError::Io(e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(tool = "grep", error = %e, "[tool] collect_matches failed");
+                    GrepError::Io(e.to_string())
+                })?;
 
             let total = matches.len();
             let truncated = total > MAX_GREP_LINES;
@@ -105,7 +124,17 @@ impl Tool for GrepTool {
             }))
         })
         .await
-        .map_err(|e| GrepError::Io(format!("spawn_blocking join failed: {}", e)))??;
+        .map_err(|e| {
+            tracing::error!(tool = "grep", error = %e, "[tool] spawn_blocking join failed");
+            ToolError::Io(format!("spawn_blocking join failed: {}", e))
+        })?
+        .map_err(|e| match e {
+            GrepError::Io(s) => ToolError::Io(s),
+            GrepError::PathTraversal => ToolError::PathTraversal,
+            GrepError::InvalidRegex(s) => ToolError::InvalidArgs(s),
+        })?;
+
+        tracing::info!(tool = "grep", path = %path_display, match_count = result.get("count").and_then(|v| v.as_u64()).unwrap_or(0), duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
         Ok(result)
     }
 }
@@ -193,16 +222,15 @@ pub enum LsError {
     PathTraversal,
 }
 
+#[async_trait]
 impl Tool for LsTool {
-    const NAME: &'static str = "ls";
+    fn name(&self) -> &str {
+        "ls"
+    }
 
-    type Error = LsError;
-    type Args = LsArgs;
-    type Output = serde_json::Value;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    async fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.to_string(),
+            name: "ls".to_string(),
             description: "列出书籍工作区下指定目录的文件与子目录。".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -216,15 +244,30 @@ impl Tool for LsTool {
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        let args: LsArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let start = Instant::now();
+        let path_display = if args.path.is_empty() || args.path == "." { "books/" } else { &args.path };
+        tracing::info!(tool = "ls", path = %path_display, "[tool] call");
+
         let root = self.data_dir.books_dir();
-        let target = resolve_under_root_ls(&root, &args.path)?;
+        let target = resolve_under_root_ls(&root, &args.path).map_err(|e| match e {
+            LsError::Io(s) => ToolError::Io(s),
+            LsError::PathTraversal => ToolError::PathTraversal,
+        })?;
 
         let mut entries: Vec<serde_json::Value> = Vec::new();
         let mut reader = tokio::fs::read_dir(&target).await
-            .map_err(|e| LsError::Io(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(tool = "ls", path = %path_display, error = %e, "[tool] read_dir failed");
+                ToolError::Io(e.to_string())
+            })?;
         while let Some(entry) = reader.next_entry().await
-            .map_err(|e| LsError::Io(e.to_string()))? {
+            .map_err(|e| {
+                tracing::error!(tool = "ls", path = %path_display, error = %e, "[tool] next_entry failed");
+                ToolError::Io(e.to_string())
+            })? {
             let name = entry.file_name().to_string_lossy().to_string();
             let is_dir = entry.file_type().await
                 .map(|ft| ft.is_dir())
@@ -248,6 +291,7 @@ impl Tool for LsTool {
             }
         });
 
+        tracing::info!(tool = "ls", path = %path_display, entry_count = entries.len(), duration_ms = start.elapsed().as_millis() as u64, "[tool] completed");
         Ok(serde_json::json!({
             "path": args.path,
             "entries": entries,

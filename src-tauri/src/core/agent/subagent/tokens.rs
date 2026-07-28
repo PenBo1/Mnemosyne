@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! TokenCounter - Token 计数器
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
@@ -88,6 +92,15 @@ impl TokenCounter {
         output_tokens: u32,
         duration_ms: u64,
     ) {
+        let start = std::time::Instant::now();
+        tracing::info!(
+            role = ?role,
+            input_tokens,
+            output_tokens,
+            task_len = task.len(),
+            "token_record: enter"
+        );
+        
         let record = UsageRecord {
             role,
             usage: TokenUsage::new(input_tokens, output_tokens),
@@ -103,6 +116,14 @@ impl TokenCounter {
         }
 
         records.push_back(record);
+        
+        tracing::info!(
+            role = ?role,
+            total_tokens = input_tokens + output_tokens,
+            records = records.len(),
+            duration_ms = start.elapsed().as_millis(),
+            "token_record: exit"
+        );
     }
 
     pub async fn total_usage(&self) -> TokenUsage {
@@ -168,6 +189,10 @@ impl TokenCounter {
 
     pub async fn len(&self) -> usize {
         self.records.read().await.len()
+    }
+
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
     }
 }
 
