@@ -1,8 +1,10 @@
-// 把 StoryGraph 导出为单文件可玩 HTML。
-//
-// build_playable_html：内嵌完整 JS player + CSS + GRAPH 数据。
-// Player 实现：变量初始化、condition 求值、effects 应用、可见选项过滤、
-// HUD 显示、ending 检测、重新开始。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Export HTML - HTML 导出
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! build_playable_html：内嵌完整 JS player + CSS + GRAPH 数据。
+//! Player 实现：变量初始化、condition 求值、effects 应用、可见选项过滤、
+//! HUD 显示、ending 检测、重新开始。
 
 use crate::shared::error::AppError;
 

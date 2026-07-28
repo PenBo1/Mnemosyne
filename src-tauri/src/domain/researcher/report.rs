@@ -1,10 +1,12 @@
-// 研究报告生成器 —— 通过 AgentEngine.prompt_once 让 LLM 综合分析主题。
-//
-// 不调用外部 web search(无网络搜索依赖),
-// 而是让 LLM 基于其知识库生成结构化研究报告。depth(quick/standard/deep)
-// 控制 prompt 注入的查询角度数量(1/2/3),从而影响报告详尽程度。
-//
-// 输出结构: claims + conflicts + unknowns + creativeImplications + markdown。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 研究报告 - LLM 综合分析生成
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 不调用外部 web search(无网络搜索依赖),
+//! 而是让 LLM 基于其知识库生成结构化研究报告。depth(quick/standard/deep)
+//! 控制 prompt 注入的查询角度数量(1/2/3),从而影响报告详尽程度。
+//!
+//! 输出结构: claims + conflicts + unknowns + creativeImplications + markdown。
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -89,6 +91,13 @@ pub async fn run_research_report(
     engine: &AgentEngine,
     input: &ResearchInput,
 ) -> Result<ResearchReport, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        topic_len = input.query.len(),
+        depth = ?input.depth,
+        "[Researcher] Starting research report"
+    );
+    
     let topic = input.query.trim();
     if topic.is_empty() {
         return Err(AppError::invalid_input("research query cannot be empty"));
@@ -108,15 +117,25 @@ pub async fn run_research_report(
     let system_prompt = SYSTEM_PROMPT_TEMPLATE.replace("{angles}", &angles_text);
     let user_message = format!("Topic: {}\nDepth: {}\n\nPlease produce the structured research report as JSON.", topic, depth);
 
+    tracing::debug!("[Researcher] Calling LLM for research");
     let raw = engine.prompt_once(&system_prompt, &user_message).await?;
     tracing::info!(
         topic = topic,
         depth = %depth,
         response_len = raw.len(),
-        "Researcher LLM response received"
+        "[Researcher] LLM response received"
     );
 
     let report = parse_report(&raw, topic, &depth)?;
+    
+    tracing::info!(
+        topic = topic,
+        depth = %depth,
+        claims = report.claims.len(),
+        conflicts = report.conflicts.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[Researcher] Research report completed"
+    );
     Ok(report)
 }
 

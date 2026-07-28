@@ -1,3 +1,7 @@
-// 纯数据类型已迁移到 shared::story::types（避免 infrastructure → domain 反向依赖）。
-// 此处保留 re-export 以兼容既有代码；新代码请直接从 crate::shared::story::types 引用。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 故事类型 - 数据类型重导出
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 纯数据类型已迁移到 shared::story::types（避免 infrastructure → domain 反向依赖）。
+//! 此处保留 re-export 以兼容既有代码；新代码请直接从 crate::shared::story::types 引用。
 pub use crate::shared::story::types::*;

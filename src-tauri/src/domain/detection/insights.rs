@@ -1,14 +1,14 @@
-// 检测历史聚合统计。
-//
-// 按 chapter 分组,排序后取首条作为 original_score,末条作为 final_score,
-// rewrite 次数为该章 action=="rewrite" 的条目数。
-// pass_rate = final_score <= original_score 的章节占比。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 检测统计 - 检测历史聚合统计
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::collections::BTreeMap;
 
 use super::types::{ChapterDetectionRow, DetectionStats};
 
-/// 分析检测历史,产出聚合统计。
+// ── 公共接口 ────────────────────────────────────────────────────────────────
+
+/// 分析检测历史,产出聚合统计
 pub fn analyze_detection_insights(history: &[super::types::DetectionHistoryEntry]) -> DetectionStats {
     if history.is_empty() {
         return DetectionStats {
@@ -24,7 +24,7 @@ pub fn analyze_detection_insights(history: &[super::types::DetectionHistoryEntry
     let total_detections = history.iter().filter(|h| h.action == "detect").count() as u32;
     let total_rewrites = history.iter().filter(|h| h.action == "rewrite").count() as u32;
 
-    // 按 chapter_number 分组(BTreeMap 保证按章号有序)
+    // 按 chapter_number 分组
     let mut chapter_map: BTreeMap<u32, Vec<&super::types::DetectionHistoryEntry>> = BTreeMap::new();
     for entry in history {
         chapter_map.entry(entry.chapter_number).or_default().push(entry);
@@ -81,6 +81,8 @@ pub fn analyze_detection_insights(history: &[super::types::DetectionHistoryEntry
     }
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
 fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
@@ -88,6 +90,8 @@ fn round3(v: f64) -> f64 {
 fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
+
+// ── 测试 ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,9 @@
-// 路径枚举。
-//
-// DFS 枚举所有从 start 到 ending（或死路）的可玩路径。
-// 状态去重：visit_key = "{node_id}\0{serialize_var_state}"，同一路径上相同 visitKey 不重复访问。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Paths - 路径枚举
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! DFS 枚举所有从 start 到 ending（或死路）的可玩路径。
+//! 状态去重：visit_key = "{node_id}\\0{serialize_var_state}"，同一路径上相同 visitKey 不重复访问。
 
 use std::collections::{HashMap, HashSet};
 

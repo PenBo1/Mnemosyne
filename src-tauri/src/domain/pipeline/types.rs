@@ -1,10 +1,14 @@
-// 基础数据类型 —— book.json + chapters.json 等结构定义。
-//
-// zod schema → Rust serde 转换规则：
-// - zod enum → Rust enum + #[serde(rename_all = "kebab-case")]
-// - zod object → Rust struct
-// - zod optional → Option<T>
-// - zod default → #[serde(default)]
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 管道类型 - 基础数据类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! book.json + chapters.json 等结构定义。
+//!
+//! zod schema → Rust serde 转换规则：
+//! - zod enum → Rust enum + #[serde(rename_all = "kebab-case")]
+//! - zod object → Rust struct
+//! - zod optional → Option<T>
+//! - zod default → #[serde(default)]
 
 use serde::{Deserialize, Serialize};
 

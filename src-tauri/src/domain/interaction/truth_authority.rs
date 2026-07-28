@@ -1,17 +1,6 @@
-// 真相权威分类（TruthAuthority classification）。
-//
-// 真相文件白名单（防路径穿越）：
-// - author_intent.md     → Direction
-// - current_focus.md     → Direction
-// - story_bible.md       → Foundation
-// - volume_outline.md    → Foundation
-// - book_rules.md        → Rules
-// - current_state.md     → RuntimeTruth
-// - pending_hooks.md     → RuntimeTruth
-// - chapter_summaries.md → Memory
-//
-// outline/* 和 roles/* 子路径不在白名单内（编辑入口只接受顶层文件名），
-// 避免通过 file_name 字段构造穿越路径。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 真相权威 - 真相文件分类与白名单校验
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::shared::error::AppError;
 use crate::domain::interaction::types::TruthAuthority;
@@ -68,12 +57,17 @@ pub fn classify_truth_authority(file_name: &str) -> Option<TruthAuthority> {
 /// 用于 IPC 层入参校验，失败返回 AppError::path_traversal。
 pub fn assert_safe_truth_file_name(name: &str) -> Result<(), AppError> {
     if normalize_truth_file_name(name).is_none() {
+        tracing::warn!(
+            file_name = %name,
+            "[TruthAuthority] Rejected unsafe truth file name"
+        );
         return Err(AppError::invalid_input(format!(
             "非法真相文件名: {}（白名单: {}）",
             name,
             NORMALIZED_TRUTH_FILES.join(" / ")
         )));
     }
+    tracing::debug!(file_name = %name, "[TruthAuthority] Truth file name validated");
     Ok(())
 }
 

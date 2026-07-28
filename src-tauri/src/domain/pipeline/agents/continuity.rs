@@ -1,16 +1,14 @@
-// ContinuityAuditor Agent。
-//
-// 职责：对写完的章节做 37 维度结构审计，输出 JSON 格式的审计结果。
-// 只有 critical 级别问题才判定 passed=false。
-//
-// 维度激活规则：
-// - 默认激活 1-27 + 32-33（基础结构维度）
-// - 当 story/parent_canon.md 存在且非 fanfic 模式 → 激活 28-31（番外审查维度）
-// - 当 book.fanfic_mode 存在 → 激活 34-37（同人审查维度），并按模式覆盖严重度
-//   - canon: 34/35/37 critical, 36 warning
-//   - au:    34 critical, 35/37 info, 36 warning
-//   - ooc:   34 info, 35/36 warning, 37 info；同时把维度 1 (OOC) 降级为 info
-//   - cp:    36 critical, 34/35 warning, 37 info
+//! ═══════════════════════════════════════════════════════════════════════════
+//! ContinuityAuditor Agent - 连续性审计代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：对写完的章节做 37 维度结构审计，输出 JSON 格式的审计结果。
+//! 只有 critical 级别问题才判定 passed=false。
+//!
+//! 维度激活规则：
+//! - 默认激活 1-27 + 32-33（基础结构维度）
+//! - 当 story/parent_canon.md 存在且非 fanfic 模式 → 激活 28-31（番外审查维度）
+//! - 当 book.fanfic_mode 存在 → 激活 34-37（同人审查维度），并按模式覆盖严重度
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -91,6 +89,15 @@ pub async fn audit_chapter(
     chapter_content: &str,
     ctx: &AuditorContext,
 ) -> Result<AuditResult, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "audit_chapter",
+        chapter_number,
+        book_id = %book.id,
+        chapter_title_len = chapter_title.len(),
+        "入口"
+    );
+
     let fanfic_mode = book.fanfic_mode;
     let has_parent_canon = !ctx.parent_canon.is_empty() && fanfic_mode.is_none();
     let has_fanfic_canon = !ctx.fanfic_canon.is_empty() && fanfic_mode.is_some();
@@ -100,7 +107,18 @@ pub async fn audit_chapter(
         build_user_message(book, chapter_number, chapter_title, chapter_content, ctx, has_parent_canon, has_fanfic_canon);
 
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    Ok(parse_audit_result(&response))
+    let result = parse_audit_result(&response);
+
+    tracing::info!(
+        function = "audit_chapter",
+        chapter_number,
+        passed = result.passed,
+        issues_count = result.issues.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
+
+    Ok(result)
 }
 
 // ── 37 审计维度（中英文标签） ────────────────────────────────
@@ -329,6 +347,54 @@ fn build_system_prompt(
 
 memo 简略是合法状态。喘息章 / 余波章 / 过渡章的 memo 可能只有目标 + 骨架正文——这种 memo 不算"不完整"，你不能因为 memo 没要求的段落去惩罚已完成章节。只在 memo 真正承诺的范围内判定 drift。
 </responsibilities>
+
+<character_memory_checks>
+## 角色记忆检查
+1. OOC检查：检查人物行为是否符合已建立的性格
+   - 能力一致性：弱者突然展现超越设定的实力、强者无故表现失常
+   - 性格一致性：冷静角色突然冲动（无合理动机）、善良角色突然残忍（无剧情铺垫）
+   - 外貌一致性：身高、体型前后矛盾，发色、瞳色、服装突然改变（无说明）
+   - 关系一致性：敌对关系突然友好（无转折）、友好关系突然敌对（无冲突）
+</character_memory_checks>
+
+<material_continuity_checks>
+## 物品连续性检查
+- 物品出现检查：物品首次出现是否有合理来源（继承、购买、捡拾、他人赠送）
+- 物品消失检查：物品消失是否有交代（遗失、损坏、赠送、消耗）
+- 物品状态追踪：物品状态变化是否合理（武器损坏有战斗场景）
+- 物品能力一致性：物品效果是否与设定一致（法宝效果稳定）
+</material_continuity_checks>
+
+<foreshadowing_checks>
+## 伏笔检查
+- 伏笔设置检查：重要伏笔是否有足够暗示（谜题揭晓前有线索）
+- 伏笔回收检查：已设伏笔是否回收（前文伏笔在后文有交代）
+- 伏笔遗漏检查：是否有未设置的必要伏笔（关键转折无铺垫）
+- 新伏笔检查：新设伏笔是否合理（伏笔与主线相关）
+</foreshadowing_checks>
+
+<narrative_rhythm_checks>
+## 叙事节奏检查
+- 看点密度检查：每 500-800 字是否有看点（看点分布均匀）
+- 槽点密度检查：槽点是否过多（槽点少于 3 个）
+- 情绪高潮检查：每 1500-2500 字是否有情绪高潮（情绪节奏合理）
+- 信息密度检查：信息密度是否合理（每段 1-2 个关键信息）
+</narrative_rhythm_checks>
+
+<ai_trace_checks>
+## AI 痕迹检查
+- 格式痕迹：冒号分段、【】标记、emoji 和表情符号、纯数字编号列表、Markdown 格式标记
+- 词汇痕迹：抽象词堆砌（非常、极其、特别、相当）、空洞名词（情况、问题、方面、因素）、通用动词（做、搞、弄、来、去）
+- 翻译腔痕迹：被动句过度使用、定语后置、关系从句堆叠
+- 机械衔接痕迹：转折词堆砌、因果词过度、重复衔接词、僵硬总结句
+</ai_trace_checks>
+
+<golden_opening_checks>
+## 黄金开头检查
+- 钩子检查：第一句是否有钩子（悬念/冲突/反差/人物/场景钩子，避免天气/自我介绍/抽象哲理开头）
+- 节奏启动检查：开头节奏是否匹配章节类型（动作章节快节奏开头）
+- 信息锚点检查：开头是否锚定读者预期（50 字内明确时间/地点/人物/目标）
+</golden_opening_checks>
 
 <repair_scope_rules>
 每一条 issue 必须携带 repair_scope 作为路由提示：

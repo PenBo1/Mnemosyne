@@ -1,10 +1,14 @@
-// FanficCanonImporter。
-//
-// 职责：从原作素材文本中提取 5 个 section 的 canonical 信息（world_rules /
-// character_profiles / key_events / power_system / writing_style），支持长文本分块编译。
-//
-// 约束：AgentEngine.prompt_once 只支持单轮对话。多轮分块编译循环
-// 逐块调用 prompt_once 并合并结果。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! FanficCanonImporter - 同人设定导入代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：从原作素材文本中提取 5 个 section 的 canonical 信息（world_rules /
+//! character_profiles / key_events / power_system / writing_style），支持长文本分块编译。
+//!
+//! 约束：AgentEngine.prompt_once 只支持单轮对话。多轮分块编译循环
+//! 逐块调用 prompt_once 并合并结果。
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::pipeline::types::FanficMode;
@@ -38,20 +42,39 @@ pub async fn import_from_text(
     source_name: &str,
     fanfic_mode: FanficMode,
 ) -> Result<FanficCanonOutput, AppError> {
-    let source = prepare_source_text(engine, source_text, source_name).await?;
+    let start = Instant::now();
+    tracing::info!(function = "import_from_text", source_name, mode = ?fanfic_mode, source_chars = source_text.chars().count(), "入口");
 
-    let mode_label = mode_label(fanfic_mode);
-    let system_prompt = build_system_prompt(mode_label, source.compiled);
-    let user_message = format!(
-        "以下是原作《{}》的素材文本：\n\n{}",
-        source_name, source.content
-    );
+    match prepare_source_text(engine, source_text, source_name).await {
+        Ok(source) => {
+            let mode_label = mode_label(fanfic_mode);
+            let system_prompt = build_system_prompt(mode_label, source.compiled);
+            let user_message = format!(
+                "以下是原作《{}》的素材文本：\n\n{}",
+                source_name, source.content
+            );
 
-    // temp=0.3（prompt_once 不支持自定义 temperature，使用引擎默认值）
-    let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    let mut output = parse_sections(&response);
-    output.full_document = build_full_document(&output, source_name, fanfic_mode);
-    Ok(output)
+            match engine.prompt_once(&system_prompt, &user_message).await {
+                Ok(response) => {
+                    let mut output = parse_sections(&response);
+                    output.full_document = build_full_document(&output, source_name, fanfic_mode);
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    tracing::info!(function = "import_from_text", source_name, duration_ms, compiled = source.compiled, "出口");
+                    Ok(output)
+                }
+                Err(e) => {
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    tracing::error!(function = "import_from_text", source_name, duration_ms, error = %e, "错误");
+                    Err(e)
+                }
+            }
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "import_from_text", source_name, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 /// 准备源文本：若超过 SOURCE_CHUNK_CHARS，分块编译为语义资料包。
@@ -60,7 +83,11 @@ async fn prepare_source_text(
     source_text: &str,
     source_name: &str,
 ) -> Result<CompiledSource, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "prepare_source_text", source_name, source_chars = source_text.chars().count(), "入口");
+
     if source_text.chars().count() <= SOURCE_CHUNK_CHARS {
+        tracing::info!(function = "prepare_source_text", source_name, duration_ms = 0u64, compiled = false, reason = "under_threshold", "出口");
         return Ok(CompiledSource {
             content: source_text.to_string(),
             compiled: false,
@@ -70,36 +97,47 @@ async fn prepare_source_text(
     let chunks = split_into_chunks(source_text, SOURCE_CHUNK_CHARS);
     let total = chunks.len();
 
-    // 并发编译各片段（片段间相互独立），try_join_all 保留顺序
+    tracing::info!(function = "prepare_source_text", source_name, total_chunks = total, "开始分块编译");
+
     let futures = chunks
         .iter()
         .enumerate()
         .map(|(index, chunk)| compile_chunk(engine, chunk, index, total, source_name));
-    let compiled_results = try_join_all(futures).await?;
+    match try_join_all(futures).await {
+        Ok(compiled_results) => {
+            let mut notes: Vec<String> = Vec::with_capacity(total);
+            for (index, compiled) in compiled_results.iter().enumerate() {
+                let trimmed = compiled.trim();
+                if !trimmed.is_empty() {
+                    notes.push(format!(
+                        "## 片段 {}/{}\n\n{}",
+                        index + 1,
+                        total,
+                        trimmed
+                    ));
+                }
+            }
 
-    let mut notes: Vec<String> = Vec::with_capacity(total);
-    for (index, compiled) in compiled_results.iter().enumerate() {
-        let trimmed = compiled.trim();
-        if !trimmed.is_empty() {
-            notes.push(format!(
-                "## 片段 {}/{}\n\n{}",
-                index + 1,
-                total,
-                trimmed
-            ));
+            let content = format!(
+                "# 《{}》语义资料包\n\n以下内容由创作系统逐片段读完原作素材后压缩生成，供后续正典抽取使用。它不是原作文本的截断副本。\n\n{}",
+                source_name,
+                notes.join("\n\n")
+            );
+
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "prepare_source_text", source_name, duration_ms, compiled = true, total_chunks = total, "出口");
+
+            Ok(CompiledSource {
+                content,
+                compiled: true,
+            })
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "prepare_source_text", source_name, duration_ms, error = %e, "错误");
+            Err(e)
         }
     }
-
-    let content = format!(
-        "# 《{}》语义资料包\n\n以下内容由创作系统逐片段读完原作素材后压缩生成，供后续正典抽取使用。它不是原作文本的截断副本。\n\n{}",
-        source_name,
-        notes.join("\n\n")
-    );
-
-    Ok(CompiledSource {
-        content,
-        compiled: true,
-    })
 }
 
 /// 编译单个片段。
@@ -111,6 +149,9 @@ async fn compile_chunk(
     total: usize,
     source_name: &str,
 ) -> Result<String, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "compile_chunk", source_name, chunk_index = index + 1, total_chunks = total, "入口");
+
     let system_prompt = "你是同人正典资料编译器。你的任务是把原作的一个片段压缩成 Markdown 资料包，供后续抽取使用。\n不要续写故事，不要创作新内容，不要补足未出现的信息。只保留本片段中实际出现的世界规则、角色、关系、关键事件、力量体系、口头禅、说话风格、以及有原文支撑的证据。\n若某一类信息在本片段中缺失，整类省略。保留片段编号以便后续追溯。\n\n<safety>\n- NEVER 续写故事或创作新内容；只做压缩，不做加法。\n- NEVER 补足未在原文中出现的细节或推断。\n- NEVER 遗漏片段编号；后续追溯依赖它。\n</safety>";
     let user_message = format!(
         "原作：《{}》\n片段：{}/{}\n\n{}",
@@ -119,7 +160,18 @@ async fn compile_chunk(
         total,
         chunk
     );
-    engine.prompt_once(system_prompt, &user_message).await
+    match engine.prompt_once(system_prompt, &user_message).await {
+        Ok(response) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "compile_chunk", source_name, chunk_index = index + 1, duration_ms, "出口");
+            Ok(response)
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "compile_chunk", source_name, chunk_index = index + 1, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 /// 按字符数分块。

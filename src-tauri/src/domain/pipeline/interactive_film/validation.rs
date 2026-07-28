@@ -1,11 +1,13 @@
-// 校验。
-//
-// - validate_story_graph：基础校验（4 个 error/warning 级，阻塞型）
-// - review_story_graph：深度审查（在 validate 基础上追加 9 个 info/warning 级）
-//
-// ValidationErrorCode 扩展：任务规格只列了 4 个 error 级 code，
-// 但 review 需要 9 个额外 code，因此 enum 包含全部 13 个变体。
-// ValidationErrorLevel 同理追加 Info（源码使用 error/warning/info 三级）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Validation - 校验模块
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! - validate_story_graph：基础校验（4 个 error/warning 级，阻塞型）
+//! - review_story_graph：深度审查（在 validate 基础上追加 9 个 info/warning 级）
+//!
+//! ValidationErrorCode 扩展：任务规格只列了 4 个 error 级 code，
+//! 但 review 需要 9 个额外 code，因此 enum 包含全部 13 个变体。
+//! ValidationErrorLevel 同理追加 Info（源码使用 error/warning/info 三级）。
 
 use std::collections::{HashMap, HashSet};
 

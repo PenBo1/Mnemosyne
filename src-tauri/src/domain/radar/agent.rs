@@ -1,10 +1,12 @@
-// RadarAgent:雷达扫描核心逻辑。
-//
-// 流程:
-// 1. 并行抓取所有数据源排行榜
-// 2. 格式化为 prompt 文本
-// 3. 调用 LLM 分析(要求输出 JSON)
-// 4. 解析 JSON 为结构化结果
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 雷达智能体 - 市场扫描分析
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 流程:
+//! 1. 并行抓取所有数据源排行榜
+//! 2. 格式化为 prompt 文本
+//! 3. 调用 LLM 分析(要求输出 JSON)
+//! 4. 解析 JSON 为结构化结果
 
 use crate::core::agent::engine::AgentEngine;
 use crate::infrastructure::db::types::{PlatformRankings, RadarRecommendation, RadarResult};
@@ -69,12 +71,16 @@ pub struct ScanOutcome {
 ///
 /// `engine` 提供 LLM 调用能力(prompt_once),`sources` 可选覆盖默认数据源。
 pub async fn scan(engine: &AgentEngine, sources: Option<Vec<Box<dyn RadarSource>>>) -> Result<ScanOutcome, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!("[RadarAgent] Starting radar scan");
+    
     let sources = sources.unwrap_or_else(default_sources);
 
     // 1. 并行抓取所有数据源
+    tracing::debug!(source_count = sources.len(), "[RadarAgent] Fetching from sources");
     let rankings = futures_util::future::join_all(sources.iter().map(|s| s.fetch())).await;
     for (source, result) in sources.iter().zip(&rankings) {
-        tracing::debug!(source = source.name(), entries = result.entries.len(), "Radar source fetched");
+        tracing::debug!(source = source.name(), entries = result.entries.len(), "[RadarAgent] Source fetched");
     }
 
     // 2. 格式化排行榜为 prompt 文本
@@ -82,11 +88,12 @@ pub async fn scan(engine: &AgentEngine, sources: Option<Vec<Box<dyn RadarSource>
     let system_prompt = SYSTEM_PROMPT_TEMPLATE.replace("{rankings}", &rankings_text);
 
     // 3. 调用 LLM 分析
+    tracing::debug!("[RadarAgent] Calling LLM for analysis");
     let response = engine.prompt_once(&system_prompt, USER_MESSAGE).await?;
     tracing::info!(
         response_len = response.len(),
         response_preview = safe_char_slice(&response, 200),
-        "Radar LLM response received"
+        "[RadarAgent] LLM response received"
     );
 
     // 4. 解析 JSON(容错:LLM 可能输出额外文字)
@@ -95,10 +102,16 @@ pub async fn scan(engine: &AgentEngine, sources: Option<Vec<Box<dyn RadarSource>
             tracing::warn!(
                 error = %e,
                 full_response = %response,
-                "Radar JSON parse failed, dumping full LLM response"
+                "[RadarAgent] JSON parse failed, dumping full LLM response"
             );
             e
         })?;
+    
+    tracing::info!(
+        recommendation_count = result.recommendations.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[RadarAgent] Radar scan completed"
+    );
     Ok(ScanOutcome { result, raw_rankings: rankings })
 }
 

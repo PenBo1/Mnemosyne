@@ -1,10 +1,12 @@
-// State Bootstrap。
-//
-// 职责：从 markdown 真相文件（current_state.md / pending_hooks.md / chapter_summaries.md）
-// 引导出 JSON 加速索引。首次访问书籍状态时调用。
-//
-// 已实现：完整的 markdown → JSON 解析（parse_current_state_facts /
-// parse_pending_hooks_markdown / parse_chapter_summaries_markdown）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! State Bootstrap - 状态引导模块
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：从 markdown 真相文件（current_state.md / pending_hooks.md / chapter_summaries.md）
+//! 引导出 JSON 加速索引。首次访问书籍状态时调用。
+//!
+//! 已实现：完整的 markdown → JSON 解析（parse_current_state_facts /
+//! parse_pending_hooks_markdown / parse_chapter_summaries_markdown）。
 
 use std::path::Path;
 

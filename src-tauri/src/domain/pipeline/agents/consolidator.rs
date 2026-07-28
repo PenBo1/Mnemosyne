@@ -1,15 +1,19 @@
-// Consolidator Agent。
-//
-// 职责：将已完成卷的逐章摘要压缩为卷级叙事摘要，降低长篇创作中的 token 占用。
-// 仅处理已完成卷（end_ch <= 当前最新章节），当前进行中卷的详细摘要保留原状。
-//
-// 流程：
-// 1. 重新执行 hook 晋升（rerun_promotion_pass）：基于 chapter_summaries.md
-//    统计 advancedCount，达到阈值的 hook 翻转 promoted=true 并写回 pending_hooks.md
-// 2. 读取 volume_map.md + chapter_summaries.md
-// 3. 解析卷边界 + 摘要表
-// 4. 对每个已完成卷，LLM 压缩为叙事段落
-// 5. 归档已完成卷的详细摘要，仅保留当前卷的行
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Consolidator Agent - 卷摘要压缩代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：将已完成卷的逐章摘要压缩为卷级叙事摘要，降低长篇创作中的 token 占用。
+//! 仅处理已完成卷（end_ch <= 当前最新章节），当前进行中卷的详细摘要保留原状。
+//!
+//! 流程：
+//! 1. 重新执行 hook 晋升（rerun_promotion_pass）：基于 chapter_summaries.md
+//!    统计 advancedCount，达到阈值的 hook 翻转 promoted=true 并写回 pending_hooks.md
+//! 2. 读取 volume_map.md + chapter_summaries.md
+//! 3. 解析卷边界 + 摘要表
+//! 4. 对每个已完成卷，LLM 压缩为叙事段落
+//! 5. 归档已完成卷的详细摘要，仅保留当前卷的行
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::pipeline::types::Language;
@@ -55,23 +59,23 @@ pub async fn consolidate(
     engine: &AgentEngine,
     book_dir: &std::path::Path,
 ) -> Result<ConsolidationResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "consolidate", book_dir = %book_dir.display(), "入口");
+
     let story_dir = book_dir.join("story");
     let summaries_path = story_dir.join("chapter_summaries.md");
     let volume_summaries_path = story_dir.join("volume_summaries.md");
 
-    // 读取文件（同步，缺失返回空字符串）
     let summaries_raw = std::fs::read_to_string(&summaries_path).unwrap_or_default();
     let outline_raw = std::fs::read_to_string(story_dir.join("outline").join("volume_map.md"))
         .or_else(|_| std::fs::read_to_string(story_dir.join("volume_outline.md")))
         .unwrap_or_default();
 
-    // Phase 7 hotfix 2：归档前的 hook 晋升重跑。独立于摘要压缩执行，
-    // 即使是尚无已完成卷的新书，也会在 seed 的 advanced_count 越过阈值时
-    // 翻转 promoted 标志。
     let promoted_hook_count = rerun_advanced_count_promotion(&story_dir, &summaries_raw)?;
 
-    // 任一为空则提前返回
     if summaries_raw.is_empty() || outline_raw.is_empty() {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::info!(function = "consolidate", duration_ms, reason = "empty_files", "出口");
         return Ok(ConsolidationResult {
             volume_summaries: String::new(),
             archived_volumes: 0,
@@ -83,8 +87,9 @@ pub async fn consolidate(
     let volumes = parse_volume_boundaries(&outline_raw);
     let (header, rows) = parse_summary_table(&summaries_raw);
 
-    // 无卷边界或无摘要行 → 无需压缩
     if volumes.is_empty() || rows.is_empty() {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::info!(function = "consolidate", duration_ms, reason = "no_data", volume_count = volumes.len(), row_count = rows.len(), "出口");
         return Ok(ConsolidationResult {
             volume_summaries: String::new(),
             archived_volumes: 0,
@@ -93,7 +98,6 @@ pub async fn consolidate(
         });
     }
 
-    // 已完成卷 = end_ch <= 最新章节号
     let last_chapter = rows.last().map(|r| r.chapter).unwrap_or(0);
     let completed_volumes: Vec<&VolumeBoundary> = volumes
         .iter()
@@ -101,6 +105,8 @@ pub async fn consolidate(
         .collect();
 
     if completed_volumes.is_empty() {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::info!(function = "consolidate", duration_ms, reason = "no_completed_volumes", last_chapter, "出口");
         return Ok(ConsolidationResult {
             volume_summaries: String::new(),
             archived_volumes: 0,
@@ -109,7 +115,6 @@ pub async fn consolidate(
         });
     }
 
-    // 对每个已完成卷做 LLM 压缩
     let mut volume_summaries: Vec<String> = Vec::new();
     for vol in &completed_volumes {
         let vol_rows: Vec<&SummaryRow> = rows
@@ -124,19 +129,25 @@ pub async fn consolidate(
             .map(|r| r.raw.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        let summary = consolidate_volume(engine, vol, &header, &rows_text).await?;
-        volume_summaries.push(format!(
-            "## {}（第{}-{}章）\n\n{}",
-            vol.name, vol.start_ch, vol.end_ch, summary
-        ));
+        match consolidate_volume(engine, vol, &header, &rows_text).await {
+            Ok(summary) => {
+                volume_summaries.push(format!(
+                    "## {}（第{}-{}章）\n\n{}",
+                    vol.name, vol.start_ch, vol.end_ch, summary
+                ));
+            }
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::error!(function = "consolidate", duration_ms, volume = %vol.name, error = %e, "错误");
+                return Err(e);
+            }
+        }
     }
 
     let new_summaries = volume_summaries.join("\n\n");
 
-    // 写入 volume_summaries.md
     std::fs::write(&volume_summaries_path, &new_summaries)?;
 
-    // 归档已完成卷的详细摘要
     let archive_dir = story_dir.join("summaries_archive");
     std::fs::create_dir_all(&archive_dir)?;
     for vol in &completed_volumes {
@@ -153,7 +164,6 @@ pub async fn consolidate(
         )?;
     }
 
-    // 重写 chapter_summaries.md，仅保留不属于任何已完成卷的行（当前卷 + 尾部）
     let retained_rows: Vec<&SummaryRow> = rows
         .iter()
         .filter(|r| {
@@ -176,6 +186,16 @@ pub async fn consolidate(
         )
     };
     std::fs::write(&summaries_path, &retained_content)?;
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+    tracing::info!(
+        function = "consolidate",
+        duration_ms,
+        archived_volumes = completed_volumes.len(),
+        retained_chapters = retained_rows.len(),
+        promoted_hook_count,
+        "出口"
+    );
 
     Ok(ConsolidationResult {
         volume_summaries: new_summaries,
@@ -232,6 +252,9 @@ async fn consolidate_volume(
     header: &str,
     rows: &str,
 ) -> Result<String, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "consolidate_volume", volume = %vol.name, start_ch = vol.start_ch, end_ch = vol.end_ch, "入口");
+
     let system_prompt = r###"<identity>
 你是一名叙事摘要专家。将逐章摘要压缩为一段连贯的叙事段落（不超过 500 字），保留关键事件、角色发展与情节推进。保留具体人名、地名与情节点。使用与输入相同的语言撰写。
 </identity>
@@ -271,8 +294,18 @@ async fn consolidate_volume(
         header = header,
         rows = rows,
     );
-    let response = engine.prompt_once(system_prompt, &user_message).await?;
-    Ok(response.trim().to_string())
+    match engine.prompt_once(system_prompt, &user_message).await {
+        Ok(response) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "consolidate_volume", volume = %vol.name, duration_ms, "出口");
+            Ok(response.trim().to_string())
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "consolidate_volume", volume = %vol.name, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 // ── 解析：卷边界 ────────────────────────────────────────────

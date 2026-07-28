@@ -1,11 +1,15 @@
-// ChapterAnalyzer Agent。
-//
-// 职责：分析一章已完成的正文，提取所有状态变化，输出 11 个 === TAG === 区块。
-//
-// 与 writer 的区别：
-// - writer 是 3-phase（Creative/Observer/Settler），产出新正文
-// - analyzer 是单次 LLM 调用，分析已有正文，输出 11 个 === TAG === 区块
-// - PRE_WRITE_CHECK 和 POST_SETTLEMENT 留空（分析模式不需要）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! ChapterAnalyzer Agent - 章节分析代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：分析一章已完成的正文，提取所有状态变化，输出 11 个 === TAG === 区块。
+//!
+//! 与 writer 的区别：
+//! - writer 是 3-phase（Creative/Observer/Settler），产出新正文
+//! - analyzer 是单次 LLM 调用，分析已有正文，输出 11 个 === TAG === 区块
+//! - PRE_WRITE_CHECK 和 POST_SETTLEMENT 留空（分析模式不需要）
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -56,10 +60,25 @@ pub async fn analyze_chapter(
     chapter_title: Option<&str>,
     ctx: &AnalyzerContext,
 ) -> Result<AnalyzerOutput, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "analyze_chapter", chapter_number, book_id = %book.id, "入口");
+
     let system_prompt = build_system_prompt(book);
     let user_message = build_user_message(book, chapter_number, chapter_content, chapter_title, ctx);
-    let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    Ok(parse_output(&response))
+    
+    match engine.prompt_once(&system_prompt, &user_message).await {
+        Ok(response) => {
+            let output = parse_output(&response);
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "analyze_chapter", chapter_number, book_id = %book.id, duration_ms, "出口");
+            Ok(output)
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "analyze_chapter", chapter_number, book_id = %book.id, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 // ── System Prompt ──────────────────────────────────────────

@@ -1,19 +1,22 @@
-// Pipeline IPC 命令。
-//
-// 命令列表（前端使用 camelCase 调用）：
-// - pipeline_init_book: 初始化书籍（生成基础设定 + 落盘）
-// - pipeline_revise_foundation: 修订已有书籍的基础设定
-// - pipeline_plan_chapter: 为下一章生成 chapter memo
-// - pipeline_compose_chapter: 组装章节上下文
-// - pipeline_write_draft: 写一章草稿
-// - pipeline_audit_draft: 审计指定章节
-// - pipeline_revise_draft: 修订指定章节
-// - pipeline_write_next_chapter: 写下一章完整流程（8-agent cycle）
-// - pipeline_list_chapters: 列出书籍章节索引
-// - pipeline_get_chapter: 读取章节正文
-// - pipeline_consolidate: 压缩旧卷摘要
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline IPC 命令 - 前端交互接口
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 命令列表（前端使用 camelCase 调用）：
+//! - pipeline_init_book: 初始化书籍（生成基础设定 + 落盘）
+//! - pipeline_revise_foundation: 修订已有书籍的基础设定
+//! - pipeline_plan_chapter: 为下一章生成 chapter memo
+//! - pipeline_compose_chapter: 组装章节上下文
+//! - pipeline_write_draft: 写一章草稿
+//! - pipeline_audit_draft: 审计指定章节
+//! - pipeline_revise_draft: 修订指定章节
+//! - pipeline_write_next_chapter: 写下一章完整流程（8-agent cycle）
+//! - pipeline_list_chapters: 列出书籍章节索引
+//! - pipeline_get_chapter: 读取章节正文
+//! - pipeline_consolidate: 压缩旧卷摘要
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::core::agent::commands::AgentState;
 use crate::domain::pipeline::agents::reviser::ReviseMode;
@@ -79,7 +82,11 @@ pub async fn pipeline_init_book(
     data_dir: State<'_, DataDir>,
     request: InitBookRequest,
 ) -> Result<IpcResponse<bool>, AppError> {
+    let start = Instant::now();
+    tracing::info!(book_id = %request.book.id, "pipeline_init_book: enter");
+    
     validate_book_id(&request.book.id)?;
+    tracing::debug!(book_id = %request.book.id, genre = %request.genre_name, "Book ID validated");
 
     let runner = build_runner(&data_dir);
     runner
@@ -93,7 +100,11 @@ pub async fn pipeline_init_book(
         )
         .await?;
 
-    tracing::info!(book_id = %request.book.id, "Pipeline: 书籍初始化完成");
+    tracing::info!(
+        book_id = %request.book.id,
+        duration_ms = start.elapsed().as_millis(),
+        "pipeline_init_book: exit"
+    );
     Ok(IpcResponse::created(true))
 }
 
@@ -109,7 +120,11 @@ pub async fn pipeline_revise_foundation(
     genre_name: String,
     genre_body: String,
 ) -> Result<IpcResponse<bool>, AppError> {
+    let start = Instant::now();
+    tracing::info!(book_id = %book_id, "pipeline_revise_foundation: enter");
+    
     validate_book_id(&book_id)?;
+    tracing::debug!(book_id = %book_id, "Book ID validated");
 
     let runner = build_runner(&data_dir);
     runner
@@ -122,7 +137,11 @@ pub async fn pipeline_revise_foundation(
         )
         .await?;
 
-    tracing::info!(book_id = %book_id, "Pipeline: 基础设定修订完成");
+    tracing::info!(
+        book_id = %book_id,
+        duration_ms = start.elapsed().as_millis(),
+        "pipeline_revise_foundation: exit"
+    );
     Ok(IpcResponse::ok(true))
 }
 
@@ -135,12 +154,21 @@ pub async fn pipeline_plan_chapter(
     data_dir: State<'_, DataDir>,
     book_id: String,
 ) -> Result<IpcResponse<crate::domain::pipeline::runner::PlanChapterResult>, AppError> {
+    let start = Instant::now();
+    tracing::info!(book_id = %book_id, "pipeline_plan_chapter: enter");
+    
     validate_book_id(&book_id)?;
+    tracing::debug!(book_id = %book_id, "Book ID validated");
 
     let runner = build_runner(&data_dir);
     let result = runner.plan_chapter(&agent_state.engine, &book_id).await?;
 
-    tracing::info!(book_id = %book_id, chapter = result.chapter_number, "Pipeline: 章节规划完成");
+    tracing::info!(
+        book_id = %book_id,
+        chapter = result.chapter_number,
+        duration_ms = start.elapsed().as_millis(),
+        "pipeline_plan_chapter: exit"
+    );
     Ok(IpcResponse::ok(result))
 }
 
@@ -153,14 +181,23 @@ pub async fn pipeline_compose_chapter(
     data_dir: State<'_, DataDir>,
     book_id: String,
 ) -> Result<IpcResponse<crate::domain::pipeline::runner::ComposeChapterResult>, AppError> {
+    let start = Instant::now();
+    tracing::info!(book_id = %book_id, "pipeline_compose_chapter: enter");
+    
     validate_book_id(&book_id)?;
+    tracing::debug!(book_id = %book_id, "Book ID validated");
 
     let runner = build_runner(&data_dir);
     let result = runner
         .compose_chapter(&agent_state.engine, &book_id)
         .await?;
 
-    tracing::info!(book_id = %book_id, chapter = result.chapter_number, "Pipeline: 上下文组装完成");
+    tracing::info!(
+        book_id = %book_id,
+        chapter = result.chapter_number,
+        duration_ms = start.elapsed().as_millis(),
+        "pipeline_compose_chapter: exit"
+    );
     Ok(IpcResponse::ok(result))
 }
 
@@ -174,7 +211,11 @@ pub async fn pipeline_write_draft(
     book_id: String,
     word_count_override: Option<u32>,
 ) -> Result<IpcResponse<crate::domain::pipeline::runner::pipeline_runner::DraftResult>, AppError> {
+    let start = Instant::now();
+    tracing::info!(book_id = %book_id, word_count_override = ?word_count_override, "pipeline_write_draft: enter");
+    
     validate_book_id(&book_id)?;
+    tracing::debug!(book_id = %book_id, "Book ID validated");
 
     let runner = build_runner(&data_dir);
     let result = runner
@@ -185,7 +226,8 @@ pub async fn pipeline_write_draft(
         book_id = %book_id,
         chapter = result.chapter_number,
         words = result.word_count,
-        "Pipeline: 草稿撰写完成"
+        duration_ms = start.elapsed().as_millis(),
+        "pipeline_write_draft: exit"
     );
     Ok(IpcResponse::ok(result))
 }
@@ -200,7 +242,11 @@ pub async fn pipeline_audit_draft(
     book_id: String,
     chapter_number: Option<u32>,
 ) -> Result<IpcResponse<crate::domain::pipeline::agents::continuity::AuditResult>, AppError> {
+    let start = Instant::now();
+    tracing::info!(book_id = %book_id, chapter = ?chapter_number, "pipeline_audit_draft: enter");
+    
     validate_book_id(&book_id)?;
+    tracing::debug!(book_id = %book_id, "Book ID validated");
 
     let runner = build_runner(&data_dir);
     let result = runner
@@ -212,7 +258,8 @@ pub async fn pipeline_audit_draft(
         passed = result.passed,
         score = ?result.overall_score,
         issues = result.issues.len(),
-        "Pipeline: 章节审计完成"
+        duration_ms = start.elapsed().as_millis(),
+        "pipeline_audit_draft: exit"
     );
     Ok(IpcResponse::ok(result))
 }
@@ -758,6 +805,7 @@ use crate::domain::pipeline::types::{FanficMode, Language};
 
 /// 运行短篇 pipeline（6-agent 串行：大纲→审纲→修订→正文→审稿→修订→打包）。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri IPC 命令，参数由前端逐项传入
 pub async fn pipeline_short_fiction_run(
     agent_state: State<'_, AgentState>,
     data_dir: State<'_, DataDir>,
@@ -821,6 +869,7 @@ pub async fn pipeline_fanfic_import(
 
 /// 运行剧本创作（生成 script-spec.md + script.md）。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri IPC 命令，参数由前端逐项传入
 pub async fn pipeline_script_run(
     agent_state: State<'_, AgentState>,
     data_dir: State<'_, DataDir>,
@@ -861,6 +910,7 @@ pub async fn pipeline_script_run(
 
 /// 运行分镜创作（生成 storyboard-spec.md + storyboard.md + image-prompts.md + assets.json）。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri IPC 命令，参数由前端逐项传入
 pub async fn pipeline_storyboard_run(
     agent_state: State<'_, AgentState>,
     data_dir: State<'_, DataDir>,
@@ -902,6 +952,7 @@ pub async fn pipeline_storyboard_run(
 
 /// 运行互动影游创作（生成 5 section Markdown + assets.json，不含 StoryGraph）。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri IPC 命令，参数由前端逐项传入
 pub async fn pipeline_interactive_film_run(
     agent_state: State<'_, AgentState>,
     data_dir: State<'_, DataDir>,

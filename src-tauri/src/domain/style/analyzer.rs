@@ -1,12 +1,14 @@
-// 风格分析器核心 —— 纯文本统计(无 LLM,无网络)。
-//
-// 中英文双轨:
-// - 中文:按字符计量句长/段落长度,TTR 按字符集(去除标点/空白/数字)
-// - 英文:按单词计量句长/段落长度,TTR 按单词集(小写化)
-//
-// 修辞模式识别(regex,出现 ≥2 次才记录):
-// - 中文 6 种:比喻/排比/反问/夸张/拟人/短句节奏
-// - 英文 4 种:simile/rhetorical question/tricolon/short punchy rhythm
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 风格分析器 - 纯文本统计分析
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 中英文双轨:
+//! - 中文:按字符计量句长/段落长度,TTR 按字符集(去除标点/空白/数字)
+//! - 英文:按单词计量句长/段落长度,TTR 按单词集(小写化)
+//!
+//! 修辞模式识别(regex,出现 ≥2 次才记录):
+//! - 中文 6 种:比喻/排比/反问/夸张/拟人/短句节奏
+//! - 英文 4 种:simile/rhetorical question/tricolon/short punchy rhythm
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -122,6 +124,14 @@ impl Language {
 
 /// 分析参考文本,提取风格指纹画像。
 pub fn analyze_style(text: &str, source_name: Option<&str>, language: Language) -> StyleProfile {
+    let start = std::time::Instant::now();
+    tracing::debug!(
+        text_len = text.len(),
+        language = ?language,
+        source = ?source_name,
+        "[StyleAnalyzer] Starting style analysis"
+    );
+    
     let is_en = language == Language::En;
 
     // 1. 句子分割
@@ -146,6 +156,15 @@ pub fn analyze_style(text: &str, source_name: Option<&str>, language: Language) 
 
     // 6. 修辞特征
     let rhetorical_features = detect_rhetorical_features(text, is_en);
+
+    tracing::debug!(
+        avg_sentence_length,
+        vocabulary_diversity,
+        patterns = top_patterns.len(),
+        features = rhetorical_features.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[StyleAnalyzer] Style analysis completed"
+    );
 
     StyleProfile {
         avg_sentence_length: round1(avg_sentence_length),

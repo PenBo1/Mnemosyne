@@ -1,14 +1,16 @@
-// RuntimeState 类型定义。
-//
-// 这是双轨制状态管理的结构化层（JSON 加速索引）。
-// markdown 真相文件（current_state.md/pending_hooks.md/chapter_summaries.md）是权威源，
-// JSON 是从 markdown 引导出的加速索引，由 state-bootstrap 建立、state-reducer 更新、state-projections 反向渲染。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! RuntimeState Types - 状态类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 这是双轨制状态管理的结构化层（JSON 加速索引）。
+//! markdown 真相文件（current_state.md/pending_hooks.md/chapter_summaries.md）是权威源，
+//! JSON 是从 markdown 引导出的加速索引，由 state-bootstrap 建立、state-reducer 更新、state-projections 反向渲染。
 
 use serde::{Deserialize, Serialize};
 
 use super::super::types::Language;
 
-// ── Manifest ─────────────────────────────────────────────────
+// ── Manifest ────────────────────────────────────────────────────────────────
 
 /// 状态清单
 #[derive(Debug, Clone, Serialize, Deserialize)]

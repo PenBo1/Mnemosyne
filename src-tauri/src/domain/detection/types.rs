@@ -1,6 +1,10 @@
-// 检测系统类型定义。所有结构使用 camelCase 序列化。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 检测类型 - 检测系统类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
 
-/// 单次检测结果。
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
+/// 单次检测结果
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectionResult {
@@ -10,12 +14,12 @@ pub struct DetectionResult {
     pub provider: String,
     /// 检测时间(ISO 8601)
     pub detected_at: String,
-    /// 原始响应(可选,便于前端展示细节)
+    /// 原始响应
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
 }
 
-/// 检测历史条目(按 book 落盘)。
+/// 检测历史条目
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectionHistoryEntry {
@@ -23,14 +27,14 @@ pub struct DetectionHistoryEntry {
     pub chapter_number: u32,
     /// detect / rewrite
     pub action: String,
-    /// 同一 chapter 的第几次尝试(从 1 起)
+    /// 同一 chapter 的第几次尝试
     pub attempt: u32,
     pub score: f64,
     pub provider: String,
     pub detected_at: String,
 }
 
-/// 单章检测统计行。
+/// 单章检测统计行
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ChapterDetectionRow {
@@ -40,7 +44,7 @@ pub struct ChapterDetectionRow {
     pub rewrite_attempts: u32,
 }
 
-/// 检测聚合统计。
+/// 检测聚合统计
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectionStats {

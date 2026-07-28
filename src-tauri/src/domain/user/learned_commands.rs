@@ -1,11 +1,13 @@
-// 学习偏好的 IPC 命令 —— 暴露 learned_preferences 表的查询能力给前端。
-//
-// 设计:
-// - 查询类:list / list_by_key / list_high_confidence
-// - 维护类:delete(用户主动否认偏好)
-// - 触发类:analyze(让用户主动请求"分析我的偏好")
-// - 系统类:decay_stale(系统调用,前端不直接用,留给定时任务)
-// - 合并类:merge_to_user_profile(高置信度偏好合并到 UserProfile)
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 学习偏好命令 - IPC 命令处理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 设计:
+//! - 查询类:list / list_by_key / list_high_confidence
+//! - 维护类:delete(用户主动否认偏好)
+//! - 触发类:analyze(让用户主动请求"分析我的偏好")
+//! - 系统类:decay_stale(系统调用,前端不直接用,留给定时任务)
+//! - 合并类:merge_to_user_profile(高置信度偏好合并到 UserProfile)
 
 use tauri::State;
 
@@ -22,7 +24,16 @@ use crate::shared::error::{AppError, IpcResponse};
 pub async fn learned_preferences_list(
     state: State<'_, DbState>,
 ) -> Result<IpcResponse<Vec<LearnedPreferenceRow>>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!("[learned_preferences] list: started");
+    
     let rows = state.db.list_learned_preferences()?;
+    
+    tracing::info!(
+        count = rows.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[learned_preferences] list: completed"
+    );
     Ok(IpcResponse::ok(rows))
 }
 
@@ -85,10 +96,20 @@ pub async fn learned_preferences_analyze(
     state: State<'_, AgentState>,
     session_id: String,
 ) -> Result<IpcResponse<usize>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(session_id = %session_id, "[learned_preferences] analyze: started");
+    
     if session_id.trim().is_empty() {
         return Err(AppError::invalid_input("session_id cannot be empty"));
     }
     let count = state.engine.analyze_user_preferences(&session_id).await?;
+    
+    tracing::info!(
+        session_id = %session_id,
+        count,
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[learned_preferences] analyze: completed"
+    );
     Ok(IpcResponse::ok(count))
 }
 
@@ -123,12 +144,23 @@ pub async fn user_merge_learned_preferences(
     state: State<'_, DbState>,
     threshold: Option<f64>,
 ) -> Result<IpcResponse<MergeResult>, AppError> {
+    let start = std::time::Instant::now();
     let t = threshold.unwrap_or(0.7);
+    tracing::info!(threshold = t, "[learned_preferences] merge: started");
+    
     if !(0.0..=1.0).contains(&t) {
         return Err(AppError::invalid_input("threshold must be in [0.0, 1.0]"));
     }
     let mut store = UserProfileStore::new(state.data_dir.root());
     let result = merge_to_user_profile(&state.db, &mut store, Some(t))?;
+    
+    tracing::info!(
+        threshold = t,
+        merged_count = result.merged_count,
+        skipped_count = result.skipped_count,
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[learned_preferences] merge: completed"
+    );
     Ok(IpcResponse::ok(result))
 }
 

@@ -1,9 +1,11 @@
-// StoryGraph 数据结构。
-//
-// serde 规则：
-// - enum 变体用 `#[serde(rename_all = "snake_case")]`（ConditionOp/EffectOp 除外，含特殊符号）
-// - `#[serde(default)]` 对应 zod `.default()`
-// - `#[serde(skip_serializing_if = "Option::is_none")]` 对应 zod `.optional()`
+//! ═══════════════════════════════════════════════════════════════════════════
+//! StoryGraph Schema - 数据结构定义
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! serde 规则：
+//! - enum 变体用 `#[serde(rename_all = "snake_case")]`（ConditionOp/EffectOp 除外，含特殊符号）
+//! - `#[serde(default)]` 对应 zod `.default()`
+//! - `#[serde(skip_serializing_if = "Option::is_none")]` 对应 zod `.optional()`
 
 use serde::{Deserialize, Serialize};
 

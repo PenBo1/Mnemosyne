@@ -1,7 +1,9 @@
-// JSON 持久化。
-//
-// - load：读文件 → serde_json::from_str → StoryGraph
-// - save：serde_json::to_string_pretty → 先写 .tmp 再 rename（原子化）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Graph Store - JSON 持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! - load：读文件 -> serde_json::from_str -> StoryGraph
+//! - save：serde_json::to_string_pretty -> 先写 .tmp 再 rename（原子化）
 
 use std::path::Path;
 

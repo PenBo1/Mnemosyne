@@ -1,19 +1,21 @@
-// 敏感词检测 —— 基础词表 + 字面匹配。
-//
-// 前端无 analyzeSensitiveWords 实现，此为 Rust 端新建。
-// 词表内嵌为常量（不依赖外部文件），覆盖中文网络小说平台常见审查类别：
-//   - 政治敏感（Critical）
-//   - 色情低俗（Critical）
-//   - 极端暴力（Warning）
-//   - 自残自杀（Warning）
-//   - 毒品违禁（Warning）
-//
-// 设计为可扩展：未来可通过 McpConfig 或独立配置文件扩展词表。
-// 当前仅提供基线检测，避免误伤（词表保守）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Sensitive Words Detection - 敏感词检测
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 基础词表 + 字面匹配。
+//! 词表内嵌为常量（不依赖外部文件），覆盖中文网络小说平台常见审查类别：
+//!   - 政治敏感（Critical）
+//!   - 色情低俗（Critical）
+//!   - 极端暴力（Warning）
+//!   - 自残自杀（Warning）
+//!   - 毒品违禁（Warning）
+//!
+//! 设计为可扩展：未来可通过 McpConfig 或独立配置文件扩展词表。
+//! 当前仅提供基线检测，避免误伤（词表保守）。
 
 use crate::domain::pipeline::agents::continuity::{AuditIssue, IssueSeverity, RepairScope};
 
-// ── 敏感词表（内嵌常量） ─────────────────────────────────────
+// ── 敏感词表（内嵌常量） ───────────────────────────────────────────────────
 
 /// 敏感词条目：(词, 类别, 严重级别)
 const SENSITIVE_WORDS: &[(&str, &str, IssueSeverity)] = &[
@@ -46,14 +48,15 @@ const SENSITIVE_WORDS: &[(&str, &str, IssueSeverity)] = &[
 
 // ── 主函数 ───────────────────────────────────────────────────
 
+type CategoryIssues<'a> = std::collections::BTreeMap<&'a str, (IssueSeverity, Vec<(String, usize)>)>;
+
 /// 检测文本中的敏感词，返回 issues 列表。
 ///
 /// 同一类别下多个匹配聚合为一条 issue（避免 issues 列表爆炸）。
 /// 每条 issue 的 description 列出该类别下所有命中的词及次数。
 pub fn analyze_sensitive_words(content: &str) -> Vec<AuditIssue> {
     let lower = content.to_lowercase();
-    let mut by_category: std::collections::BTreeMap<&str, (IssueSeverity, Vec<(String, usize)>)> =
-        std::collections::BTreeMap::new();
+    let mut by_category: CategoryIssues<'_> = std::collections::BTreeMap::new();
 
     for (word, category, severity) in SENSITIVE_WORDS {
         // 英文词用小写匹配，中文词直接匹配

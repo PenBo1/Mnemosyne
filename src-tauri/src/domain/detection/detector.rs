@@ -1,34 +1,38 @@
-// AIGC 检测器 —— 调用外部检测 API,归一化为 0-1 分数。
-//
-// 三种 provider:
-// - gptzero:     POST {api_url}  X-Api-Key 头, body {document}, 取 documents[0].completely_generated_prob
-// - originality: POST {api_url}  Authorization Bearer, body {content}, 取 score.ai
-// - custom:      POST {api_url}  Authorization Bearer, body {content}, 取 score
-//
-// 网络请求统一 30s 超时。非 2xx 响应显式报错(无静默回退)。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! AIGC 检测器 - 调用外部检测 API 并归一化分数
+//! ═══════════════════════════════════════════════════════════════════════════
+
+use std::time::Instant;
 
 use crate::shared::error::AppError;
 
 use super::types::DetectionResult;
 
+// ── 常量定义 ────────────────────────────────────────────────────────────────
+
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 
-/// 各 provider 的默认 endpoint(前端未传 api_url 时使用)。
+// ── 公共接口 ────────────────────────────────────────────────────────────────
+
+/// 各 provider 的默认 endpoint
 pub fn default_api_url(provider: &str) -> Option<&'static str> {
     match provider {
         "gptzero" => Some("https://api.gptzero.me/v2/predict/text"),
         "originality" => Some("https://api.originality.ai/api/v1/scan/ai"),
-        _ => None, // custom 必须由前端显式传 api_url
+        _ => None,
     }
 }
 
-/// 调用外部检测 API。`api_key` 由命令层从 secrets 解析后传入。
+/// 调用外部检测 API
 pub async fn detect_ai_content(
     provider: &str,
     api_url: &str,
     api_key: &str,
     content: &str,
 ) -> Result<DetectionResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "detect_ai_content", provider, "入口");
+
     if content.trim().is_empty() {
         return Err(AppError::invalid_input("content cannot be empty"));
     }
@@ -46,7 +50,7 @@ pub async fn detect_ai_content(
 
     let detected_at = chrono::Utc::now().to_rfc3339();
 
-    match provider {
+    let result = match provider {
         "gptzero" => detect_gptzero(&client, api_url, api_key, content, &detected_at).await,
         "originality" => detect_originality(&client, api_url, api_key, content, &detected_at).await,
         "custom" => detect_custom(&client, api_url, api_key, content, &detected_at).await,
@@ -54,8 +58,22 @@ pub async fn detect_ai_content(
             "Unsupported provider: {} (expected gptzero/originality/custom)",
             other
         ))),
+    };
+
+    match &result {
+        Ok(r) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "detect_ai_content", provider, duration_ms, score = r.score, "出口");
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "detect_ai_content", provider, duration_ms, error = %e, "错误");
+        }
     }
+    result
 }
+
+// ── Provider 实现 ────────────────────────────────────────────────────────────
 
 async fn detect_gptzero(
     client: &reqwest::Client,
@@ -168,7 +186,6 @@ async fn detect_custom(
         .json()
         .await
         .map_err(|e| AppError::internal(format!("Custom response parse failed: {}", e)))?;
-    // custom endpoint 至少返回 { score: number }
     let score = data
         .get("score")
         .and_then(|v| v.as_f64())
@@ -180,6 +197,8 @@ async fn detect_custom(
         details: Some(data),
     })
 }
+
+// ── 测试 ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

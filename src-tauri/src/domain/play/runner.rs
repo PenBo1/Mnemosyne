@@ -1,14 +1,17 @@
-// Play 主控：4-agent 流水线编排。
-//
-// step 流程：
-// 1. interpret  归一玩家动作 → PlayActionIntent
-// 2. mutate     起草 PlayMutation（context 来自当前 DB 快照）
-// 3. render     渲染场景正文（在 commit 前完成，保证失败不污染 DB）
-// 4. reconcile  补抓遗漏实体
-// 5. merge      把 reconcile 增量并入主 mutation
-// 6. apply       提交到 DB（apply_play_mutation）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Play 运行器 - 4-agent 流水线编排
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! step 流程：
+//! 1. interpret  归一玩家动作 → PlayActionIntent
+//! 2. mutate     起草 PlayMutation（context 来自当前 DB 快照）
+//! 3. render     渲染场景正文（在 commit 前完成，保证失败不污染 DB）
+//! 4. reconcile  补抓遗漏实体
+//! 5. merge      把 reconcile 增量并入主 mutation
+//! 6. apply       提交到 DB（apply_play_mutation）
 
 use std::path::Path;
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -38,8 +41,12 @@ impl PlayRunner {
         &self,
         engine: &AgentEngine,
     ) -> Result<Option<PlayStepResult>, AppError> {
-        // 已有事件说明已播种，不重复
+        let start = Instant::now();
+        tracing::info!(function = "PlayRunner::seed_opening", "入口");
+
         if self.db.current_turn()? > 0 {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "PlayRunner::seed_opening", duration_ms, skipped = true, reason = "already_seeded", "出口");
             return Ok(None);
         }
 
@@ -49,51 +56,63 @@ impl PlayRunner {
             self.world.world_contract,
             self.world.mode
         );
-        let action =
-            PlayActionInterpreterAgent::interpret(engine, "开场：世界展开", &self.world.language)
-                .await?;
-        let mutation = PlayWorldMutatorAgent::propose_mutation(
-            engine,
-            &action,
-            &context,
-            &self.world.language,
-        )
-        .await?;
 
-        // 渲染开场正文（在 commit 前完成）
-        let state_json = serde_json::to_string_pretty(&mutation)
-            .map_err(|e| AppError::internal(format!("Failed to serialize mutation: {}", e)))?;
-        let scene_text = PlaySceneRendererAgent::render(
-            engine,
-            &state_json,
-            &action,
-            &self.world.mode,
-            &self.world.language,
-        )
-        .await?;
+        match async {
+            let action =
+                PlayActionInterpreterAgent::interpret(engine, "开场：世界展开", &self.world.language)
+                    .await?;
+            let mutation = PlayWorldMutatorAgent::propose_mutation(
+                engine,
+                &action,
+                &context,
+                &self.world.language,
+            )
+            .await?;
 
-        // 对账补抓
-        let extra = PlaySceneReconcilerAgent::reconcile(
-            engine,
-            &scene_text,
-            &mutation,
-            &self.world.language,
-        )
-        .await?;
-        let mut merged = mutation.clone();
-        merge_mutation(&mut merged, &extra);
+            let state_json = serde_json::to_string_pretty(&mutation)
+                .map_err(|e| AppError::internal(format!("Failed to serialize mutation: {}", e)))?;
+            let scene_text = PlaySceneRendererAgent::render(
+                engine,
+                &state_json,
+                &action,
+                &self.world.mode,
+                &self.world.language,
+            )
+            .await?;
 
-        seed_play_graph(&self.db, &merged)?;
+            let extra = PlaySceneReconcilerAgent::reconcile(
+                engine,
+                &scene_text,
+                &mutation,
+                &self.world.language,
+            )
+            .await?;
+            let mut merged = mutation.clone();
+            merge_mutation(&mut merged, &extra);
 
-        Ok(Some(PlayStepResult {
-            turn: 0,
-            scene_text,
-            action,
-            mutation: merged,
-            suggested_actions: extract_suggested_actions(&self.world.mode),
-            blocked: false,
-            blocked_reason: None,
-        }))
+            seed_play_graph(&self.db, &merged)?;
+
+            Ok(PlayStepResult {
+                turn: 0,
+                scene_text,
+                action,
+                mutation: merged,
+                suggested_actions: extract_suggested_actions(&self.world.mode),
+                blocked: false,
+                blocked_reason: None,
+            })
+        }.await {
+            Ok(result) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::info!(function = "PlayRunner::seed_opening", duration_ms, "出口");
+                Ok(Some(result))
+            }
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::error!(function = "PlayRunner::seed_opening", duration_ms, error = %e, "错误");
+                Err(e)
+            }
+        }
     }
 
     /// 一回合完整流程
@@ -102,57 +121,68 @@ impl PlayRunner {
         engine: &AgentEngine,
         player_input: &str,
     ) -> Result<PlayStepResult, AppError> {
-        // 1. interpret
-        let action = PlayActionInterpreterAgent::interpret(
-            engine,
-            player_input,
-            &self.world.language,
-        )
-        .await?;
+        let start = Instant::now();
+        tracing::info!(function = "PlayRunner::step", player_input_len = player_input.len(), "入口");
 
-        // 2. mutate（context 来自当前 DB 快照）
-        let context = self.build_context()?;
-        let mutation =
-            PlayWorldMutatorAgent::propose_mutation(engine, &action, &context, &self.world.language)
-                .await?;
+        let result = async {
+            let action = PlayActionInterpreterAgent::interpret(
+                engine,
+                player_input,
+                &self.world.language,
+            )
+            .await?;
 
-        // 3. render（commit 前完成，失败不污染 DB）
-        let state_json = serde_json::to_string_pretty(&mutation)
-            .map_err(|e| AppError::internal(format!("Failed to serialize mutation: {}", e)))?;
-        let scene_text = PlaySceneRendererAgent::render(
-            engine,
-            &state_json,
-            &action,
-            &self.world.mode,
-            &self.world.language,
-        )
-        .await?;
+            let context = self.build_context()?;
+            let mutation =
+                PlayWorldMutatorAgent::propose_mutation(engine, &action, &context, &self.world.language)
+                    .await?;
 
-        // 4. reconcile
-        let extra = PlaySceneReconcilerAgent::reconcile(
-            engine,
-            &scene_text,
-            &mutation,
-            &self.world.language,
-        )
-        .await?;
+            let state_json = serde_json::to_string_pretty(&mutation)
+                .map_err(|e| AppError::internal(format!("Failed to serialize mutation: {}", e)))?;
+            let scene_text = PlaySceneRendererAgent::render(
+                engine,
+                &state_json,
+                &action,
+                &self.world.mode,
+                &self.world.language,
+            )
+            .await?;
 
-        // 5. merge
-        let mut merged = mutation.clone();
-        merge_mutation(&mut merged, &extra);
+            let extra = PlaySceneReconcilerAgent::reconcile(
+                engine,
+                &scene_text,
+                &mutation,
+                &self.world.language,
+            )
+            .await?;
 
-        // 6. apply
-        let event = apply_play_mutation(&self.db, &merged)?;
+            let mut merged = mutation.clone();
+            merge_mutation(&mut merged, &extra);
 
-        Ok(PlayStepResult {
-            turn: event.turn,
-            scene_text,
-            action,
-            mutation: merged,
-            suggested_actions: extract_suggested_actions(&self.world.mode),
-            blocked: event_summary_blocked(&event.summary),
-            blocked_reason: None,
-        })
+            let event = apply_play_mutation(&self.db, &merged)?;
+
+            Ok(PlayStepResult {
+                turn: event.turn,
+                scene_text,
+                action,
+                mutation: merged,
+                suggested_actions: extract_suggested_actions(&self.world.mode),
+                blocked: event_summary_blocked(&event.summary),
+                blocked_reason: None,
+            })
+        }.await;
+
+        match &result {
+            Ok(r) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::info!(function = "PlayRunner::step", duration_ms, turn = r.turn, "出口");
+            }
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::error!(function = "PlayRunner::step", duration_ms, error = %e, "错误");
+            }
+        }
+        result
     }
 
     /// 重写上一回合：snapshot 回滚保护 + 用 new_input 重新生成。
@@ -165,21 +195,39 @@ impl PlayRunner {
         engine: &AgentEngine,
         new_input: &str,
     ) -> Result<PlayStepResult, AppError> {
+        let start = Instant::now();
+        tracing::info!(function = "PlayRunner::regenerate_last_turn", new_input_len = new_input.len(), "入口");
+
         let snapshot = self.db.snapshot()?;
-        match self.step(engine, new_input).await {
-            Ok(r) => Ok(r),
+        let result = self.step(engine, new_input).await;
+
+        match &result {
+            Ok(r) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::info!(function = "PlayRunner::regenerate_last_turn", duration_ms, turn = r.turn, "出口");
+            }
             Err(e) => {
-                // 回滚以保证一致性；回滚失败时返回合并错误
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::error!(function = "PlayRunner::regenerate_last_turn", duration_ms, error = %e, "错误");
                 tracing::warn!(error = %e, "regenerate_last_turn 失败，回滚 snapshot");
                 match self.db.replace_with_snapshot(&snapshot) {
-                    Ok(()) => Err(e),
-                    Err(rollback_err) => Err(AppError::internal(format!(
-                        "regenerate_last_turn failed: {}; rollback also failed: {}",
-                        e.message, rollback_err.message
-                    ))),
+                    Ok(()) => {}
+                    Err(rollback_err) => {
+                        tracing::error!(error = %rollback_err, "回滚失败");
+                    }
                 }
             }
         }
+
+        result.map_err(|e| {
+            match self.db.replace_with_snapshot(&snapshot) {
+                Ok(()) => e,
+                Err(rollback_err) => AppError::internal(format!(
+                    "regenerate_last_turn failed: {}; rollback also failed: {}",
+                    e.message, rollback_err.message
+                )),
+            }
+        })
     }
 
     /// 构建当前世界状态上下文（compact JSON）

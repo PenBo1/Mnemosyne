@@ -1,22 +1,6 @@
-// 编辑事务控制（EditTransaction Controller）。
-//
-// 6 种 EditRequest：
-// - EntityRename: 全书范围内将 oldValue 替换为 newValue（涉及内容 + 文件改名）
-// - ChapterRewrite: LLM 重写整章（本模块只做 plan，执行由 pipeline_revise_draft 处理）
-// - ChapterReplace: 整章替换为新内容
-// - ChapterLocalEdit: 在章节内查找并替换目标文本（三级匹配：精确 → 弹性空格 → 段落近似）
-// - TruthFileEdit: 编辑真相文件（白名单内）
-// - FocusEdit: 更新 current_focus.md
-//
-// 执行流程：plan_edit_transaction(request) → execute_edit_transaction(planned, data_dir)
-// - plan 阶段：分类 affected_scope / requires_truth_rebuild / truth_authority
-// - execute 阶段：实际读写文件，返回 touched_files + review_required + summary
-//
-// 安全约束：
-// - 所有路径必须通过 DataDir.books_dir() 构造
-// - book_id 走 validate_id 校验
-// - truth 文件名走 assert_safe_truth_file_name 校验（白名单）
-// - entity rename 拒绝路径分隔符（防止单组件逃逸目录）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 编辑控制器 - 编辑事务规划与执行
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::path::{Path, PathBuf};
 
@@ -265,6 +249,13 @@ pub fn execute_edit_transaction(
     planned: PlannedEditTransaction,
     data_dir: &DataDir,
 ) -> Result<ExecutedEditTransaction, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        transaction_type = %planned.transaction_type.as_str(),
+        book_id = %planned.request.book_id(),
+        "[EditController] Executing edit transaction"
+    );
+    
     let book_id = planned.request.book_id().to_string();
     let book_dir = data_dir.books_dir().join(&book_id);
 
@@ -272,7 +263,7 @@ pub fn execute_edit_transaction(
         return Err(AppError::file_not_found(format!("book dir: {}", book_id)));
     }
 
-    match planned.transaction_type {
+    let result = match planned.transaction_type {
         EditTransactionType::EntityRename => {
             let (old_name, new_name) = match &planned.request {
                 EditRequest::EntityRename { old_name, new_name, .. } => (old_name.clone(), new_name.clone()),
@@ -317,7 +308,20 @@ pub fn execute_edit_transaction(
                     r
                 })
         }
+    };
+    
+    if let Ok(ref r) = result {
+        tracing::info!(
+            transaction_type = %planned.transaction_type.as_str(),
+            book_id = %book_id,
+            touched_files = r.touched_files.len(),
+            review_required = r.review_required,
+            duration_ms = start.elapsed().as_millis() as u64,
+            "[EditController] Edit transaction completed"
+        );
     }
+    
+    result
 }
 
 // ── 实体改名 ─────────────────────────────────────────────────

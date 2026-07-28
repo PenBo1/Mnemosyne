@@ -1,15 +1,17 @@
-// Play 文件系统存储。
-//
-// 目录结构：
-//   <root>/worlds/<world_id>/world.json
-//   <root>/worlds/<world_id>/runs/<run_id>/events.jsonl
-//                                          /transcript.jsonl
-//                                          /current_state.json
-//                                          /projections/<name>.json
-//                                          /checkpoints/<checkpoint_id>.json
-//                                          /graph.db  (PlayDb SQLite)
-//
-// world_id / run_id / name / checkpoint_id 均经过 validate_id_component 防 `../` 穿越。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Play 存储 - 文件系统持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 目录结构：
+//!   <root>/worlds/<world_id>/world.json
+//!   <root>/worlds/<world_id>/runs/<run_id>/events.jsonl
+//!                                          /transcript.jsonl
+//!                                          /current_state.json
+//!                                          /projections/<name>.json
+//!                                          /checkpoints/<checkpoint_id>.json
+//!                                          /graph.db  (PlayDb SQLite)
+//!
+//! world_id / run_id / name / checkpoint_id 均经过 validate_id_component 防 `../` 穿越。
 
 use std::path::{Path, PathBuf};
 

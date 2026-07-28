@@ -1,5 +1,10 @@
-﻿
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 反馈类型 - 反馈模块类型定义
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 /// 错误事件记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,15 +30,13 @@ pub struct ErrorEvent {
 /// 严重程度分级
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Severity {
-    /// 警告（不影响流程）
+    /// 警告
     Warning,
-    /// 严重（需要人工介入）
+    /// 严重
     Critical,
 }
 
 /// 约束教训记录
-///
-/// 从错误中提取的规则，用于后续避免相同错误
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConstraintLesson {
     /// 教训 ID
@@ -53,9 +56,9 @@ pub struct ConstraintLesson {
 /// 反馈规则配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeedbackRules {
-    /// 警告阈值（触发 Lesson 提取）
+    /// 警告阈值
     pub warning_threshold: usize,
-    /// 严重阈值（立即提取 Lesson）
+    /// 严重阈值
     pub critical_threshold: usize,
     /// 最大活跃 Lessons 数量
     pub max_active_lessons: usize,

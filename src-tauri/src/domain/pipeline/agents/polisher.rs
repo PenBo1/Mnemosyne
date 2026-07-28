@@ -1,9 +1,9 @@
-// Polisher Agent。
-//
-// 职责：对成稿做纯文字层润色（句式/段落/用词/五感/对话自然度）。
-// 禁止增删情节、改变人设、调整主线。输出润色后的完整正文。
-//
-// prompt 策略：6 条文笔类雷点 + 文字层修改边界 + 纯文本输出。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Polisher Agent - 文字润色代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：对成稿做纯文字层润色（句式/段落/用词/五感/对话自然度）。
+//! 禁止增删情节、改变人设、调整主线。输出润色后的完整正文。
 
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::pipeline::utils::text_parse::strip_code_fence;
@@ -23,12 +23,30 @@ pub async fn polish_chapter(
     chapter_number: u32,
     chapter_memo: Option<&str>,
 ) -> Result<PolishOutput, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "polish_chapter",
+        chapter_number,
+        content_len = chapter_content.len(),
+        has_memo = chapter_memo.is_some(),
+        "入口"
+    );
+
     let system_prompt = build_system_prompt();
     let user_message = build_user_message(chapter_content, chapter_number, chapter_memo);
 
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
     let polished = strip_code_fence(&response);
     let changed = polished != chapter_content;
+
+    tracing::info!(
+        function = "polish_chapter",
+        chapter_number,
+        changed,
+        result_len = polished.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
 
     Ok(PolishOutput {
         polished_content: polished,

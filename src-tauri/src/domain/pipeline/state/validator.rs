@@ -1,7 +1,9 @@
-// RuntimeState 校验器。
-//
-// 校验 snapshot 一致性：重复 hook_id、重复 summary chapter、currentState 超前于 manifest。
-// Rust 版用 serde 反序列化替代 zod parse，解析失败即视为 issue。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! RuntimeState Validator - 状态校验器
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 校验 snapshot 一致性：重复 hook_id、重复 summary chapter、currentState 超前于 manifest。
+//! Rust 版用 serde 反序列化替代 zod parse，解析失败即视为 issue。
 
 use super::types::*;
 

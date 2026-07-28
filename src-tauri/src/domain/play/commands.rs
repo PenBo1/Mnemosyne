@@ -1,16 +1,18 @@
-// Play 模式 IPC 命令。
-//
-// 命令列表（前端使用 camelCase 调用）：
-// - play_create_world: 创建互动小说世界
-// - play_list_worlds: 列出所有世界
-// - play_seed_opening: 播种第一幕
-// - play_step: 执行一回合
-// - play_regenerate_last_turn: 重写上一回合
-// - play_get_state: 获取当前图谱快照
-// - play_get_history: 获取事件历史
-//
-// 约定：命令仅做参数提取 + 校验 + 委派，不含业务逻辑。
-// 路径操作通过 DataDir.play_dir() getters。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Play 命令 - IPC 命令处理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 命令列表（前端使用 camelCase 调用）：
+//! - play_create_world: 创建互动小说世界
+//! - play_list_worlds: 列出所有世界
+//! - play_seed_opening: 播种第一幕
+//! - play_step: 执行一回合
+//! - play_regenerate_last_turn: 重写上一回合
+//! - play_get_state: 获取当前图谱快照
+//! - play_get_history: 获取事件历史
+//!
+//! 约定：命令仅做参数提取 + 校验 + 委派，不含业务逻辑。
+//! 路径操作通过 DataDir.play_dir() getters。
 
 use crate::core::agent::commands::AgentState;
 use crate::domain::play::runner::PlayRunner;
@@ -18,6 +20,7 @@ use crate::domain::play::store::PlayStore;
 use crate::domain::play::types::{PlayEvent, PlayStepResult, PlayWorld};
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::shared::error::{AppError, IpcResponse};
+use std::time::Instant;
 use tauri::State;
 
 // ── 请求体 ──────────────────────────────────────────────
@@ -88,15 +91,21 @@ pub async fn play_create_world(
     data_dir: State<'_, DataDir>,
     request: CreateWorldRequest,
 ) -> Result<IpcResponse<PlayWorld>, AppError> {
+    let start = Instant::now();
+    tracing::info!(premise_len = request.premise.len(), "play_create_world: enter");
+    
     if request.premise.trim().is_empty() {
+        tracing::error!("play_create_world: premise is empty");
         return Err(AppError::invalid_input("premise 不能为空"));
     }
     if !matches!(request.mode.as_str(), "open" | "guided") {
+        tracing::error!(mode = %request.mode, "play_create_world: invalid mode");
         return Err(AppError::invalid_input(format!(
             "mode 必须是 open/guided，收到: {}",
             request.mode
         )));
     }
+    tracing::debug!(mode = %request.mode, "play_create_world: mode validated");
 
     let store = build_store(&data_dir);
     let now = chrono::Utc::now().to_rfc3339();
@@ -105,6 +114,7 @@ pub async fn play_create_world(
     });
     // 校验 world_id 合法性（防路径穿越）
     crate::infrastructure::fs::fs_utils::validate_id_component(&world_id, "world_id")?;
+    tracing::debug!(world_id = %world_id, "play_create_world: world_id validated");
 
     let world = PlayWorld {
         world_id: world_id.clone(),
@@ -118,7 +128,12 @@ pub async fn play_create_world(
         updated_at: now,
     };
     store.create_world(&world)?;
-    tracing::info!(world_id = %world.world_id, "Play world created");
+    
+    tracing::info!(
+        world_id = %world.world_id,
+        duration_ms = start.elapsed().as_millis(),
+        "play_create_world: exit"
+    );
     Ok(IpcResponse::created(world))
 }
 

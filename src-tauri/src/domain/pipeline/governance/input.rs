@@ -1,4 +1,8 @@
-// 输入治理（context-assembly + governed-context + planning-materials + input-governance）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline Governance Input - 输入治理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：context-assembly + governed-context + planning-materials + input-governance
 
 use std::path::Path;
 use crate::shared::error::AppError;
@@ -126,16 +130,10 @@ pub fn compile_context_package(
     Ok(ContextPackage { markdown })
 }
 
-/// 读取大纲文件：优先 outline/{name}（Phase 5+），缺失则回退到 story/{name}（legacy）
+/// 读取大纲文件：从 outline/{name}（Phase 5+）读取
 fn read_outline_file(story_dir: &Path, name: &str) -> String {
     let outline_path = story_dir.join("outline").join(name);
-    if let Ok(content) = std::fs::read_to_string(&outline_path) {
-        if !content.trim().is_empty() {
-            return content.trim().to_string();
-        }
-    }
-    // legacy 回退
-    std::fs::read_to_string(story_dir.join(name))
+    std::fs::read_to_string(&outline_path)
         .unwrap_or_default()
         .trim()
         .to_string()
@@ -187,7 +185,7 @@ fn read_chapter_content(book_dir: &Path, chapter_number: u32) -> Option<String> 
         if name.starts_with(&padded) && name.ends_with(".md") {
             let content = std::fs::read_to_string(entry.path()).ok()?;
             // 去除首行标题（仅当首行以 "# " 开头时），否则保留全部正文
-            let without_heading = if content.lines().next().map_or(false, |l| l.starts_with("# ")) {
+            let without_heading = if content.lines().next().is_some_and(|l| l.starts_with("# ")) {
                 content.lines().skip(1).collect::<Vec<_>>().join("\n")
             } else {
                 content
@@ -421,25 +419,12 @@ mod tests {
     }
 
     #[test]
-    fn read_outline_file_falls_back_to_legacy() {
-        let tmp = tempfile::tempdir().expect("failed to create tempdir");
-        let story_dir = tmp.path().join("story");
-        std::fs::create_dir_all(&story_dir).expect("failed to create story dir");
-        // legacy 文件：直接放在 story_dir 下
-        std::fs::write(story_dir.join("story_frame.md"), "legacy frame\n").expect("write failed");
-        let result = read_outline_file(&story_dir, "story_frame.md");
-        assert_eq!(result, "legacy frame");
-    }
-
-    #[test]
     fn read_outline_file_prefers_outline_subdir() {
         let tmp = tempfile::tempdir().expect("failed to create tempdir");
         let story_dir = tmp.path().join("story");
         let outline_dir = story_dir.join("outline");
         std::fs::create_dir_all(&outline_dir).expect("failed to create outline dir");
-        // 同时存在 outline/ 和 legacy 文件，应优先 outline/
         std::fs::write(outline_dir.join("story_frame.md"), "new frame\n").expect("write failed");
-        std::fs::write(story_dir.join("story_frame.md"), "legacy frame\n").expect("write failed");
         let result = read_outline_file(&story_dir, "story_frame.md");
         assert_eq!(result, "new frame");
     }

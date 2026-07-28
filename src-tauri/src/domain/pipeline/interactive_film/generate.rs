@@ -1,10 +1,12 @@
-// 一次性生成完整 StoryGraph。
-//
-// generate_story_graph：从故事前提调用 LLM 产出 StoryGraph JSON。
-// 约束：严格 JSON、恰好 1 个 start、≥2 个 branch、≥2 个差异化 ending。
-//
-// 注意：AgentEngine.prompt_once 不支持 temperature 参数，
-// 温度引导（"保持中等创造性"）写入 system prompt 文本。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Generate - StoryGraph 生成
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! generate_story_graph：从故事前提调用 LLM 产出 StoryGraph JSON。
+//! 约束：严格 JSON、恰好 1 个 start、>=2 个 branch、>=2 个差异化 ending。
+//!
+//! 注意：AgentEngine.prompt_once 不支持 temperature 参数，
+//! 温度引导（"保持中等创造性"）写入 system prompt 文本。
 
 use std::time::Duration;
 

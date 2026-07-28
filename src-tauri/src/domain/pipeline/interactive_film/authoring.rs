@@ -1,10 +1,12 @@
-// 互动电影创作辅助。
-//
-// - build_fill_node_delta_from_llm_text / build_structure_delta_from_llm_text:
-//   把 LLM 输出（JSON）转换成 StoryGraphDelta
-// - AuthoringState: 创作阶段状态（current_phase / rev / phase_visits）
-// - apply_graph_delta: apply_story_graph_delta 的薄封装
-// - Delta builder 工厂：构造常见结构性 delta
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Authoring - 创作辅助
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! - build_fill_node_delta_from_llm_text / build_structure_delta_from_llm_text:
+//!   把 LLM 输出（JSON）转换成 StoryGraphDelta
+//! - AuthoringState: 创作阶段状态（current_phase / rev / phase_visits）
+//! - apply_graph_delta: apply_story_graph_delta 的薄封装
+//! - Delta builder 工厂：构造常见结构性 delta
 
 use std::path::Path;
 

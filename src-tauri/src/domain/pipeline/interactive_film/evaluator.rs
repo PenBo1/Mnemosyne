@@ -1,9 +1,11 @@
-// 运行时求值。
-//
-// - init_var_state：用 variables 的 default 值初始化运行时变量状态
-// - evaluate_condition：根据 op 求值条件（数值比较 / 值相等）
-// - apply_effects：根据 op 修改变量状态（set/add/sub）
-// - visible_choices：过滤掉条件不满足的选项
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Evaluator - 运行时求值
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! - init_var_state：用 variables 的 default 值初始化运行时变量状态
+//! - evaluate_condition：根据 op 求值条件（数值比较 / 值相等）
+//! - apply_effects：根据 op 修改变量状态（set/add/sub）
+//! - visible_choices：过滤掉条件不满足的选项
 
 use std::collections::HashMap;
 

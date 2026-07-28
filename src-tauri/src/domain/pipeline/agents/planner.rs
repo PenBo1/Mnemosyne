@@ -1,9 +1,9 @@
-// Planner Agent。
-//
-// 职责：为下一章生成 chapter_memo（Markdown 格式），包含目标/任务/钩子账本/不要做。
-// 输出是纯 Markdown，不包含 YAML/JSON。
-//
-// prompt 策略：保留 15 条核心原则 + 输出格式。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Planner Agent - 章节规划代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：为下一章生成 chapter_memo（Markdown 格式），包含目标/任务/钩子账本/不要做。
+//! 输出是纯 Markdown，不包含 YAML/JSON。
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -23,10 +23,26 @@ pub async fn plan_chapter(
     chapter_number: u32,
     context: &PlannerContext,
 ) -> Result<PlannerOutput, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "plan_chapter",
+        chapter_number,
+        book_id = %book.id,
+        "入口"
+    );
+
     let system_prompt = SYSTEM_PROMPT;
     let user_message = build_user_message(book, chapter_number, context);
 
     let response = engine.prompt_once(system_prompt, &user_message).await?;
+
+    tracing::info!(
+        function = "plan_chapter",
+        chapter_number,
+        memo_len = response.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
 
     Ok(PlannerOutput {
         chapter_number,

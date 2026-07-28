@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 版本命令 - IPC 命令处理
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use crate::shared::error::{AppError, IpcResponse};
 use crate::shared::version::types::{ChapterVersion, LineDiffResult};
 use crate::infrastructure::db::state::DbState;
@@ -31,8 +35,13 @@ pub async fn version_list(
     novel_id: String,
     chapter_number: u32,
 ) -> Result<IpcResponse<Vec<crate::domain::version::types::ChapterVersion>>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(novel_id = %novel_id, chapter_number, "[version] version_list: started");
+
     validate_novel_id(&novel_id)?;
     let versions = state.db.list_chapter_versions(&novel_id, chapter_number)?;
+
+    tracing::info!(novel_id = %novel_id, chapter_number, count = versions.len(), duration_ms = start.elapsed().as_millis() as u64, "[version] version_list: completed");
     Ok(IpcResponse::ok(versions))
 }
 
@@ -96,7 +105,6 @@ pub async fn version_save(
     Ok(IpcResponse::created(version))
 }
 
-/// 比较两个版本的内容差异
 #[tauri::command]
 pub async fn version_diff(
     state: State<'_, DbState>,
@@ -113,7 +121,6 @@ pub async fn version_diff(
     Ok(IpcResponse::ok(diff))
 }
 
-/// 比较某章节最新版本与上一版本的差异
 #[tauri::command]
 pub async fn version_diff_latest(
     state: State<'_, DbState>,
@@ -122,17 +129,15 @@ pub async fn version_diff_latest(
 ) -> Result<IpcResponse<Option<LineDiffResult>>, AppError> {
     validate_novel_id(&novel_id)?;
     let mut versions = state.db.list_chapter_versions(&novel_id, chapter_number)?;
-    // list_chapter_versions 按 version_number DESC 排序
     if versions.len() < 2 {
         return Ok(IpcResponse::ok(None));
     }
-    let to = versions.swap_remove(0);  // 最新版本
-    let from = versions.swap_remove(0); // 上一版本
+    let to = versions.swap_remove(0);
+    let from = versions.swap_remove(0);
     let diff = crate::domain::version::diff::compute_line_diff(&from.content, &to.content)?;
     Ok(IpcResponse::ok(Some(diff)))
 }
 
-/// 恢复某历史版本：将其内容作为新版本保存（不覆盖历史）
 #[tauri::command]
 pub async fn version_restore(
     state: State<'_, DbState>,
@@ -143,7 +148,6 @@ pub async fn version_restore(
     validate_id(&version_id, "version_id").map_err(AppError::invalid_input)?;
     let origin = state.db.get_chapter_version(&version_id)?
         .ok_or_else(|| AppError::not_found("Version not found"))?;
-    // 以原内容创建新版本（保留历史轨迹）
     let version_number = state.db.get_next_version_number(&origin.novel_id, origin.chapter_number)?;
     let new_version = state.db.create_chapter_version(
         &crate::shared::version::types::CreateVersionRequest {

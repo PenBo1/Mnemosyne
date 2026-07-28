@@ -1,29 +1,23 @@
-// Chapter Truth Validation —— 章节真相文件持久化校验。
-//
-// 职责：章节写完后，校验 truth 文件（current_state.md / pending_hooks.md）持久化前的状态连续性。
-// 校验失败时触发重试结算层（retry_settlement），重试仍失败则标记章节为 state-degraded。
-//
-// 流程：
-// 1. 调用 state_validator 校验 updated_state/updated_hooks 与 old_state/old_hooks 的矛盾
-// 2. 校验通过 → 返回正常结果（chapter_status = None）
-// 3. 校验失败 → 调用 retry_settlement 重试结算层
-// 4. 重试成功 → 用新的 ValidationResult 返回（chapter_status = None）
-// 5. 重试仍失败 → 标记 state-degraded，注入降级问题（chapter_status = "state-degraded"）
-//
-// 实现差异：
-// - WriterAgent 已提供独立 `settle_chapter_state`（delta 模式），但 retry_settlement 需要
-//   完整 truth 文件（updated_state/updated_hooks markdown）用于 state_validator 对比。
-//   Rust 端尚缺 markdown projection 模块（从 snapshot 渲染 markdown），因此 retry_settlement
-//   暂保留独立的 full-truth-file prompt（=== UPDATED_STATE === / === UPDATED_HOOKS ===）。
-//   待 projection 模块落地后，迁移 retry_settlement 调用 writer::settle_chapter_state +
-//   reducer + projection，统一 settler 入口。
-// - 返回值简化为 TruthValidationResult（validation + chapter_status + degraded_issues），
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Chapter Truth Validation - 章节真相文件持久化校验
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：章节写完后，校验 truth 文件（current_state.md / pending_hooks.md）持久化前的状态连续性。
+//! 校验失败时触发重试结算层（retry_settlement），重试仍失败则标记章节为 state-degraded。
+//!
+//! 流程：
+//! 1. 调用 state_validator 校验 updated_state/updated_hooks 与 old_state/old_hooks 的矛盾
+//! 2. 校验通过 -> 返回正常结果（chapter_status = None）
+//! 3. 校验失败 -> 调用 retry_settlement 重试结算层
+//! 4. 重试成功 -> 用新的 ValidationResult 返回（chapter_status = None）
+//! 5. 重试仍失败 -> 标记 state-degraded，注入降级问题（chapter_status = "state-degraded"）
 //   调用方负责根据 chapter_status 决定持久化策略。
 // - 简化实现不注入 governed artifacts，仅以旧 truth 文件 + 校验反馈作为 settler 输入。
 
 #![allow(unused_imports)]
 
 use std::path::Path;
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -100,7 +94,9 @@ pub async fn validate_chapter_truth_persistence(
     previous_truth: &PreviousTruth,
     language: Language,
 ) -> Result<TruthValidationResult, AppError> {
-    // ── 第一次校验：检查 updated_state/updated_hooks 与 old_state/old_hooks 的矛盾 ──
+    let start = Instant::now();
+    tracing::info!(function = "validate_chapter_truth_persistence", chapter_number, title, "入口");
+
     let validation = state_validator::validate_state(
         engine,
         content,
@@ -123,8 +119,9 @@ pub async fn validate_chapter_truth_persistence(
         }
     }
 
-    // 校验通过 → 返回正常结果
     if validation.passed {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::info!(function = "validate_chapter_truth_persistence", chapter_number, duration_ms, passed = true, "出口");
         return Ok(TruthValidationResult {
             validation,
             chapter_status: None,
@@ -134,7 +131,6 @@ pub async fn validate_chapter_truth_persistence(
         });
     }
 
-    // ── 校验失败 → 重试结算层 ──
     let recovery = retry_settlement(
         engine,
         book,
@@ -148,13 +144,14 @@ pub async fn validate_chapter_truth_persistence(
     )
     .await?;
 
-    match recovery {
+    let result = match recovery {
         SettlementRetryResult::Recovered {
             validation: retry_validation,
             retry_state,
             retry_hooks,
         } => {
-            // 重试成功 → 用新 validation 结果，章节正常；并返回重试后的 truth 文件供调用方持久化
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "validate_chapter_truth_persistence", chapter_number, duration_ms, passed = true, recovered = true, "出口");
             Ok(TruthValidationResult {
                 validation: retry_validation,
                 chapter_status: None,
@@ -164,7 +161,8 @@ pub async fn validate_chapter_truth_persistence(
             })
         }
         SettlementRetryResult::Degraded { issues } => {
-            // 重试仍失败 → 标记 state-degraded，注入降级问题
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "validate_chapter_truth_persistence", chapter_number, duration_ms, passed = false, degraded = true, issue_count = issues.len(), "出口");
             Ok(TruthValidationResult {
                 validation,
                 chapter_status: Some(r###"state-degraded"###.to_string()),
@@ -173,7 +171,14 @@ pub async fn validate_chapter_truth_persistence(
                 recovered_hooks: None,
             })
         }
+    };
+
+    if let Err(ref e) = result {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::error!(function = "validate_chapter_truth_persistence", chapter_number, duration_ms, error = %e, "错误");
     }
+
+    result
 }
 
 // ── 重试结算层 ─────────────────────────────────────────────

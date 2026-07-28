@@ -1,12 +1,6 @@
-// 材料导入: 从 URL 或本地文件抓取 → 按 mime 分发解析 → 落盘 markdown + JSON 清单。
-//
-// 复用 infrastructure::llm::embedding::ingest 的文本提取能力(PDF / HTML / Text),
-// 避免重复实现解析逻辑(符合"共享能力抽取为可复用模块,禁止 copy-paste")。
-//
-// 安全约束:
-// - URL 仅允许 http/https(防 SSRF)
-// - 请求超时 20s,响应体上限 18MB
-// - 文件来源大小上限 18MB
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 材料导入 - 从 URL 或文件抓取并解析
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::path::Path;
 
@@ -26,12 +20,25 @@ pub async fn ingest_material(
     data_dir: &DataDir,
     input: &IngestMaterialInput,
 ) -> Result<MaterialAsset, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        source_kind = %input.source_kind,
+        "[MaterialIngest] Starting material ingestion"
+    );
+    
     let purpose = input.purpose.as_deref().unwrap_or("reference").trim().to_string();
     if purpose.is_empty() {
         return Err(AppError::invalid_input("purpose cannot be empty"));
     }
 
     let source = read_source(input).await?;
+    tracing::debug!(
+        source_kind = %input.source_kind,
+        bytes = source.bytes.len(),
+        mime_type = %source.mime_type,
+        "[MaterialIngest] Source read completed"
+    );
+    
     let kind = resolve_kind(&source.filename, &source.mime_type, &source.bytes);
 
     let extracted = extract_text_from_bytes(&source.bytes, kind)
@@ -39,6 +46,12 @@ pub async fn ingest_material(
     if extracted.text.is_empty() {
         return Err(AppError::invalid_input("Material extraction returned no text"));
     }
+    
+    tracing::debug!(
+        kind = ?kind,
+        char_count = extracted.text.chars().count(),
+        "[MaterialIngest] Text extraction completed"
+    );
 
     let title = input
         .title
@@ -92,9 +105,9 @@ pub async fn ingest_material(
     let manifest_json = serde_json::to_string_pretty(&asset)
         .map_err(|e| AppError::internal(format!("Manifest serialize failed: {}", e)))?;
 
-    // create_dir + 2 个 write 卸载到阻塞线程池
+    let materials_dir_for_spawn = materials_dir.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        std::fs::create_dir_all(&materials_dir)
+        std::fs::create_dir_all(&materials_dir_for_spawn)
             .map_err(|e| AppError::internal(format!("Failed to create materials dir: {}", e)))?;
         std::fs::write(&markdown_path, &markdown)
             .map_err(|e| AppError::internal(format!("Failed to write markdown: {}", e)))?;
@@ -109,7 +122,8 @@ pub async fn ingest_material(
         material_id = %asset.id,
         kind = %asset.kind,
         char_count = asset.char_count,
-        "Material ingested"
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[MaterialIngest] Material ingested successfully"
     );
     Ok(asset)
 }

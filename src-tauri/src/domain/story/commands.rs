@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 故事命令 - IPC 命令处理
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::validation::{validate_id, validate_path};
@@ -8,7 +12,6 @@ use std::sync::OnceLock;
 
 const MAX_CONTENT_SIZE: usize = 10 * 1024 * 1024;
 
-/// 全局串行化 story state.json 的读改写，防止 TOCTOU 竞态。
 fn story_state_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -36,30 +39,50 @@ pub async fn story_state_get(
     state: State<'_, DbState>,
     novel_id: String,
 ) -> Result<IpcResponse<crate::domain::story::models::StoryState>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(novel_id = %novel_id, "[story] story_state_get: started");
+
     validate_novel_id(&novel_id)?;
 
     let novel = state.db.get_novel_by_id(&novel_id)?
-        .ok_or_else(|| AppError::not_found("Novel not found"))?;
+        .ok_or_else(|| {
+            tracing::warn!(novel_id = %novel_id, "[story] story_state_get: novel not found");
+            AppError::not_found("Novel not found")
+        })?;
 
     let workspace = state.db.get_workspace(&novel.workspace_id)?
-        .ok_or_else(|| AppError::not_found("Workspace not found"))?;
+        .ok_or_else(|| {
+            tracing::warn!(workspace_id = %novel.workspace_id, "[story] story_state_get: workspace not found");
+            AppError::not_found("Workspace not found")
+        })?;
 
     let state_path = build_story_path(&workspace.path, &novel_id)?;
 
-    // 文件 I/O 卸载到阻塞线程池，避免阻塞 tokio worker
     let story_state = if state_path.exists() {
+        tracing::debug!(path = %state_path.display(), "[story] story_state_get: loading from file");
         tokio::task::spawn_blocking(move || -> Result<crate::domain::story::models::StoryState, AppError> {
             let raw = std::fs::read_to_string(&state_path)
-                .map_err(|e| AppError::internal(format!("Failed to read state: {}", e)))?;
+                .map_err(|e| {
+                    tracing::error!(error = %e, "[story] story_state_get: failed to read file");
+                    AppError::internal(format!("Failed to read state: {}", e))
+                })?;
             serde_json::from_str(&raw)
-                .map_err(|e| AppError::internal(format!("Failed to parse state: {}", e)))
+                .map_err(|e| {
+                    tracing::error!(error = %e, "[story] story_state_get: failed to parse JSON");
+                    AppError::internal(format!("Failed to parse state: {}", e))
+                })
         })
         .await
-        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
+        .map_err(|e| {
+            tracing::error!(error = %e, "[story] story_state_get: spawn_blocking failed");
+            AppError::internal(format!("spawn_blocking join failed: {}", e))
+        })??
     } else {
+        tracing::debug!("[story] story_state_get: using default state");
         crate::domain::story::models::StoryState::default()
     };
 
+    tracing::info!(novel_id = %novel_id, duration_ms = start.elapsed().as_millis() as u64, "[story] story_state_get: completed");
     Ok(IpcResponse::ok(story_state))
 }
 
@@ -89,7 +112,6 @@ pub async fn story_state_save(
         return Err(AppError::invalid_input("Story state too large (max 10MB)"));
     }
 
-    // create_dir + write 卸载到阻塞线程池
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         std::fs::create_dir_all(&parent)
             .map_err(|e| AppError::internal(format!("Failed to create directory: {}", e)))?;
@@ -131,10 +153,8 @@ pub async fn hook_update_status(
 
     let state_path = build_story_path(&workspace.path, &novel_id)?;
 
-    // 用全局 Mutex 串行化读改写，防止 TOCTOU 竞态
     let _guard = story_state_lock().lock().await;
 
-    // 文件读取卸载到阻塞线程池
     let read_path = state_path.clone();
     let mut story_state: crate::domain::story::models::StoryState = if state_path.exists() {
         tokio::task::spawn_blocking(move || -> Result<crate::domain::story::models::StoryState, AppError> {
@@ -168,7 +188,6 @@ pub async fn hook_update_status(
     let state_json = serde_json::to_string_pretty(&story_state)
         .map_err(|e| AppError::internal(format!("Failed to serialize state: {}", e)))?;
 
-    // 文件写入卸载到阻塞线程池（复用已构造的 state_path）
     let write_path = state_path.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         std::fs::write(&write_path, &state_json)

@@ -1,18 +1,20 @@
-// StateManager。
-//
-// 职责：
-// 1. 确保书籍目录结构 + control docs（author_intent.md / current_focus.md / style_guide.md）
-// 2. 加载 control docs
-// 3. book.json 读写
-// 4. 书籍写锁（跨进程：基于 lock 文件 + PID 存活检测）
-// 5. chapter index 读写（chapters.json）
-//
-// 跨进程锁实现：
-// - 锁文件路径：<bookDir>/.write.lock
-// - 锁文件内容：pid:<PID> ts:<unix_ms>
-// - 创建方式：OpenOptions::new().create_new(true).write(true) 原子创建
-// - stale 检测：锁文件存在时读取 PID，若 PID 进程已死则回收
-// - 同进程追踪：active_writes 集合检测"锁文件写着本进程 PID 但本进程未持有"
+//! ═══════════════════════════════════════════════════════════════════════════
+//! StateManager - 状态管理器
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：
+//! 1. 确保书籍目录结构 + control docs（author_intent.md / current_focus.md / style_guide.md）
+//! 2. 加载 control docs
+//! 3. book.json 读写
+//! 4. 书籍写锁（跨进程：基于 lock 文件 + PID 存活检测）
+//! 5. chapter index 读写（chapters.json）
+//!
+//! 跨进程锁实现：
+//! - 锁文件路径：<bookDir>/.write.lock
+//! - 锁文件内容：pid:<PID> ts:<unix_ms>
+//! - 创建方式：OpenOptions::new().create_new(true).write(true) 原子创建
+//! - stale 检测：锁文件存在时读取 PID，若 PID 进程已死则回收
+//! - 同进程追踪：active_writes 集合检测"锁文件写着本进程 PID 但本进程未持有"
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

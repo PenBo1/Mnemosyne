@@ -1,16 +1,18 @@
-// RuntimeState Store。
-//
-// 职责：load/save RuntimeStateSnapshot 的 4 个 JSON 文件（state/ 目录下）。
-// 文件布局：
-//   <book_dir>/story/state/
-//     ├── manifest.json
-//     ├── current_state.json
-//     ├── hooks.json
-//     └── chapter_summaries.json
-//
-// 简化说明：完整版本在 load 时会调用 bootstrapStructuredStateFromMarkdown 确保从 markdown 引导。
-// Rust 版的 bootstrap 作为独立模块，store 只负责 JSON 读写；若 JSON 不存在，返回 empty snapshot。
-// 调用方（pipeline runner）在 init_book 阶段会先调用 bootstrap 建立索引。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! RuntimeState Store - 状态存储
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：load/save RuntimeStateSnapshot 的 4 个 JSON 文件（state/ 目录下）。
+//! 文件布局：
+//!   <book_dir>/story/state/
+//!     ├── manifest.json
+//!     ├── current_state.json
+//!     ├── hooks.json
+//!     └── chapter_summaries.json
+//!
+//! 简化说明：完整版本在 load 时会调用 bootstrapStructuredStateFromMarkdown 确保从 markdown 引导。
+//! Rust 版的 bootstrap 作为独立模块，store 只负责 JSON 读写；若 JSON 不存在，返回 empty snapshot。
+//! 调用方（pipeline runner）在 init_book 阶段会先调用 bootstrap 建立索引。
 
 use std::path::{Path, PathBuf};
 

@@ -1,15 +1,17 @@
-// Chapter State Recovery —— 状态校验失败恢复逻辑。
-//
-// 职责：状态校验失败后的恢复逻辑。
-// - 构建校验反馈文本（供 settler 重试使用）
-// - 构建降级问题列表（注入到 audit issues）
-// - 构建/解析状态降级审查笔记（持久化到 chapter index）
-// - 解析降级基础状态（ready-for-review / audit-failed）
-//
-// 实现说明：
-// - retrySettlementAfterValidationFailure 移至 chapter_truth_validation.rs，
-//   因其需要调用 AgentEngine + state_validator，与校验入口同文件更内聚。
-// - 本文件仅保留纯函数（无 engine 依赖），便于单元测试。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Chapter State Recovery - 状态校验失败恢复
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：状态校验失败后的恢复逻辑。
+//! - 构建校验反馈文本（供 settler 重试使用）
+//! - 构建降级问题列表（注入到 audit issues）
+//! - 构建/解析状态降级审查笔记（持久化到 chapter index）
+//! - 解析降级基础状态（ready-for-review / audit-failed）
+//!
+//! 实现说明：
+//! - retrySettlementAfterValidationFailure 移至 chapter_truth_validation.rs，
+//!   因其需要调用 AgentEngine + state_validator，与校验入口同文件更内聚。
+//! - 本文件仅保留纯函数（无 engine 依赖），便于单元测试。
 
 #![allow(unused_imports)]
 

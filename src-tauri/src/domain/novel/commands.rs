@@ -1,3 +1,7 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Novel Commands - 小说模块 IPC 命令
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::validation::validate_id;
@@ -7,6 +11,7 @@ use crate::domain::novel::types::{BookSource, LocalBookItem, SearchBookResult};
 use tauri::State;
 use tokio::sync::Mutex;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 const MAX_TITLE_LEN: usize = 500;
 const MAX_GENRE_LEN: usize = 100;
@@ -54,9 +59,13 @@ pub async fn novel_create(
     title: String,
     genre: String,
 ) -> Result<IpcResponse<crate::infrastructure::db::types::Novel>, AppError> {
+    let start = Instant::now();
+    tracing::info!(workspace_id = %workspace_id, title_len = title.len(), "novel_create: enter");
+    
     validate_workspace_id(&workspace_id)?;
     validate_title(&title)?;
     validate_genre(&genre)?;
+    tracing::debug!(workspace_id = %workspace_id, "Input validated");
 
     let req = crate::infrastructure::db::types::CreateNovelRequest {
         workspace_id,
@@ -69,6 +78,11 @@ pub async fn novel_create(
     };
 
     let novel = state.db.create_novel(&req)?;
+    tracing::info!(
+        novel_id = %novel.id,
+        duration_ms = start.elapsed().as_millis(),
+        "novel_create: exit"
+    );
     Ok(IpcResponse::created(novel))
 }
 
@@ -109,9 +123,18 @@ pub async fn novel_get(
     state: State<'_, DbState>,
     id: String,
 ) -> Result<IpcResponse<crate::infrastructure::db::types::Novel>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(id = %id, "novel_get: enter");
+    
     validate_novel_id(&id)?;
     let novel = state.db.get_novel_by_id(&id)?
         .ok_or_else(|| AppError::not_found("Novel not found"))?;
+    
+    tracing::info!(
+        novel_id = %novel.id,
+        duration_ms = start.elapsed().as_millis(),
+        "novel_get: exit"
+    );
     Ok(IpcResponse::ok(novel))
 }
 
@@ -207,22 +230,34 @@ pub async fn novel_search(
     source_name: String,
     keyword: String,
 ) -> Result<IpcResponse<Vec<SearchBookResult>>, AppError> {
+    let start = Instant::now();
+    tracing::info!(source_name = %source_name, keyword_len = keyword.len(), "novel_search: enter");
+    
     if source_name.trim().is_empty() {
+        tracing::error!("novel_search: source_name is empty");
         return Err(AppError::invalid_input("source_name cannot be empty"));
     }
     let kw = keyword.trim();
     if kw.is_empty() {
+        tracing::error!("novel_search: keyword is empty");
         return Err(AppError::invalid_input("keyword cannot be empty"));
     }
     if kw.len() > MAX_KEYWORD_LEN {
+        tracing::error!(keyword_len = kw.len(), max = MAX_KEYWORD_LEN, "novel_search: keyword too long");
         return Err(AppError::invalid_input(format!(
             "keyword too long (max {} chars)",
             MAX_KEYWORD_LEN
         )));
     }
+    tracing::debug!(source_name = %source_name, keyword = %kw, "Input validated");
 
     let sources = load_sources(&state)?;
     let results = crawler::search(&sources, &source_name, kw).await?;
+    tracing::info!(
+        result_count = results.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "novel_search: exit"
+    );
     Ok(IpcResponse::ok(results))
 }
 
@@ -265,7 +300,16 @@ pub async fn novel_download(
 pub async fn novel_list_local(
     state: State<'_, DbState>,
 ) -> Result<IpcResponse<Vec<LocalBookItem>>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!("novel_list_local: enter");
+    
     let novels_dir = state.data_dir.novels_dir();
     let items = crawler::list_local(&novels_dir)?;
+    
+    tracing::info!(
+        count = items.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "novel_list_local: exit"
+    );
     Ok(IpcResponse::ok(items))
 }

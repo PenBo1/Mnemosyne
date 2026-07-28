@@ -1,13 +1,15 @@
-// Mutation 应用器。
-//
-// apply_play_mutation 把一个 PlayMutation 原子地写入 DB：
-// 1. canonicalize_player_entity_ids —— "player" 统一为 "actor_player"
-// 2. 构造 PlayEvent
-// 3. validate_mutation —— stateSlots 引用实体存在 + 证据变迁不可倒退
-// 4. transaction 内：recordEvent + applyGraphChanges（非 blocked 才写图）
-// 5. normalize_holding_edge —— holding 边目标必须是物理实体，否则丢弃并记 note
-//
-// seed_play_graph 用于播种第一幕（不创建 event，仅写图）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Play 变更应用 - Mutation 写入 DB
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! apply_play_mutation 把一个 PlayMutation 原子地写入 DB：
+//! 1. canonicalize_player_entity_ids —— "player" 统一为 "actor_player"
+//! 2. 构造 PlayEvent
+//! 3. validate_mutation —— stateSlots 引用实体存在 + 证据变迁不可倒退
+//! 4. transaction 内：recordEvent + applyGraphChanges（非 blocked 才写图）
+//! 5. normalize_holding_edge —— holding 边目标必须是物理实体，否则丢弃并记 note
+//!
+//! seed_play_graph 用于播种第一幕（不创建 event，仅写图）。
 
 use rusqlite::Connection;
 

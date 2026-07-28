@@ -1,40 +1,16 @@
-// 交互运行时核心（Interaction Runtime core）。
-//
-// 核心函数：run_interaction_request
-// 流程：
-// 1. 根据 intent 构建初始 ExecutionState（build_task_started_state）
-// 2. 追加 task.started 事件
-// 3. 根据 intent 分发到对应处理函数：
-//    - write_next / continue_book → pipeline_write_next_chapter
-//    - revise_chapter / rewrite_chapter → pipeline_revise_draft
-//    - patch_chapter_text / replace_chapter_text → edit_controller
-//    - rename_entity → edit_controller (EntityRename)
-//    - edit_truth → edit_controller (TruthFileEdit)
-//    - update_focus → edit_controller (FocusEdit)
-//    - update_author_intent → edit_controller (TruthFileEdit: author_intent.md)
-//    - list_books → 扫描 books_dir
-//    - select_book → 更新 session.active_book_id
-//    - pause_book / resume_book → 更新 ExecutionState
-//    - chat → 简化处理（不调用 AgentEngine 流式接口，仅返回静态响应）
-//    - explain_status / explain_failure → 读取 currentExecution 输出
-//    - export_book / develop_book / create_book / show_book_draft / discard_book_draft → 未实现，返回错误
-// 4. 根据 automation_mode 决定是否等待用户（should_wait_for_human）
-// 5. 追加 task.completed 事件
-// 6. 返回 InteractionRuntimeResult
-
-use std::path::PathBuf;
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 交互运行时 - 交互请求处理核心
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::interaction::edit_controller::{
     self, EditRequest, ExecutedEditTransaction,
 };
+use crate::domain::interaction::pipeline_ops::InteractionPipelineOps;
 use crate::domain::interaction::types::{
     AutomationMode, ExecutionState, ExecutionStatus, InteractionEvent, InteractionIntent,
     InteractionRequest, InteractionRuntimeResult, InteractionSession, PendingDecision,
 };
-use crate::domain::pipeline::agents::reviser::ReviseMode;
-use crate::domain::pipeline::commands::BookSummary;
-use crate::domain::pipeline::runner::{PipelineConfig, PipelineRunner};
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::infrastructure::validation::validate_id;
 use crate::shared::error::AppError;
@@ -57,6 +33,7 @@ pub async fn run_interaction_request(
     session: &mut InteractionSession,
     data_dir: &DataDir,
     agent_engine: &AgentEngine,
+    pipeline_ops: &dyn InteractionPipelineOps,
 ) -> Result<InteractionRuntimeResult, AppError> {
     // 记录起始事件数，用于在结束时提取本次新增事件
     let start_event_count = session.events.len();
@@ -80,7 +57,7 @@ pub async fn run_interaction_request(
     ));
 
     // 3. 分发到对应处理函数
-    let dispatch_result = dispatch_intent(&request, session, data_dir, agent_engine).await;
+    let dispatch_result = dispatch_intent(&request, session, data_dir, agent_engine, pipeline_ops).await;
 
     let response_text = match dispatch_result {
         Ok(text) => text,
@@ -166,18 +143,15 @@ async fn dispatch_intent(
     session: &mut InteractionSession,
     data_dir: &DataDir,
     agent_engine: &AgentEngine,
+    pipeline_ops: &dyn InteractionPipelineOps,
 ) -> Result<String, AppError> {
     let intent = request.intent;
+    tracing::debug!(intent = %intent.as_str(), "[InteractionRuntime] Dispatching intent");
 
     match intent {
         // ── 列表 / 切换 ──
         InteractionIntent::ListBooks => {
-            let books = {
-                let books_dir = data_dir.books_dir();
-                tokio::task::spawn_blocking(move || list_books_inner(&books_dir))
-                    .await
-                    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
-            };
+            let books = pipeline_ops.list_books()?;
             let response = if books.is_empty() {
                 "当前项目下没有作品。".to_string()
             } else {
@@ -195,12 +169,7 @@ async fn dispatch_intent(
                 .as_deref()
                 .ok_or_else(|| AppError::invalid_input("select_book 需要提供 book_id"))?;
             validate_id(book_id, "book_id").map_err(AppError::invalid_input)?;
-            let books = {
-                let books_dir = data_dir.books_dir();
-                tokio::task::spawn_blocking(move || list_books_inner(&books_dir))
-                    .await
-                    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??
-            };
+            let books = pipeline_ops.list_books()?;
             if !books.iter().any(|b| b.id == book_id) {
                 return Err(AppError::not_found(format!(
                     "当前项目中找不到作品「{}」",
@@ -214,14 +183,13 @@ async fn dispatch_intent(
         // ── 写下一章 / 继续写 ──
         InteractionIntent::WriteNext | InteractionIntent::ContinueBook => {
             let book_id = resolve_book_id(request, session)?;
-            let runner = build_runner(data_dir);
-            let result = runner
-                .write_next_chapter(agent_engine, &book_id, None)
+            let chapter_number = pipeline_ops
+                .write_next_chapter(agent_engine, &book_id)
                 .await?;
             session.bind_active_book(book_id.clone());
             Ok(format!(
                 "已为 {} 完成第 {} 章写作。",
-                book_id, result.chapter_number
+                book_id, chapter_number
             ))
         }
 
@@ -231,25 +199,16 @@ async fn dispatch_intent(
             let chapter_number = request.chapter_number.ok_or_else(|| {
                 AppError::invalid_input("revise_chapter/rewrite_chapter 需要 chapter_number")
             })?;
-            let mode = if intent == InteractionIntent::RewriteChapter {
-                ReviseMode::Rewrite
-            } else {
-                ReviseMode::Auto
-            };
-            let runner = build_runner(data_dir);
-            runner
-                .revise_draft(agent_engine, &book_id, Some(chapter_number), mode)
+            let rewrite = intent == InteractionIntent::RewriteChapter;
+            pipeline_ops
+                .revise_draft(agent_engine, &book_id, chapter_number, rewrite)
                 .await?;
             session.bind_active_book(book_id.clone());
             Ok(format!(
                 "已为 {} 完成第 {} 章{}。",
                 book_id,
                 chapter_number,
-                if intent == InteractionIntent::RewriteChapter {
-                    "重写"
-                } else {
-                    "修订"
-                }
+                if rewrite { "重写" } else { "修订" }
             ))
         }
 
@@ -552,15 +511,6 @@ async fn execute_edit_request(
     .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))?
 }
 
-/// 构造 PipelineRunner（从 DataDir 读取 books_dir）
-fn build_runner(data_dir: &DataDir) -> PipelineRunner {
-    let config = PipelineConfig {
-        books_dir: data_dir.books_dir(),
-        ..Default::default()
-    };
-    PipelineRunner::new(config)
-}
-
 /// 判断是否需要等待用户决策。
 ///
 /// - Auto: 永不等待
@@ -651,84 +601,6 @@ fn mark_completed(session: &mut InteractionSession) {
         ExecutionStatus::Completed,
         "已完成",
     ));
-}
-
-/// 内部：扫描 books_dir 列出所有书籍（与 pipeline_list_books 同源逻辑，简化版）
-fn list_books_inner(books_dir: &PathBuf) -> Result<Vec<BookSummary>, AppError> {
-    if !books_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut summaries = Vec::new();
-    for entry in std::fs::read_dir(books_dir)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let book_id = entry.file_name().to_string_lossy().to_string();
-        if book_id.starts_with('.') || book_id.starts_with(".tmp") {
-            continue;
-        }
-
-        let book_dir = entry.path();
-        let config_path = book_dir.join("book.json");
-        if !config_path.exists() {
-            continue;
-        }
-
-        let config_content = match std::fs::read_to_string(&config_path) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to read book.json, skipping book");
-                continue;
-            }
-        };
-        let book: crate::domain::pipeline::types::BookConfig = match serde_json::from_str(&config_content) {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to parse book.json, skipping book");
-                continue;
-            }
-        };
-
-        let chapter_count = load_chapter_count(&book_dir);
-
-        summaries.push(BookSummary {
-            id: book.id.clone(),
-            title: book.title,
-            genre: book.genre,
-            status: format!("{:?}", book.status).to_lowercase(),
-            target_chapters: book.target_chapters,
-            chapter_word_count: book.chapter_word_count,
-            language: format!("{:?}", book.language.unwrap_or_default()).to_lowercase(),
-            chapter_count,
-            created_at: book.created_at,
-            updated_at: book.updated_at,
-        });
-    }
-
-    summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    Ok(summaries)
-}
-
-/// 读取书籍的章节数
-fn load_chapter_count(book_dir: &std::path::Path) -> u32 {
-    let index_path = book_dir.join("chapters.json");
-    let content = match std::fs::read_to_string(&index_path) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to read chapters.json, treating as 0 chapters");
-            return 0;
-        }
-    };
-    let index: Vec<crate::domain::pipeline::types::ChapterMeta> = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to parse chapters.json, treating as 0 chapters");
-            return 0;
-        }
-    };
-    index.len() as u32
 }
 
 #[cfg(test)]

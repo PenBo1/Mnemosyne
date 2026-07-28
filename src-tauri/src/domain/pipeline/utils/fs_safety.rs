@@ -1,8 +1,11 @@
-// 文件系统安全化工具 —— 纯函数，无 I/O。
-//
-// 收口 short_fiction_runner / script_storyboard_runner 中重复的 slugify 与
-// safe_segment 实现。两者仅在空结果回退前缀上不同，故通过 fallback_prefix
-// 参数化。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline Utils FS Safety - 文件系统安全化工具
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 纯函数，无 I/O。
+//! 收口 short_fiction_runner / script_storyboard_runner 中重复的 slugify 与
+//! safe_segment 实现。两者仅在空结果回退前缀上不同，故通过 fallback_prefix
+//! 参数化。
 
 use std::sync::OnceLock;
 

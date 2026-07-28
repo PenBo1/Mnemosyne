@@ -1,4 +1,6 @@
-//! 小说下载爬虫。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 小说爬虫 - 小说下载与搜索
+//! ═══════════════════════════════════════════════════════════════════════════
 //!
 //! 三个核心入口:
 //! - `search`: 执行搜索(GET 或 POST),返回匹配书目
@@ -7,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::task::JoinSet;
 
@@ -27,6 +30,9 @@ pub async fn search(
     source_name: &str,
     keyword: &str,
 ) -> Result<Vec<SearchBookResult>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(source_name, keyword_len = keyword.len(), "novel_search: enter");
+    
     let targets: Vec<&BookSource> = if source_name == "all" {
         sources
             .iter()
@@ -46,12 +52,16 @@ pub async fn search(
     };
 
     if targets.is_empty() {
+        tracing::info!(
+            result_count = 0,
+            duration_ms = start.elapsed().as_millis(),
+            "novel_search: exit (no targets)"
+        );
         return Ok(Vec::new());
     }
 
     let mut tasks = JoinSet::new();
     for src in targets {
-        // 克隆 BookSource,让任务持有所有权(async move 跨 await 边界不能用借用)
         let src = src.clone();
         let kw = keyword.to_string();
         tasks.spawn(async move { search_one(&src, &kw).await });
@@ -65,6 +75,12 @@ pub async fn search(
             Err(e) => tracing::warn!(error = %e, "search task panicked"),
         }
     }
+    
+    tracing::info!(
+        result_count = all.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "novel_search: exit"
+    );
     Ok(all)
 }
 
@@ -103,103 +119,113 @@ pub async fn download(
     book_url: &str,
     novels_dir: &Path,
 ) -> Result<PathBuf, AppError> {
-    // 1) 详情
-    let detail_html = http::get_html(book_url, "").await?;
-    let detail = book_parser::parse(source, book_url, &detail_html)?;
+    let start = Instant::now();
+    tracing::info!(function = "download", source = %source.name, book_url, "入口");
 
-    // 2) 目录
-    let toc_html = http::get_html(book_url, "").await?;
-    let chapters = toc_parser::parse(source, &toc_html, book_url)?;
-    if chapters.is_empty() {
-        return Err(AppError::internal("chapter list is empty (possibly anti-crawl)"));
-    }
+    let result = async {
+        let detail_html = http::get_html(book_url, "").await?;
+        let detail = book_parser::parse(source, book_url, &detail_html)?;
 
-    tracing::info!(
-        source = %source.name,
-        book = %detail.book_name,
-        chapters = chapters.len(),
-        "starting download"
-    );
+        let toc_html = http::get_html(book_url, "").await?;
+        let chapters = toc_parser::parse(source, &toc_html, book_url)?;
+        if chapters.is_empty() {
+            return Err(AppError::internal("chapter list is empty (possibly anti-crawl)"));
+        }
 
-    // 3) 并发抓取章节。单章节失败重试 MAX_RETRY 次,最终失败则跳过并记录。
-    let source_arc = Arc::new(source.clone());
-    let total = chapters.len();
-    let mut tasks = JoinSet::new();
-    let mut failed_chapters: Vec<String> = Vec::new();
-    for ch in chapters {
-        let src = source_arc.clone();
-        tasks.spawn(async move {
-            let mut last_err: Option<String> = None;
-            for attempt in 0..=MAX_RETRY {
-                match fetch_chapter_content(&src, &ch.url).await {
-                    Ok(content) => return Ok((ch.index, content)),
-                    Err(e) => {
-                        last_err = Some(e.to_string());
-                        if attempt < MAX_RETRY {
-                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tracing::info!(
+            source = %source.name,
+            book = %detail.book_name,
+            chapters = chapters.len(),
+            "starting download"
+        );
+
+        let source_arc = Arc::new(source.clone());
+        let total = chapters.len();
+        let mut tasks = JoinSet::new();
+        let mut failed_chapters: Vec<String> = Vec::new();
+        for ch in chapters {
+            let src = source_arc.clone();
+            tasks.spawn(async move {
+                let mut last_err: Option<String> = None;
+                for attempt in 0..=MAX_RETRY {
+                    match fetch_chapter_content(&src, &ch.url).await {
+                        Ok(content) => return Ok((ch.index, content)),
+                        Err(e) => {
+                            last_err = Some(e.to_string());
+                            if attempt < MAX_RETRY {
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            }
                         }
                     }
                 }
-            }
-            Err(last_err.unwrap_or_else(|| "unknown error".into()))
-        });
-        // 简单的并发节流:任务数达到上限时,等待至少一个完成
-        if tasks.len() >= MAX_CONCURRENCY {
-            if let Some(res) = tasks.join_next().await {
-                handle_chapter_result(res, &mut failed_chapters)?;
+                Err(last_err.unwrap_or_else(|| "unknown error".into()))
+            });
+            if tasks.len() >= MAX_CONCURRENCY {
+                if let Some(res) = tasks.join_next().await {
+                    handle_chapter_result(res, &mut failed_chapters)?;
+                }
             }
         }
-    }
 
-    // 收集结果,按章节序号排序
-    let mut results: Vec<(usize, String)> = Vec::with_capacity(total);
-    while let Some(res) = tasks.join_next().await {
-        if let Some((idx, content)) = handle_chapter_result(res, &mut failed_chapters)? {
-            results.push((idx, content));
+        let mut results: Vec<(usize, String)> = Vec::with_capacity(total);
+        while let Some(res) = tasks.join_next().await {
+            if let Some((idx, content)) = handle_chapter_result(res, &mut failed_chapters)? {
+                results.push((idx, content));
+            }
         }
-    }
-    results.sort_by_key(|(i, _)| *i);
+        results.sort_by_key(|(i, _)| *i);
 
-    if !failed_chapters.is_empty() {
-        tracing::warn!(
-            total = total,
-            succeeded = results.len(),
-            failed = failed_chapters.len(),
-            "Download completed with partial failures"
-        );
-    }
+        if !failed_chapters.is_empty() {
+            tracing::warn!(
+                total = total,
+                succeeded = results.len(),
+                failed = failed_chapters.len(),
+                "Download completed with partial failures"
+            );
+        }
 
-    // 4) 合并为 TXT 文件
-    let filename = sanitize_filename(&format!("{} ({}).txt", detail.book_name, detail.author));
-    let out_path = novels_dir.join(filename);
-    let mut out = String::new();
-    out.push_str(&format!("书名：{}\n", detail.book_name));
-    out.push_str(&format!("作者：{}\n", detail.author));
-    let intro_text = if detail.intro.is_empty() {
-        "暂无".to_string()
-    } else {
-        strip_html(&detail.intro)
-    };
-    out.push_str(&format!("简介：{}\n\n", intro_text));
-    for (_, content) in results {
-        out.push_str(&content);
-        out.push_str("\n\n");
-    }
+        let filename = sanitize_filename(&format!("{} ({}).txt", detail.book_name, detail.author));
+        let out_path = novels_dir.join(filename);
+        let mut out = String::new();
+        out.push_str(&format!("书名：{}\n", detail.book_name));
+        out.push_str(&format!("作者：{}\n", detail.author));
+        let intro_text = if detail.intro.is_empty() {
+            "暂无".to_string()
+        } else {
+            strip_html(&detail.intro)
+        };
+        out.push_str(&format!("简介：{}\n\n", intro_text));
+        for (_, content) in results {
+            out.push_str(&content);
+            out.push_str("\n\n");
+        }
 
-    // create_dir + write 卸载到阻塞线程池
-    let novels_dir_owned = novels_dir.to_path_buf();
-    let out_path = tokio::task::spawn_blocking(move || -> Result<PathBuf, AppError> {
-        std::fs::create_dir_all(&novels_dir_owned)
-            .map_err(|e| AppError::internal(format!("failed to create novels dir: {}", e)))?;
-        std::fs::write(&out_path, out)
-            .map_err(|e| AppError::internal(format!("failed to write novel file: {}", e)))?;
+        let novels_dir_owned = novels_dir.to_path_buf();
+        let out_path = tokio::task::spawn_blocking(move || -> Result<PathBuf, AppError> {
+            std::fs::create_dir_all(&novels_dir_owned)
+                .map_err(|e| AppError::internal(format!("failed to create novels dir: {}", e)))?;
+            std::fs::write(&out_path, out)
+                .map_err(|e| AppError::internal(format!("failed to write novel file: {}", e)))?;
+            Ok(out_path)
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
+
+        tracing::info!(path = %out_path.display(), "download complete");
         Ok(out_path)
-    })
-    .await
-    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
+    }.await;
 
-    tracing::info!(path = %out_path.display(), "download complete");
-    Ok(out_path)
+    match &result {
+        Ok(path) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "download", duration_ms, path = %path.display(), "出口");
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "download", duration_ms, error = %e, "错误");
+        }
+    }
+    result
 }
 
 /// 抓取单个章节正文并按书源规则解析。

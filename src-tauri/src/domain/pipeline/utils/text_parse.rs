@@ -1,14 +1,16 @@
-// 文本解析共享工具 - 收口 agents / runner 中重复的纯文本解析逻辑。
-//
-// 提供能力：
-// - count_zh_chars: 中文字符计数（CJK 区段）
-// - count_non_whitespace_chars: 非空白字符计数（粗略长度度量）
-// - strip_code_fence: 去除代码块包裹
-// - extract_section: 从 === TAG === 标记中提取区块内容
-//
-// 注意：
-// - JSON 提取请使用 crate::shared::utils::json::extract_json_block（已存在）。
-// - governance/input.rs::extract_section 使用 ## heading markdown 格式，语义不同，不可合并。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline Utils Text Parse - 文本解析共享工具
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供能力：
+//! - count_zh_chars: 中文字符计数（CJK 区段）
+//! - count_non_whitespace_chars: 非空白字符计数（粗略长度度量）
+//! - strip_code_fence: 去除代码块包裹
+//! - extract_section: 从 === TAG === 标记中提取区块内容
+//!
+//! 注意：
+//! - JSON 提取请使用 crate::shared::utils::json::extract_json_block（已存在）。
+//! - governance/input.rs::extract_section 使用 ## heading markdown 格式，语义不同，不可合并。
 
 /// 统计中文字符数（CJK 统一表意文字 + 扩展 A 区 + 兼容表意文字）。
 pub fn count_zh_chars(content: &str) -> u32 {

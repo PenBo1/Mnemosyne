@@ -1,10 +1,12 @@
-// StateValidator Agent。
-//
-// 职责：连续性验证器，检查章节结算前后的状态是否自洽。
-// 检查 6 类矛盾：状态变化无叙事支撑、缺失状态变化、时间不可能性、
-// Hook 异常、追溯性编辑、跨真相键冲突。FAIL 仅用于硬矛盾。
-//
-// prompt 策略：保留 6 类矛盾检查 + PASS/FAIL + JSON/行式输出。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! StateValidator Agent - 状态验证代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：连续性验证器，检查章节结算前后的状态是否自洽。
+//! 检查 6 类矛盾：状态变化无叙事支撑、缺失状态变化、时间不可能性、
+//! Hook 异常、追溯性编辑、跨真相键冲突。FAIL 仅用于硬矛盾。
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -34,6 +36,9 @@ pub async fn validate_state(
     old_hooks: &str,
     new_hooks: &str,
 ) -> Result<ValidationResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "validate_state", chapter_number, "入口");
+
     let system_prompt = build_system_prompt();
     let user_message = build_user_message(
         chapter_content,
@@ -44,8 +49,19 @@ pub async fn validate_state(
         new_hooks,
     );
 
-    let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    Ok(parse_validation_result(&response))
+    match engine.prompt_once(&system_prompt, &user_message).await {
+        Ok(response) => {
+            let result = parse_validation_result(&response);
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "validate_state", chapter_number, duration_ms, passed = result.passed, warning_count = result.warnings.len(), "出口");
+            Ok(result)
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "validate_state", chapter_number, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 fn build_system_prompt() -> String {

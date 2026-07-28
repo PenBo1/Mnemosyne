@@ -1,11 +1,13 @@
-// RuntimeState Reducer。
-//
-// 核心职责：接收 settler agent 输出的 RuntimeStateDelta，应用到当前 RuntimeStateSnapshot，
-// 产出新的 snapshot。包含 hookOps 合并、currentStatePatch 应用、chapterSummary 增删。
-//
-// hook-arbiter 集成：对 delta.new_hook_candidates 调用 evaluate_hook_admission 做准入检查，
-// 通过的候选以 generated hookId 创建新 HookRecord 并 upsert；
-// duplicate_family 候选合并到 matched hookId（视为 mention 而非新建）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! RuntimeState Reducer - 状态增量应用
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 核心职责：接收 settler agent 输出的 RuntimeStateDelta，应用到当前 RuntimeStateSnapshot，
+//! 产出新的 snapshot。包含 hookOps 合并、currentStatePatch 应用、chapterSummary 增删。
+//!
+//! hook-arbiter 集成：对 delta.new_hook_candidates 调用 evaluate_hook_admission 做准入检查，
+//! 通过的候选以 generated hookId 创建新 HookRecord 并 upsert；
+//! duplicate_family 候选合并到 matched hookId（视为 mention 而非新建）。
 
 use super::super::types::Language;
 use super::super::utils::hook_governance::{

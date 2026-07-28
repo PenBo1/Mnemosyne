@@ -1,8 +1,10 @@
-// Delta 系统。
-//
-// - UpsertRemove<T>：upsert/remove 语义的 Vec 操作
-// - StoryGraphDelta：对 graph 各集合的增量修改
-// - apply_story_graph_delta：将 delta 应用到 graph（含 ending 引用完整性校验）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Delta - Delta 系统
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! - UpsertRemove<T>：upsert/remove 语义的 Vec 操作
+//! - StoryGraphDelta：对 graph 各集合的增量修改
+//! - apply_story_graph_delta：将 delta 应用到 graph（含 ending 引用完整性校验）
 
 use serde::{Deserialize, Serialize};
 

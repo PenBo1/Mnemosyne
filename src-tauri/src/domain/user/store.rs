@@ -1,3 +1,6 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 用户存储 - 文件系统持久化
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::path::PathBuf;
 use crate::shared::error::AppError;
@@ -12,9 +15,12 @@ impl UserProfileStore {
     pub fn new(data_dir: &std::path::Path) -> Self {
         let path = data_dir.join("user_profile.json");
         let profile = match Self::load_from_disk(&path) {
-            Ok(p) => Some(p),
+            Ok(p) => {
+                tracing::info!(path = %path.display(), "[UserProfileStore] Loaded existing profile");
+                Some(p)
+            }
             Err(e) => {
-                tracing::warn!(error = %e, "Failed to load user_profile.json, using default");
+                tracing::warn!(error = %e, path = %path.display(), "[UserProfileStore] Failed to load, will use default");
                 None
             }
         };
@@ -38,14 +44,21 @@ impl UserProfileStore {
     pub fn get_or_create(&mut self) -> &UserProfile {
         if self.profile.is_none() {
             self.profile = Some(UserProfile::default());
+            tracing::info!(path = %self.path.display(), "[UserProfileStore] Created default profile");
             if let Err(e) = self.save() {
-                tracing::warn!(error = %e, "Failed to save default user_profile.json");
+                tracing::warn!(error = %e, "[UserProfileStore] Failed to save default profile");
             }
         }
         self.profile.as_ref().unwrap()
     }
 
-    pub fn update(&mut self, profile: UserProfile) -> Result<(), AppError> { self.profile = Some(profile); self.save() }
+    pub fn update(&mut self, profile: UserProfile) -> Result<(), AppError> {
+        tracing::info!(path = %self.path.display(), "[UserProfileStore] Updating profile");
+        self.profile = Some(profile);
+        self.save()?;
+        tracing::info!("[UserProfileStore] Profile updated successfully");
+        Ok(())
+    }
 
     fn save(&self) -> Result<(), AppError> {
         if let Some(ref profile) = self.profile {

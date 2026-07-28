@@ -1,14 +1,6 @@
-// 交互会话 SQLite 持久化（InteractionSession store）。
-//
-// 与 sessions 表（chat 会话）不同：本表存储 InteractionSession 完整状态
-// （含 messages/events/pendingDecision/automationMode 等），以 JSON blob 形式持久化。
-// 表结构见 migrations/20260714000002_interaction_sessions.sql
-//
-// 4 个核心 API：
-// - load_interaction_session: 按 id 加载
-// - persist_interaction_session: upsert（INSERT OR REPLACE）
-// - list_interaction_sessions: 列表（可选 book_id 过滤）
-// - delete_interaction_session: 按 id 删除
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 会话存储 - 交互会话 SQLite 持久化
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use rusqlite::params;
 
@@ -120,6 +112,9 @@ impl Database {
         &self,
         book_id: Option<&str>,
     ) -> Result<Vec<InteractionSessionRow>, AppError> {
+        let start = std::time::Instant::now();
+        tracing::debug!(book_id = ?book_id, "[InteractionSessionStore] Listing sessions");
+        
         let conn = self.conn()?;
         let mut sql = String::from(
             "SELECT id, session_kind, automation_mode, active_book_id, title, created_at, updated_at \
@@ -146,7 +141,14 @@ impl Database {
                 })
             })
             .map_err(db_err)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
+        let result = rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        
+        tracing::debug!(
+            count = result.len(),
+            duration_ms = start.elapsed().as_millis() as u64,
+            "[InteractionSessionStore] Listed sessions"
+        );
+        Ok(result)
     }
 
     /// 加载 InteractionSession 完整列表（含 payload，用于 batch 拉取）。

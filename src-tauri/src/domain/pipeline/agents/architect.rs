@@ -1,10 +1,9 @@
-// Architect Agent。
-//
-// 职责：建书时生成 5-SECTION 基础设定（story_frame / volume_map / roles / book_rules / pending_hooks）。
-// 输出用 === SECTION: xxx === 分隔，解析后落盘到 outline/ + roles/ + story/ 目录。
-//
-// prompt 策略：保留 5-SECTION 结构 + 去重铁律 + 预算 + 完结检查。
-// 精简冗长解释，保留关键要求。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Architect Agent - 基础设定生成代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：建书时生成 5-SECTION 基础设定（story_frame / volume_map / roles / book_rules / pending_hooks）。
+//! 输出用 === SECTION: xxx === 分隔，解析后落盘到 outline/ + roles/ + story/ 目录。
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -28,6 +27,15 @@ pub async fn generate_foundation(
     genre_body: &str,
     external_context: Option<&str>,
 ) -> Result<ArchitectOutput, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "generate_foundation",
+        book_id = %book.id,
+        genre = genre_name,
+        has_external_context = external_context.is_some(),
+        "入口"
+    );
+
     let system_prompt = build_system_prompt(book, genre_name, genre_body, external_context);
     let user_message = format!(
         "请为这部 {} 题材小说《{}》生成完整的基础设定规范。",
@@ -35,7 +43,26 @@ pub async fn generate_foundation(
     );
 
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    parse_sections(&response)
+    let result = parse_sections(&response);
+
+    if result.is_ok() {
+        tracing::info!(
+            function = "generate_foundation",
+            book_id = %book.id,
+            duration_ms = start.elapsed().as_millis() as u64,
+            "出口"
+        );
+    } else {
+        tracing::error!(
+            function = "generate_foundation",
+            book_id = %book.id,
+            duration_ms = start.elapsed().as_millis() as u64,
+            error = true,
+            "错误"
+        );
+    }
+
+    result
 }
 
 fn build_system_prompt(
@@ -233,7 +260,7 @@ pub fn parse_sections(content: &str) -> Result<ArchitectOutput, AppError> {
 /// 采用「先全部写 .tmp 再 rename」的两阶段提交：
 /// 1. 第一阶段：所有目标文件写到 `<name>.md.tmp`，任意失败立即清理已写 tmp 文件并返回错误；
 /// 2. 第二阶段：依次 rename 覆盖目标文件（同分区 rename 原子）。
-/// 注意：roles 子目录文件较多，单独走 persist_roles（仍非事务性，但仅作 append-only 落盘）。
+///    注意：roles 子目录文件较多，单独走 persist_roles（仍非事务性，但仅作 append-only 落盘）。
 pub fn persist_output(book_dir: &std::path::Path, output: &ArchitectOutput) -> Result<(), AppError> {
     let story_dir = book_dir.join("story");
     let outline_dir = story_dir.join("outline");
@@ -311,10 +338,10 @@ fn parse_role_block(block: &str) -> Result<(String, String, String), AppError> {
 
     for (i, line) in block.lines().enumerate() {
         let trimmed = line.trim();
-        if trimmed.starts_with("tier:") {
-            tier = trimmed[5..].trim().to_string();
-        } else if trimmed.starts_with("name:") {
-            name = trimmed[5..].trim().to_string();
+        if let Some(stripped) = trimmed.strip_prefix("tier:") {
+            tier = stripped.trim().to_string();
+        } else if let Some(stripped) = trimmed.strip_prefix("name:") {
+            name = stripped.trim().to_string();
         } else if trimmed.starts_with("---CONTENT---") {
             content_start = block.find("---CONTENT---").unwrap_or(0) + "---CONTENT---".len();
             break;

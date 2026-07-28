@@ -1,13 +1,15 @@
-// Pipeline Scheduler。
-//
-// 职责：定时调度写作循环 + 雷达扫描，带质量门控（连续失败暂停）、
-// 每日章节上限、章节间冷却、重叠跳过、失败维度聚类告警。
-//
-// 架构：
-// - Scheduler 持有 PipelineRunner + 配置，通过 tokio::spawn 运行后台 interval 循环
-// - 每个 book 的 writeCycle 串行写 chaptersPerCycle 章，带重试 + 冷却
-// - 失败计数 → 连续失败达阈值则暂停该书
-// - 每日上限：跨所有书的章节总数
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 管道调度器 - 定时调度写作循环与雷达扫描
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：定时调度写作循环 + 雷达扫描，带质量门控（连续失败暂停）、
+//! 每日章节上限、章节间冷却、重叠跳过、失败维度聚类告警。
+//!
+//! 架构：
+//! - Scheduler 持有 PipelineRunner + 配置，通过 tokio::spawn 运行后台 interval 循环
+//! - 每个 book 的 writeCycle 串行写 chaptersPerCycle 章，带重试 + 冷却
+//! - 失败计数 → 连续失败达阈值则暂停该书
+//! - 每日上限：跨所有书的章节总数
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +22,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 use crate::core::agent::engine::AgentEngine;
+use crate::domain::pipeline::radar_ops::RadarScanOps;
 use crate::domain::pipeline::runner::{PipelineConfig, PipelineRunner};
 use crate::domain::pipeline::types::{BookConfig, BookStatus};
 use crate::shared::error::AppError;
@@ -186,12 +189,18 @@ pub struct Scheduler {
     daily_chapter_count: Mutex<HashMap<String, u32>>,
     /// 事件回调
     on_event: Option<EventCallback>,
+    /// 雷达扫描桥接（消除 pipeline → radar 横向依赖，由 application 层注入）
+    radar_ops: Arc<dyn RadarScanOps>,
 }
 
 impl Scheduler {
     /// 创建调度器。
     /// `pipeline_config` 需包含 books_dir（通常从 DataDir.books_dir() 获取）。
-    pub fn new(pipeline_config: PipelineConfig, config: SchedulerConfig) -> Self {
+    pub fn new(
+        pipeline_config: PipelineConfig,
+        config: SchedulerConfig,
+        radar_ops: Arc<dyn RadarScanOps>,
+    ) -> Self {
         Self {
             config,
             pipeline_config,
@@ -204,6 +213,7 @@ impl Scheduler {
             paused_books: RwLock::new(HashSet::new()),
             daily_chapter_count: Mutex::new(HashMap::new()),
             on_event: None,
+            radar_ops,
         }
     }
 
@@ -677,13 +687,11 @@ impl Scheduler {
 
     /// 运行雷达扫描
     async fn run_radar_scan(&self, engine: Arc<AgentEngine>) {
-        // 复用 radar domain 的 scan 函数
-        use crate::domain::radar::agent;
-
-        match agent::scan(&engine, None).await {
+        // 通过 RadarScanOps 桥接调用 radar domain，避免 pipeline → radar 横向依赖
+        match self.radar_ops.scan(&engine).await {
             Ok(outcome) => {
                 tracing::info!(
-                    recommendations = outcome.result.recommendations.len(),
+                    recommendations = outcome.recommendations_count,
                     "Scheduler: 雷达扫描完成"
                 );
             }
@@ -781,9 +789,14 @@ pub struct SchedulerState {
 
 impl SchedulerState {
     /// 创建调度器状态
-    pub fn new(pipeline_config: PipelineConfig, config: SchedulerConfig, engine: AgentEngine) -> Self {
+    pub fn new(
+        pipeline_config: PipelineConfig,
+        config: SchedulerConfig,
+        engine: AgentEngine,
+        radar_ops: Arc<dyn RadarScanOps>,
+    ) -> Self {
         Self {
-            inner: Arc::new(Scheduler::new(pipeline_config, config)),
+            inner: Arc::new(Scheduler::new(pipeline_config, config, radar_ops)),
             engine: Arc::new(engine),
         }
     }

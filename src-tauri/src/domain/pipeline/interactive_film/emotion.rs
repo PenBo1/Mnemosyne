@@ -1,8 +1,10 @@
-// 情感分析。
-//
-// 任务规格的情感分析设计：
-// - analyze_text_emotion：在文本中搜索情感词，否定词守卫翻转极性，累加得分
-// - analyze_emotional_arc：沿路径收集 scene_desc + dialogue text，逐节点计算情感分数
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Emotion - 情感分析
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 任务规格的情感分析设计：
+//! - analyze_text_emotion：在文本中搜索情感词，否定词守卫翻转极性，累加得分
+//! - analyze_emotional_arc：沿路径收集 scene_desc + dialogue text，逐节点计算情感分数
 
 use std::sync::OnceLock;
 

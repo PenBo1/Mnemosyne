@@ -1,5 +1,10 @@
-﻿
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 反馈错误 - 反馈模块错误类型
+//! ═══════════════════════════════════════════════════════════════════════════
+
 use std::path::PathBuf;
+
+// ── 错误类型 ────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum FeedbackError {
@@ -10,6 +15,8 @@ pub enum FeedbackError {
     PermissionDenied(PathBuf),
     Io(std::io::Error),
 }
+
+// ── 错误实现 ────────────────────────────────────────────────────────────────
 
 impl std::fmt::Display for FeedbackError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

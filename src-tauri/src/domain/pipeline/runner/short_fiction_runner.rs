@@ -1,14 +1,17 @@
-// ShortFictionRunner —— 短篇 pipeline 编排器。
-//
-// 短篇 pipeline 编排器：create_outline → review_outline → revise_outline →
-// write_draft (with continue_draft retry) → review_draft → revise_draft →
-// write_final_artifacts → generate_package。
-//
-// 文件系统操作用 std::fs 同步 API（与 pipeline_runner.rs 一致），LLM 调用走 AgentEngine。
-// 封面图片生成未实现（仅落盘 cover-prompt.md）。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Short Fiction Runner - 短篇 Pipeline 编排器
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 短篇 pipeline 编排器：create_outline -> review_outline -> revise_outline ->
+//! write_draft (with continue_draft retry) -> review_draft -> revise_draft ->
+//! write_final_artifacts -> generate_package。
+//!
+//! 文件系统操作用 std::fs 同步 API（与 pipeline_runner.rs 一致），LLM 调用走 AgentEngine。
+//! 封面图片生成未实现（仅落盘 cover-prompt.md）。
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -106,6 +109,9 @@ impl ShortFictionRunner {
         engine: &AgentEngine,
         options: &ShortFictionRunOptions,
     ) -> Result<ShortFictionRunResult, AppError> {
+        let start = Instant::now();
+        tracing::info!(function = "ShortFictionRunner::run", story_id = ?options.story_id, "入口");
+
         let language = options.language.unwrap_or(self.config.language);
         let chapter_count = bounded_integer(
             options.chapter_count,
@@ -134,16 +140,16 @@ impl ShortFictionRunner {
 
         let provided_story_id = options.story_id.as_ref().map(|s| safe_segment(s, "short"));
 
-        // 断点续跑：若 final/full.md 已存在且 status≠failed，直接返回
         if let Some(sid) = &provided_story_id {
             let final_path = self.story_dir(sid).join("final").join("full.md");
             if final_path.exists() && !self.is_failed_run(sid)? {
                 tracing::info!("[short-fiction] 故事 {} 已完成，跳过", sid);
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::info!(function = "ShortFictionRunner::run", story_id = %sid, duration_ms, skipped = true, "出口");
                 return Ok(self.build_run_result(sid));
             }
         }
 
-        // 主流程（失败时写 status=failed）
         let result = self
             .produce(
                 engine,
@@ -157,6 +163,17 @@ impl ShortFictionRunner {
 
         if let (Err(e), Some(sid)) = (&result, &provided_story_id) {
             let _ = self.write_run_status(sid, "failed", None, Some(&e.to_string()));
+        }
+
+        match &result {
+            Ok(r) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::info!(function = "ShortFictionRunner::run", story_id = %r.story_id, duration_ms, "出口");
+            }
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::error!(function = "ShortFictionRunner::run", duration_ms, error = %e, "错误");
+            }
         }
         result
     }

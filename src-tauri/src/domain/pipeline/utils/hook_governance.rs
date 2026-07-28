@@ -1,12 +1,14 @@
-// Hook 准入治理。
-//
-// 核心逻辑：
-// 1. evaluate_hook_admission: 对 newHookCandidate 做准入决策
-//    - missing_type: type 字段为空 → 拒绝
-//    - missing_payoff_signal: expectedPayoff + notes 全空 → 拒绝
-//    - duplicate_family: 与已有 hook 在 type+terms 重叠 → 拒绝
-// 2. 文本规范化：小写 + 去除非字母数字中文
-// 3. 重叠判定：英文 terms(>=4字符) 重叠 >= 2 或 中文 bigrams 重叠 >= 3
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline Utils Hook Governance - Hook 准入治理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 核心逻辑：
+//! 1. evaluate_hook_admission: 对 newHookCandidate 做准入决策
+//!    - missing_type: type 字段为空 -> 拒绝
+//!    - missing_payoff_signal: expectedPayoff + notes 全空 -> 拒绝
+//!    - duplicate_family: 与已有 hook 在 type+terms 重叠 -> 拒绝
+//! 2. 文本规范化：小写 + 去除非字母数字中文
+//! 3. 重叠判定：英文 terms(>=4字符) 重叠 >= 2 或 中文 bigrams 重叠 >= 3
 
 use std::sync::OnceLock;
 

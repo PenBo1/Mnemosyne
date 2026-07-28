@@ -1,14 +1,15 @@
-// 检测历史文件持久化 —— 按 book_id 存储到 detection_dir/<book_id>.json。
-//
-// 文件格式: Vec<DetectionHistoryEntry>(JSON pretty-print)。
-// 记录检测条目时自动计算 attempt(同 chapter 现有条目数 + 1)。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 检测存储 - 检测历史文件持久化
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::shared::error::AppError;
 
 use super::types::DetectionHistoryEntry;
 
-/// 加载某 book 的检测历史(文件不存在时返回空)。
+// ── 公共接口 ────────────────────────────────────────────────────────────────
+
+/// 加载某 book 的检测历史
 pub fn load_history(data_dir: &DataDir, book_id: &str) -> Result<Vec<DetectionHistoryEntry>, AppError> {
     let path = data_dir.detection_dir().join(format!("{}.json", book_id));
     if !path.exists() {
@@ -21,7 +22,7 @@ pub fn load_history(data_dir: &DataDir, book_id: &str) -> Result<Vec<DetectionHi
     Ok(entries)
 }
 
-/// 追加一条检测历史并落盘,返回写入的条目(含已计算的 attempt)。
+/// 追加一条检测历史并落盘
 pub fn record_entry(
     data_dir: &DataDir,
     book_id: &str,
@@ -59,7 +60,7 @@ pub fn record_entry(
     Ok(entry)
 }
 
-/// 删除某 book 的检测历史。返回是否删除了文件。
+/// 删除某 book 的检测历史
 pub fn delete_history(data_dir: &DataDir, book_id: &str) -> Result<bool, AppError> {
     let path = data_dir.detection_dir().join(format!("{}.json", book_id));
     if path.exists() {

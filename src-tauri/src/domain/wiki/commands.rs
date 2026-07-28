@@ -1,4 +1,8 @@
-﻿use crate::shared::error::{AppError, IpcResponse};
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 百科命令 - IPC 命令处理
+//! ═══════════════════════════════════════════════════════════════════════════
+
+use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
 use crate::infrastructure::validation::validate_id;
 use tauri::State;
@@ -45,9 +49,14 @@ pub async fn wiki_list_entries(
     novel_id: String,
     category: Option<String>,
 ) -> Result<IpcResponse<Vec<crate::domain::wiki::models::WikiEntry>>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(novel_id = %novel_id, category = ?category, "[wiki] wiki_list_entries: started");
+
     validate_novel_id(&novel_id)?;
     let cat = category.and_then(|c| c.parse::<crate::domain::wiki::types::WikiCategory>().ok());
     let entries = state.db.list_wiki_entries(&novel_id, cat.as_ref())?;
+
+    tracing::info!(novel_id = %novel_id, count = entries.len(), duration_ms = start.elapsed().as_millis() as u64, "[wiki] wiki_list_entries: completed");
     Ok(IpcResponse::ok(entries))
 }
 

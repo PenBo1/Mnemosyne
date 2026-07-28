@@ -1,9 +1,11 @@
-// LengthNormalizer Agent。
-//
-// 职责：当章节字数偏离目标区间时，单次修正（compress 或 expand）使其落在软边界内。
-// 保留原有事实/关键钩子/角色名，不引入新支线。
-//
-// prompt 策略：单次修正模式 + 事实保留约束 + 纯文本输出。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! LengthNormalizer Agent - 字数修正代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：当章节字数偏离目标区间时，单次修正（compress 或 expand）使其落在软边界内。
+//! 保留原有事实/关键钩子/角色名，不引入新支线。
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::domain::pipeline::utils::text_parse::{count_non_whitespace_chars, strip_code_fence};
@@ -33,11 +35,14 @@ pub async fn normalize_chapter(
     soft_min: u32,
     soft_max: u32,
 ) -> Result<NormalizeOutput, AppError> {
+    let start = Instant::now();
     let current_count = count_non_whitespace_chars(chapter_content);
     let mode = resolve_mode(current_count, soft_min, soft_max);
 
-    // 字数在软边界内，无需修正
+    tracing::info!(function = "normalize_chapter", current_count, target_words, soft_min, soft_max, mode = ?mode, "入口");
+
     if mode == NormalizeMode::None {
+        tracing::info!(function = "normalize_chapter", duration_ms = 0u64, applied = false, reason = "in_range", "出口");
         return Ok(NormalizeOutput {
             normalized_content: chapter_content.to_string(),
             final_count: current_count,
@@ -48,24 +53,35 @@ pub async fn normalize_chapter(
     let system_prompt = build_system_prompt(mode, target_words, soft_min, soft_max);
     let user_message = build_user_message(chapter_content, current_count, mode);
 
-    let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    let sanitized = sanitize_wrapper(&response);
+    match engine.prompt_once(&system_prompt, &user_message).await {
+        Ok(response) => {
+            let sanitized = sanitize_wrapper(&response);
+            let new_count = count_non_whitespace_chars(&sanitized);
 
-    // 安全回退：如果输出截断或跨越相反硬边界，保留原文
-    let new_count = count_non_whitespace_chars(&sanitized);
-    if !is_safe_output(&sanitized, new_count, mode, soft_min, soft_max) {
-        return Ok(NormalizeOutput {
-            normalized_content: chapter_content.to_string(),
-            final_count: current_count,
-            applied: false,
-        });
+            if !is_safe_output(&sanitized, new_count, mode, soft_min, soft_max) {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                tracing::warn!(function = "normalize_chapter", duration_ms, applied = false, reason = "unsafe_output", "出口");
+                return Ok(NormalizeOutput {
+                    normalized_content: chapter_content.to_string(),
+                    final_count: current_count,
+                    applied: false,
+                });
+            }
+
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "normalize_chapter", duration_ms, applied = true, final_count = new_count, "出口");
+            Ok(NormalizeOutput {
+                normalized_content: sanitized,
+                final_count: new_count,
+                applied: true,
+            })
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "normalize_chapter", duration_ms, error = %e, "错误");
+            Err(e)
+        }
     }
-
-    Ok(NormalizeOutput {
-        normalized_content: sanitized,
-        final_count: new_count,
-        applied: true,
-    })
 }
 
 /// 判断修正模式：超上限压缩、低于下限扩写、区间内不处理

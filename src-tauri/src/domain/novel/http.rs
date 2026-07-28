@@ -1,4 +1,6 @@
-//! HTTP 客户端封装。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! HTTP 客户端 - 小说爬虫 HTTP 请求封装
+//! ═══════════════════════════════════════════════════════════════════════════
 //!
 //! 单例 `reqwest::Client`,提供带 UA/Referer 头的 GET / POST 表单请求。
 //! POST 数据使用 `{key: %s, key2: value2}` 简化格式，
@@ -67,30 +69,47 @@ pub async fn post_form_html(
     data_pattern: &str,
     args: &[&str],
 ) -> Result<String, AppError> {
-    let form = parse_form_pattern(data_pattern, args);
-    // reqwest 0.13 在 default-features=false 下不含 form 特性,这里手动构造表单体
-    let body = form
-        .iter()
-        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-    let mut req = client()
-        .post(url)
-        .headers(build_headers(url)?)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body);
-    if !cookies.is_empty() {
-        req = req.header("Cookie", cookies);
+    let start = std::time::Instant::now();
+    tracing::info!(url, "http_post: enter");
+    
+    let result = async {
+        let form = parse_form_pattern(data_pattern, args);
+        let body = form
+            .iter()
+            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+            .collect::<Vec<_>>()
+            .join("&");
+        let mut req = client()
+            .post(url)
+            .headers(build_headers(url)?)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body);
+        if !cookies.is_empty() {
+            req = req.header("Cookie", cookies);
+        }
+        let resp = req.send().await.map_err(map_reqwest_err)?;
+        if !resp.status().is_success() {
+            return Err(AppError::internal(format!(
+                "HTTP {} for {}",
+                resp.status(),
+                url
+            )));
+        }
+        resp.text().await.map_err(map_reqwest_err)
+    }.await;
+    
+    match &result {
+        Ok(_) => tracing::info!(
+            duration_ms = start.elapsed().as_millis(),
+            "http_post: exit"
+        ),
+        Err(e) => tracing::error!(
+            error = %e,
+            duration_ms = start.elapsed().as_millis(),
+            "http_post: error"
+        ),
     }
-    let resp = req.send().await.map_err(map_reqwest_err)?;
-    if !resp.status().is_success() {
-        return Err(AppError::internal(format!(
-            "HTTP {} for {}",
-            resp.status(),
-            url
-        )));
-    }
-    resp.text().await.map_err(map_reqwest_err)
+    result
 }
 
 /// 解析 `{key: value, key2: %s}` 形式的伪 JSON 为表单字段列表。

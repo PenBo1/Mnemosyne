@@ -1,13 +1,17 @@
-// Chapter Review Cycle —— 章节评审循环。
-//
-// 职责：Audit↔Revise 评分循环，带最佳快照回退。
-// 流程：normalize（硬漂移）→ assess（audit + score）→ revise（auto）→ re-assess → 选最佳快照。
-//
-// 实现差异：
-// - analyzeAITells / analyzeSensitiveWords / runPostWriteChecks 已移植到 Rust
-//   （ai_tells.rs / sensitive_words.rs / post_write_checks.rs），在 assess 中合并。
-// - normalizePostWriteSurface / assertChapterContentNotEmpty 已引入（post_write_checks.rs）。
-// - logWarn / logStage 用 tracing::warn! / tracing::info! 替代。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Chapter Review Cycle - 章节评审循环
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：Audit<->Revise 评分循环，带最佳快照回退。
+//! 流程：normalize（硬漂移）-> assess（audit + score）-> revise（auto）-> re-assess -> 选最佳快照。
+//!
+//! 实现差异：
+//! - analyzeAITells / analyzeSensitiveWords / runPostWriteChecks 已移植到 Rust
+//!   （ai_tells.rs / sensitive_words.rs / post_write_checks.rs），在 assess 中合并。
+//! - normalizePostWriteSurface / assertChapterContentNotEmpty 已引入（post_write_checks.rs）。
+//! - logWarn / logStage 用 tracing::warn! / tracing::info! 替代。
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -60,8 +64,6 @@ pub struct CycleResult {
 /// 字数归一化结果（normalize_if_hard_drift 内部使用）
 struct NormalizeResult {
     content: String,
-    #[allow(dead_code)]
-    word_count: u32,
     applied: bool,
     token_usage: Option<CycleUsage>,
 }
@@ -101,14 +103,14 @@ pub async fn run_chapter_review_cycle(
     governed_artifacts: Option<&GovernedArtifacts>,
     max_review_iterations: Option<usize>,
 ) -> Result<CycleResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "run_chapter_review_cycle", chapter_number, "入口");
+
     let mut total_usage = initial_usage;
     let mut normalize_applied = false;
     let mut final_content = initial_content.to_string();
-    // initial_word_count 会被 normalize 后的重计算覆盖；保留参数以对齐签名
     let _ = initial_word_count;
 
-    // ── 字数归一化（pre-audit）：仅当超出硬边界时调用 length_normalizer ──
-    // 长度不混入 reviser 的 issues——normalize 作为独立步骤处理。
     let normalized = normalize_if_hard_drift(engine, &final_content, length_spec).await?;
     total_usage = add_usage(total_usage, normalized.token_usage);
     final_content = normalized.content;
@@ -116,10 +118,8 @@ pub async fn run_chapter_review_cycle(
     if normalized.applied {
         normalize_applied = true;
     }
-    // 保留 normalize 后、audit 前的字数作为独立字段（后续 review loop 不应覆盖）
     let pre_audit_normalized_word_count = final_word_count;
 
-    // ── 初始评估 ──
     tracing::info!(chapter = chapter_number, "审计草稿");
     let initial = assess(
         engine,
@@ -140,9 +140,10 @@ pub async fn run_chapter_review_cycle(
         length_in_range: initial.length_in_range,
     }];
 
-    // 解析失败：跳过自动修稿，避免误改正文
     if initial.audit_result.parse_failed {
         tracing::warn!("审稿输出解析失败，跳过自动修稿以避免误改正文");
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::info!(function = "run_chapter_review_cycle", chapter_number, duration_ms, parse_failed = true, "出口");
         return Ok(CycleResult {
             final_content,
             final_word_count,
@@ -162,8 +163,6 @@ pub async fn run_chapter_review_cycle(
     };
     let mut post_revise_count: u32 = 0;
 
-    // ── 评分循环：assess → revise → assess ──
-    // 默认一次自动修复轮次；项目可调高以接受更慢但更持久的修复。
     let max_iterations = max_review_iterations.unwrap_or(DEFAULT_MAX_REVIEW_ITERATIONS);
 
     if !is_passed(&current_audit) {
@@ -187,7 +186,6 @@ pub async fn run_chapter_review_cycle(
             )
             .await?;
 
-            // 修稿输出为空或与原文相同 → 退出循环
             if revise_output.revised_content.is_empty()
                 || revise_output.revised_content == final_content
             {
@@ -202,9 +200,6 @@ pub async fn run_chapter_review_cycle(
             let revised_word_count =
                 count_chapter_length(&revised_content, length_spec.counting_mode);
 
-            // 重新评估修订内容（temperature=0，对应 re-assess）
-            // 若修订内容字数漂移，length_in_range 为 false → isPassed 失败 →
-            // bestSnapshot 会选择较早的 in-range 版本。循环内无需 normalize。
             let next_assessment = assess(
                 engine,
                 book,
@@ -224,7 +219,6 @@ pub async fn run_chapter_review_cycle(
                 length_in_range: next_assessment.length_in_range,
             });
 
-            // 通过判定：score >= 85 AND audit passed AND length in range
             if is_passed(&next_assessment) {
                 tracing::info!(
                     "修复后达到通过线（{} 分），退出循环",
@@ -232,7 +226,6 @@ pub async fn run_chapter_review_cycle(
                 );
                 final_content = revised_content;
                 final_word_count = revised_word_count;
-                // post_revise_count 记录 revise 后剩余的 issue 数（而非字数）
                 post_revise_count = next_assessment.audit_result.issues.len() as u32;
                 current_audit = Assessment {
                     audit_result: next_assessment.audit_result.clone(),
@@ -242,18 +235,15 @@ pub async fn run_chapter_review_cycle(
                 break;
             }
 
-            // 净提升判定：score >= current + epsilon 才接受
             if next_assessment.score >= current_audit.score + NET_IMPROVEMENT_EPSILON {
                 final_content = revised_content;
                 final_word_count = revised_word_count;
-                // post_revise_count 记录 revise 后剩余的 issue 数（而非字数）
                 post_revise_count = next_assessment.audit_result.issues.len() as u32;
                 current_audit = Assessment {
                     audit_result: next_assessment.audit_result.clone(),
                     score: next_assessment.score,
                     length_in_range: next_assessment.length_in_range,
                 };
-                // 继续下一轮
             } else {
                 tracing::warn!(
                     "修复轮次 {} 未净提升（{} → {}），退出循环",
@@ -266,7 +256,6 @@ pub async fn run_chapter_review_cycle(
         }
     }
 
-    // ── 选择最佳快照 ──
     let best_snapshot = pick_best_snapshot(&snapshots);
 
     let should_restore_best = match best_snapshot {
@@ -297,10 +286,12 @@ pub async fn run_chapter_review_cycle(
 
     let revised = snapshots.len() > 1 && final_content != initial_content;
 
+    let duration_ms = start.elapsed().as_millis() as u64;
+    tracing::info!(function = "run_chapter_review_cycle", chapter_number, duration_ms, revised, score = current_audit.score, passed = current_audit.audit_result.passed, "出口");
+
     Ok(CycleResult {
         final_content,
         final_word_count,
-        // 保留 normalize 后、audit 前的字数（不被 review loop 覆盖）
         pre_audit_normalized_word_count,
         revised,
         audit_result: current_audit.audit_result,
@@ -332,10 +323,12 @@ async fn assess(
     // 章节内容非空断言（normalize 后）：空内容跳过 LLM audit，直接返回 0 分
     if let Err(e) = assert_chapter_content_not_empty(&normalized) {
         tracing::warn!("章节内容为空，跳过 LLM audit");
-        let mut audit_result = AuditResult::default();
-        audit_result.passed = false;
-        audit_result.overall_score = Some(0.0);
-        audit_result.parse_failed = true;
+        let mut audit_result = AuditResult {
+            passed: false,
+            overall_score: Some(0.0),
+            parse_failed: true,
+            ..Default::default()
+        };
         audit_result.issues.push(AuditIssue {
             severity: IssueSeverity::Critical,
             repair_scope: Some(RepairScope::Structural),
@@ -462,7 +455,6 @@ async fn normalize_if_hard_drift(
     if !is_outside_hard_range(word_count, length_spec) {
         return Ok(NormalizeResult {
             content: content.to_string(),
-            word_count,
             applied: false,
             token_usage: None,
         });
@@ -478,11 +470,8 @@ async fn normalize_if_hard_drift(
     )
     .await?;
 
-    let new_count =
-        count_chapter_length(&normalize_output.normalized_content, length_spec.counting_mode);
     Ok(NormalizeResult {
         content: normalize_output.normalized_content,
-        word_count: new_count,
         applied: normalize_output.applied,
         token_usage: None, // length_normalizer 暂未返回 token usage
     })

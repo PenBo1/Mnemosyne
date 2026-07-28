@@ -1,11 +1,6 @@
-// 材料检索: 关键词匹配 + 评分 + 片段构建。
-//
-// 评分规则:
-// - title 命中 +8 / source 命中 +4 / 正文命中 +2(并按首次命中位置加成,越靠前分越高)
-// - 片段: 首命中位置 ±700 字符
-// - 默认 limit=5,最大 12
-//
-// 注: 采用小写化 + Unicode 词分割,全角字符匹配略弱但可接受。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 材料检索 - 关键词匹配与评分
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use std::collections::HashSet;
 
@@ -24,6 +19,13 @@ pub fn retrieve_materials(
     data_dir: &DataDir,
     input: &RetrieveMaterialsInput,
 ) -> Result<Vec<RetrievedMaterial>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        query_len = input.query.len(),
+        limit = input.limit,
+        "[MaterialRetrieve] Starting retrieval"
+    );
+    
     let query = input.query.trim();
     if query.is_empty() {
         return Err(AppError::invalid_input("query cannot be empty"));
@@ -32,6 +34,11 @@ pub fn retrieve_materials(
     let limit = normalize_limit(input.limit);
 
     let assets = list_material_assets(data_dir)?;
+    tracing::debug!(
+        asset_count = assets.len(),
+        "[MaterialRetrieve] Loaded material assets"
+    );
+    
     let mut results: Vec<RetrievedMaterial> = Vec::new();
 
     for asset in assets {
@@ -71,6 +78,12 @@ pub fn retrieve_materials(
             .then_with(|| a.title.cmp(&b.title))
     });
     results.truncate(limit as usize);
+    
+    tracing::info!(
+        result_count = results.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "[MaterialRetrieve] Retrieval completed"
+    );
     Ok(results)
 }
 

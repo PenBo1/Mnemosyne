@@ -1,12 +1,14 @@
-// 互动电影 IPC 命令。
-//
-// 命令列表（前端使用 camelCase 调用）：
-// - film_generate_graph: 从前提生成 StoryGraph
-// - film_export_html: 导出为可玩 HTML
-// - film_export_ink: 导出为 Ink 脚本
-// - film_apply_delta: 应用 StoryGraphDelta 到图
-//
-// 约定：命令仅做参数提取 + 校验 + 委派，不含业务逻辑。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Interactive Film Commands - IPC 命令
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 命令列表（前端使用 camelCase 调用）：
+//! - film_generate_graph: 从前提生成 StoryGraph
+//! - film_export_html: 导出为可玩 HTML
+//! - film_export_ink: 导出为 Ink 脚本
+//! - film_apply_delta: 应用 StoryGraphDelta 到图
+//!
+//! 约定：命令仅做参数提取 + 校验 + 委派，不含业务逻辑。
 
 use crate::core::agent::commands::AgentState;
 use crate::domain::pipeline::interactive_film::authoring::apply_graph_delta;
@@ -16,6 +18,7 @@ use crate::domain::pipeline::interactive_film::export_ink::export_ink;
 use crate::domain::pipeline::interactive_film::generate::generate_story_graph;
 use crate::domain::pipeline::interactive_film::graph_schema::StoryGraph;
 use crate::shared::error::{AppError, IpcResponse};
+use std::time::Instant;
 use tauri::State;
 
 /// 从故事前提生成完整 StoryGraph。
@@ -43,7 +46,15 @@ pub async fn film_generate_graph(
 pub async fn film_export_html(
     graph: StoryGraph,
 ) -> Result<IpcResponse<String>, AppError> {
+    let start = Instant::now();
+    tracing::info!(nodes = graph.nodes.len(), "film_export_html: enter");
+    
     let html = build_playable_html(&graph)?;
+    tracing::info!(
+        html_len = html.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "film_export_html: exit"
+    );
     Ok(IpcResponse::ok(html))
 }
 

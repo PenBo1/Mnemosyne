@@ -1,12 +1,14 @@
-// Play 4-agent 流水线。
-//
-// - PlayActionInterpreterAgent：自然语言 → PlayActionIntent（永不抛错，降级为 do）
-// - PlayWorldMutatorAgent：动作+上下文 → PlayMutation（失败降级为 blocked=true）
-// - PlaySceneRendererAgent：渲染场景散文（永不抛错，3 次重试 + 降级为原始 prose）
-// - PlaySceneReconcilerAgent：补抓遗漏实体（失败降级为空 mutation）
-//
-// 每个 agent 通过 AgentEngine.prompt_once 调用 LLM。
-// 注意：prompt_once 不支持 temperature 参数，温度引导写入 system prompt。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Play 智能体 - 4-agent 流水线
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! - PlayActionInterpreterAgent：自然语言 → PlayActionIntent（永不抛错，降级为 do）
+//! - PlayWorldMutatorAgent：动作+上下文 → PlayMutation（失败降级为 blocked=true）
+//! - PlaySceneRendererAgent：渲染场景散文（永不抛错，3 次重试 + 降级为原始 prose）
+//! - PlaySceneReconcilerAgent：补抓遗漏实体（失败降级为空 mutation）
+//!
+//! 每个 agent 通过 AgentEngine.prompt_once 调用 LLM。
+//! 注意：prompt_once 不支持 temperature 参数，温度引导写入 system prompt。
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;

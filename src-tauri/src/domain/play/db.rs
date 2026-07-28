@@ -1,12 +1,14 @@
-// Play 世界图谱的 SQLite 持久化。
-//
-// 4 张表：entities / edges / state_slots / events。
-// 使用独立的 rusqlite::Connection（每个世界一个 play.db 文件），
-// 内部用 Mutex 包裹以支持 &self 方法的多线程访问。
-//
-// transaction 方法把 &Connection 传给闭包，保证多操作原子性。
-// 注意：任务规格里 transaction 闭包无参数签名会无法访问连接，
-// 这里修正为 FnOnce(&Connection) -> Result<R, AppError>，是正确性必需。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Play 数据库 - SQLite 图谱持久化
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 4 张表：entities / edges / state_slots / events。
+//! 使用独立的 rusqlite::Connection（每个世界一个 play.db 文件），
+//! 内部用 Mutex 包裹以支持 &self 方法的多线程访问。
+//!
+//! transaction 方法把 &Connection 传给闭包，保证多操作原子性。
+//! 注意：任务规格里 transaction 闭包无参数签名会无法访问连接，
+//! 这里修正为 FnOnce(&Connection) -> Result<R, AppError>，是正确性必需。
 
 use std::path::Path;
 use std::sync::Mutex;

@@ -1,4 +1,6 @@
-//! 行级 diff 算法（LCS + hunk 分组）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 版本差异 - 行级 diff 算法
+//! ═══════════════════════════════════════════════════════════════════════════
 //!
 //! 实现思路：
 //! 1. 用 LCS 动态规划求出两段文本的最长公共子序列（按行）
@@ -141,8 +143,8 @@ fn build_hunks(ops: &[DiffOp], old_lines: &[&str], new_lines: &[&str]) -> Vec<Di
             let mut old_count = 0u32;
             let mut new_count = 0u32;
 
-            for k in start..end {
-                match &ops[k] {
+            for item in ops.iter().take(end).skip(start) {
+                match item {
                     DiffOp::Equal { old_idx, new_idx } => {
                         let old_no = (*old_idx as u32) + 1;
                         let new_no = (*new_idx as u32) + 1;

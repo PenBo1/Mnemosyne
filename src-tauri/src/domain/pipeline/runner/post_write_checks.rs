@@ -1,11 +1,13 @@
-// Post-write 确定性校验。
-//
-// 提供：
-//   - normalize_post_write_surface: 剥离 meta 备注行 + 替换破折号
-//   - assert_chapter_content_not_empty: 内容非空断言
-//   - run_post_write_checks: content-only 确定性规则校验
-//   - run_post_write_checks_with_config: 完整校验（content-only + 配置依赖）
-//   - detect_cross_chapter_repetition: 跨章重复检测（独立入口）
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Post-write Checks - 写后确定性校验
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供：
+//!   - normalize_post_write_surface: 剥离 meta 备注行 + 替换破折号
+//!   - assert_chapter_content_not_empty: 内容非空断言
+//!   - run_post_write_checks: content-only 确定性规则校验
+//!   - run_post_write_checks_with_config: 完整校验（content-only + 配置依赖）
+//!   - detect_cross_chapter_repetition: 跨章重复检测（独立入口）
 
 use std::sync::OnceLock;
 
@@ -13,7 +15,7 @@ use crate::domain::pipeline::agents::continuity::{AuditIssue, IssueSeverity, Rep
 use crate::domain::pipeline::types::Language;
 use crate::shared::error::AppError;
 
-// ── 标记词表 ─────────────────────────────────────────────────
+// ── 标记词表 ────────────────────────────────────────────────────────────────
 
 /// AI 转折/惊讶标记词
 const SURPRISE_MARKERS: &[&str] = &[
@@ -627,7 +629,7 @@ fn detect_first_person_inner_state_slip(content: &str) -> Option<String> {
 /// 跨章重复检测。
 /// - zh: 6-char ngram（纯汉字），当前章内出现 ≥ 2 次 且 近期章节也包含 → 计入
 /// - en: 3-word phrase，当前章内出现 ≥ 2 次 且 近期章节也包含 → 计入
-/// 累计 ≥ 3 个重复短语才报告。
+///   累计 ≥ 3 个重复短语才报告。
 pub fn detect_cross_chapter_repetition(
     current_content: &str,
     recent_chapters_content: &str,
@@ -796,8 +798,6 @@ struct ParagraphShape {
     short_threshold: usize,
     short_paragraphs: Vec<String>,
     short_ratio: f32,
-    #[allow(dead_code)]
-    average_length: f32,
     max_consecutive_short: usize,
 }
 
@@ -810,11 +810,6 @@ fn analyze_paragraph_shape(content: &str, language: Language) -> ParagraphShape 
         .filter(|p| p.chars().count() < short_threshold)
         .map(|p| (*p).clone())
         .collect();
-    let average_length = if !paragraphs.is_empty() {
-        paragraphs.iter().map(|p| p.chars().count()).sum::<usize>() as f32 / paragraphs.len() as f32
-    } else {
-        0.0
-    };
 
     let mut max_consecutive_short = 0usize;
     let mut current = 0usize;
@@ -840,7 +835,6 @@ fn analyze_paragraph_shape(content: &str, language: Language) -> ParagraphShape 
         short_threshold,
         short_paragraphs,
         short_ratio,
-        average_length,
         max_consecutive_short,
     }
 }

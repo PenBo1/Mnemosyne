@@ -1,12 +1,11 @@
-// Writer Agent。
-//
-// 3-phase 流程：
-// 1. Creative（temperature 0.7）：写正文，输出 PRE_WRITE_CHECK + CHAPTER_TITLE + CHAPTER_CONTENT
-// 2. Observer（temperature 0.5）：提取章节事实，输出 === OBSERVATIONS ===
-// 3. Settler（temperature 0.3）：状态结算，输出 === POST_SETTLEMENT === + === RUNTIME_STATE_DELTA === JSON
-//
-// prompt 策略：保留核心 prompt（核心规则、输出格式、观察类别、伏笔追踪规则）。
-// 精简 governed context / POV filtering / dialogue fingerprints 等高级特性，留给后续阶段。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Writer Agent - 章节撰写代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 3-phase 流程：
+//! 1. Creative（temperature 0.7）：写正文，输出 PRE_WRITE_CHECK + CHAPTER_TITLE + CHAPTER_CONTENT
+//! 2. Observer（temperature 0.5）：提取章节事实，输出 === OBSERVATIONS ===
+//! 3. Settler（temperature 0.3）：状态结算，输出 === POST_SETTLEMENT === + === RUNTIME_STATE_DELTA === JSON
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -50,6 +49,14 @@ pub async fn write_chapter(
     chapter_number: u32,
     ctx: &WriterContext,
 ) -> Result<WriterOutput, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "write_chapter",
+        chapter_number,
+        book_id = %book.id,
+        "入口"
+    );
+
     // ── Phase 1: Creative writing ──
     let creative_system = build_creative_system_prompt(book);
     let creative_user = build_creative_user_message(book, chapter_number, ctx);
@@ -81,6 +88,14 @@ pub async fn write_chapter(
     let runtime_state_delta = settle_output.runtime_state_delta;
 
     let word_count = count_non_whitespace_chars(&creative.content);
+
+    tracing::info!(
+        function = "write_chapter",
+        chapter_number,
+        word_count,
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
 
     Ok(WriterOutput {
         chapter_number,
@@ -170,6 +185,68 @@ fn build_creative_system_prompt(book: &BookConfig) -> String {
 9. chapter memo 中的"Current Task"、"Do Not"、"Changes That Must Occur at Chapter End"必须在正文中真正落地执行。
 10. hook ledger 中 advance/resolve 列出的每一个 hook_id，都必须在正文中有一段具体可定位的兑现段落（≥ 60 字符）。
 </core_rules>
+
+<format_rules>
+## 禁止格式
+1. 禁止冒号分段：使用全角冒号或直接用引号，避免"他说："你好。""格式
+2. 禁止【】标记：用正文叙述代替标记，或用引号强调
+3. 禁止 emoji 和表情符号：用文字描述情绪和状态
+4. 禁止纯数字编号列表：用段落衔接，或用"首先""其次""最后"等过渡词
+5. 禁止 Markdown 格式：纯文本，不使用 **重点**、*斜体*、~~删除线~~
+6. 禁止过度分节：保持自然段落，每段 300-500 字为宜
+</format_rules>
+
+<anti_ai_rules>
+## 禁止抽象词汇
+1. 禁止程度副词堆砌：避免"非常""极其""特别""相当"，用具体描述代替
+2. 禁止抽象名词：避免"情况""问题""方面""因素"，用具体事物代替
+3. 禁止通用动词：避免"做""搞""弄""来""去"，用具体动作代替
+
+## 禁止翻译腔
+1. 禁止被动句过度使用：避免"他被给予..."，用主动句代替
+2. 禁止定语后置：避免"这是最重要的之一"，直接说"这是最重要的"
+3. 禁止关系从句堆叠：避免"那个正在读书的女孩的书的..."
+4. 禁止介词短语过度使用：避免"关于这个问题，在他看来..."
+
+## 禁止机械衔接
+1. 禁止转折词堆砌：减少"但是""然而""不过""却"
+2. 禁止因果词过度使用：让因果关系在情节中自然呈现
+3. 禁止重复的衔接词：避免每段都以"然后"开头
+4. 禁止僵硬的总结句：用情节发展代替"总之""综上所述"
+</anti_ai_rules>
+
+<pacing_rules>
+## 看点密度（每 500-800 字至少一个看点）
+看点类型：
+- 冲突升级：矛盾激化、对抗升级
+- 意外转折：意料之外、情理之中
+- 信息揭示：秘密曝光、真相大白
+- 能力展示：战力展现、技能炫技
+- 情感冲击：感动、愤怒、恐惧、惊喜
+- 幽默笑点：机智对话、尴尬场景、反转搞笑
+
+## 槽点控制（避免连续 3 个以上槽点）
+槽点类型：
+- 逻辑漏洞：人物行为不合逻辑
+- 设定冲突：与前文设定矛盾
+- 人物降智：聪明角色突然变蠢
+- 剧情拖沓：无意义的重复描写
+- 强行误会：为了剧情需要制造不合理误会
+
+## 情绪高潮（每 1500-2500 字安排一个）
+高潮类型：
+- 战斗高潮：生死对决、绝境反击
+- 情感高潮：表白、分离、重逢、牺牲
+- 悬疑高潮：真相揭示、阴谋曝光
+- 成长高潮：突破、觉醒、顿悟
+</pacing_rules>
+
+<golden_opening>
+## 黄金开头三要素（前 50-100 字必须包含）
+1. 钩子（Hook）：悬念/冲突/反差/人物/场景钩子，避免天气/自我介绍/抽象哲理开头
+2. 节奏启动：动作章节快节奏开头，日常章节中节奏开头，情感章节慢节奏开头
+3. 信息锚点：50 字内明确时间/地点/人物/目标
+</golden_opening>
 
 <safety>
 - NEVER 在正文结尾追加"本章完"、"未完待续"、"敬请期待下章"等总结性或元层尾句——结尾必须以故事钩子收束。
@@ -541,6 +618,7 @@ fn build_settler_system_prompt(book: &BookConfig) -> String {
     )
 }
 
+#[allow(clippy::too_many_arguments)] // settle 上下文字段较多，参数由调用方组装，无法聚合
 fn build_settler_user_message(
     chapter_number: u32,
     title: &str,

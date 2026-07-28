@@ -1,12 +1,14 @@
-// Hook 晋升工具。
-//
-// 核心逻辑：
-// 1. 从 chapter_summaries.md 的「伏笔动态」列（第 5 列）按 `\bhookId\b` 正则统计
-//    每个 hook 在历史章节中被推进的次数（advancedCount）。
-// 2. 对每个 promoted !== true 的 hook，若 advancedCount >= 2，则晋升为 promoted=true。
-// 3. 返回 PromotionPassResult { updated, hooks, flipped_count }。
-//
-// 设计原则：纯函数 + 无 LLM 调用。所有 I/O 由调用方完成。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline Utils Hook Promotion - Hook 晋升工具
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 核心逻辑：
+//! 1. 从 chapter_summaries.md 的「伏笔动态」列（第 5 列）按 `\bhookId\b` 正则统计
+//!    每个 hook 在历史章节中被推进的次数（advancedCount）。
+//! 2. 对每个 promoted !== true 的 hook，若 advancedCount >= 2，则晋升为 promoted=true。
+//! 3. 返回 PromotionPassResult { updated, hooks, flipped_count }。
+//!
+//! 设计原则：纯函数 + 无 LLM 调用。所有 I/O 由调用方完成。
 
 use crate::domain::pipeline::state::types::HookRecord;
 

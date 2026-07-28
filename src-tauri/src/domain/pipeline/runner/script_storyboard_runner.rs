@@ -1,14 +1,17 @@
-// Script/Storyboard/InteractiveFilm Runner —— 剧本/分镜/互动影游编排器。
-//
-// 3 个独立编排流程：
-// - run_script_creation: 剧本创作（dramas/{projectId}/）
-// - run_storyboard_creation: 分镜创作（storyboards/{projectId}/）
-// - run_interactive_film_creation: 互动影游创作（interactive-films/{projectId}/）
-//
-// 文件系统操作用 std::fs 同步 API（与 short_fiction_runner.rs 一致），LLM 调用走 AgentEngine。
-// 互动影游的 story-graph 生成未实现，仅落盘其他产物。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Script/Storyboard Runner - 剧本分镜编排器
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 3 个独立编排流程：
+//! - run_script_creation: 剧本创作（dramas/{projectId}/）
+//! - run_storyboard_creation: 分镜创作（storyboards/{projectId}/）
+//! - run_interactive_film_creation: 互动影游创作（interactive-films/{projectId}/）
+//!
+//! 文件系统操作用 std::fs 同步 API（与 short_fiction_runner.rs 一致），LLM 调用走 AgentEngine。
+//! 互动影游的 story-graph 生成未实现，仅落盘其他产物。
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -163,6 +166,9 @@ pub async fn run_script_creation(
     engine: &AgentEngine,
     options: &ScriptCreationRunOptions,
 ) -> Result<ScriptCreationRunResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "run_script_creation", title = %options.title, "入口");
+
     let language = options.language.unwrap_or_default();
     let project_id = resolve_project_id(&options.project_id, &options.title);
     let base_dir = resolve_project_base_dir(
@@ -186,23 +192,34 @@ pub async fn run_script_creation(
     write_project_text(&options.project_root, &format!("{}/script-spec.md", base_dir), &spec)?;
 
     tracing::info!("[script] 写剧本正文");
-    let script = script_storyboard::write_script(engine, &input).await?;
-    write_project_text(&options.project_root, &format!("{}/script.md", base_dir), &script)?;
+    match script_storyboard::write_script(engine, &input).await {
+        Ok(script) => {
+            write_project_text(&options.project_root, &format!("{}/script.md", base_dir), &script)?;
 
-    let status = RunStatusJson {
-        status: "completed".to_string(),
-        kind: "script".to_string(),
-        title: options.title.clone(),
-        completed_at: chrono::Utc::now().to_rfc3339(),
-    };
-    write_project_json(&options.project_root, &format!("{}/status.json", base_dir), &status)?;
+            let status = RunStatusJson {
+                status: "completed".to_string(),
+                kind: "script".to_string(),
+                title: options.title.clone(),
+                completed_at: chrono::Utc::now().to_rfc3339(),
+            };
+            write_project_json(&options.project_root, &format!("{}/status.json", base_dir), &status)?;
 
-    Ok(ScriptCreationRunResult {
-        project_id,
-        base_dir: base_dir.clone(),
-        spec_path: rel_path(&base_dir, "script-spec.md"),
-        script_path: rel_path(&base_dir, "script.md"),
-    })
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "run_script_creation", title = %options.title, duration_ms, project_id, "出口");
+
+            Ok(ScriptCreationRunResult {
+                project_id,
+                base_dir: base_dir.clone(),
+                spec_path: rel_path(&base_dir, "script-spec.md"),
+                script_path: rel_path(&base_dir, "script.md"),
+            })
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "run_script_creation", title = %options.title, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 /// 运行分镜创作。
@@ -210,6 +227,9 @@ pub async fn run_storyboard_creation(
     engine: &AgentEngine,
     options: &StoryboardCreationRunOptions,
 ) -> Result<StoryboardCreationRunResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "run_storyboard_creation", title = %options.title, "入口");
+
     let language = options.language.unwrap_or_default();
     let project_id = resolve_project_id(&options.project_id, &options.title);
     let base_dir = resolve_project_base_dir(
@@ -234,45 +254,57 @@ pub async fn run_storyboard_creation(
     write_project_text(&options.project_root, &format!("{}/storyboard-spec.md", base_dir), &spec)?;
 
     tracing::info!("[storyboard] 写分镜和图像提示词");
-    let storyboard = script_storyboard::write_storyboard(engine, &input).await?;
-    write_project_text(&options.project_root, &format!("{}/storyboard.md", base_dir), &storyboard)?;
 
-    let prompts = script_storyboard::extract_image_prompts(&storyboard);
-    let image_prompts = format_numbered_prompts(&prompts);
-    write_project_text(&options.project_root, &format!("{}/image-prompts.md", base_dir), &image_prompts)?;
+    match script_storyboard::write_storyboard(engine, &input).await {
+        Ok(storyboard) => {
+            write_project_text(&options.project_root, &format!("{}/storyboard.md", base_dir), &storyboard)?;
 
-    ensure_project_dir(&options.project_root, &format!("{}/assets/source", base_dir))?;
-    ensure_project_dir(&options.project_root, &format!("{}/assets/generated", base_dir))?;
-    ensure_project_dir(&options.project_root, &format!("{}/assets/selected", base_dir))?;
+            let prompts = script_storyboard::extract_image_prompts(&storyboard);
+            let image_prompts = format_numbered_prompts(&prompts);
+            write_project_text(&options.project_root, &format!("{}/image-prompts.md", base_dir), &image_prompts)?;
 
-    let manifest = create_storyboard_assets_manifest(
-        &options.title,
-        &project_id,
-        &base_dir,
-        &rel_path(&base_dir, "storyboard.md"),
-        &rel_path(&base_dir, "image-prompts.md"),
-        &prompts,
-        &chrono::Utc::now().to_rfc3339(),
-    );
-    write_project_json(&options.project_root, &format!("{}/assets.json", base_dir), &manifest)?;
+            ensure_project_dir(&options.project_root, &format!("{}/assets/source", base_dir))?;
+            ensure_project_dir(&options.project_root, &format!("{}/assets/generated", base_dir))?;
+            ensure_project_dir(&options.project_root, &format!("{}/assets/selected", base_dir))?;
 
-    let status = RunStatusJson {
-        status: "completed".to_string(),
-        kind: "storyboard".to_string(),
-        title: options.title.clone(),
-        completed_at: chrono::Utc::now().to_rfc3339(),
-    };
-    write_project_json(&options.project_root, &format!("{}/status.json", base_dir), &status)?;
+            let manifest = create_storyboard_assets_manifest(
+                &options.title,
+                &project_id,
+                &base_dir,
+                &rel_path(&base_dir, "storyboard.md"),
+                &rel_path(&base_dir, "image-prompts.md"),
+                &prompts,
+                &chrono::Utc::now().to_rfc3339(),
+            );
+            write_project_json(&options.project_root, &format!("{}/assets.json", base_dir), &manifest)?;
 
-    Ok(StoryboardCreationRunResult {
-        project_id,
-        base_dir: base_dir.clone(),
-        spec_path: rel_path(&base_dir, "storyboard-spec.md"),
-        storyboard_path: rel_path(&base_dir, "storyboard.md"),
-        image_prompts_path: rel_path(&base_dir, "image-prompts.md"),
-        assets_manifest_path: rel_path(&base_dir, "assets.json"),
-        assets_dir: rel_path(&base_dir, "assets"),
-    })
+            let status = RunStatusJson {
+                status: "completed".to_string(),
+                kind: "storyboard".to_string(),
+                title: options.title.clone(),
+                completed_at: chrono::Utc::now().to_rfc3339(),
+            };
+            write_project_json(&options.project_root, &format!("{}/status.json", base_dir), &status)?;
+
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "run_storyboard_creation", title = %options.title, duration_ms, project_id, shot_count = prompts.len(), "出口");
+
+            Ok(StoryboardCreationRunResult {
+                project_id,
+                base_dir: base_dir.clone(),
+                spec_path: rel_path(&base_dir, "storyboard-spec.md"),
+                storyboard_path: rel_path(&base_dir, "storyboard.md"),
+                image_prompts_path: rel_path(&base_dir, "image-prompts.md"),
+                assets_manifest_path: rel_path(&base_dir, "assets.json"),
+                assets_dir: rel_path(&base_dir, "assets"),
+            })
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "run_storyboard_creation", title = %options.title, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 /// 运行互动影游创作。
@@ -281,6 +313,9 @@ pub async fn run_interactive_film_creation(
     engine: &AgentEngine,
     options: &InteractiveFilmCreationRunOptions,
 ) -> Result<InteractiveFilmCreationRunResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "run_interactive_film_creation", title = %options.title, "入口");
+
     let language = options.language.unwrap_or_default();
     let project_id = resolve_project_id(&options.project_id, &options.title);
     let base_dir = resolve_project_base_dir(
@@ -306,93 +341,103 @@ pub async fn run_interactive_film_creation(
     write_project_text(&options.project_root, &format!("{}/interactive-spec.md", base_dir), &spec)?;
 
     tracing::info!("[interactive-film] 写剧情树、旗标、剧本、分镜和图像提示词");
-    let package_markdown = script_storyboard::write_interactive_film(engine, &input).await?;
 
-    let story_tree = required_section(
-        &package_markdown,
-        &["剧情树", "Story Tree", "Branching Story Tree"],
-        &package_markdown,
-    );
-    let flags = required_section(
-        &package_markdown,
-        &[
-            "旗标与变量系统说明",
-            "变量与旗标表",
-            "变量和旗标表",
-            "变量表",
-            "旗标表",
-            "Variables and Flags",
-            "Flag Table",
-        ],
-        &package_markdown,
-    );
-    let script = required_section(
-        &package_markdown,
-        &["互动剧本", "Interactive Script", "Script"],
-        &package_markdown,
-    );
-    let storyboard = required_section(
-        &package_markdown,
-        &[
-            "分镜与图像提示词",
-            "分镜表",
-            "Storyboard and Image Prompts",
-            "Storyboard",
-        ],
-        &package_markdown,
-    );
+    match script_storyboard::write_interactive_film(engine, &input).await {
+        Ok(package_markdown) => {
+            let story_tree = required_section(
+                &package_markdown,
+                &["剧情树", "Story Tree", "Branching Story Tree"],
+                &package_markdown,
+            );
+            let flags = required_section(
+                &package_markdown,
+                &[
+                    "旗标与变量系统说明",
+                    "变量与旗标表",
+                    "变量和旗标表",
+                    "变量表",
+                    "旗标表",
+                    "Variables and Flags",
+                    "Flag Table",
+                ],
+                &package_markdown,
+            );
+            let script = required_section(
+                &package_markdown,
+                &["互动剧本", "Interactive Script", "Script"],
+                &package_markdown,
+            );
+            let storyboard = required_section(
+                &package_markdown,
+                &[
+                    "分镜与图像提示词",
+                    "分镜表",
+                    "Storyboard and Image Prompts",
+                    "Storyboard",
+                ],
+                &package_markdown,
+            );
 
-    let prompts = script_storyboard::extract_image_prompts(&storyboard);
-    let image_prompts = format_numbered_prompts(&prompts);
+            let prompts = script_storyboard::extract_image_prompts(&storyboard);
+            let image_prompts = format_numbered_prompts(&prompts);
 
-    let story_graph_path = rel_path(&base_dir, "story-graph.json");
+            let story_graph_path = rel_path(&base_dir, "story-graph.json");
 
-    write_project_text(&options.project_root, &format!("{}/story-tree.md", base_dir), &story_tree)?;
-    write_project_text(&options.project_root, &format!("{}/flags.md", base_dir), &flags)?;
-    let normalized_script = script_storyboard::normalize_episode_end_labels(&script, 1);
-    write_project_text(&options.project_root, &format!("{}/script.md", base_dir), &normalized_script)?;
-    write_project_text(&options.project_root, &format!("{}/storyboard.md", base_dir), &storyboard)?;
-    write_project_text(&options.project_root, &format!("{}/image-prompts.md", base_dir), &image_prompts)?;
+            write_project_text(&options.project_root, &format!("{}/story-tree.md", base_dir), &story_tree)?;
+            write_project_text(&options.project_root, &format!("{}/flags.md", base_dir), &flags)?;
+            let normalized_script = script_storyboard::normalize_episode_end_labels(&script, 1);
+            write_project_text(&options.project_root, &format!("{}/script.md", base_dir), &normalized_script)?;
+            write_project_text(&options.project_root, &format!("{}/storyboard.md", base_dir), &storyboard)?;
+            write_project_text(&options.project_root, &format!("{}/image-prompts.md", base_dir), &image_prompts)?;
 
-    ensure_project_dir(&options.project_root, &format!("{}/assets/source", base_dir))?;
-    ensure_project_dir(&options.project_root, &format!("{}/assets/generated", base_dir))?;
-    ensure_project_dir(&options.project_root, &format!("{}/assets/selected", base_dir))?;
+            ensure_project_dir(&options.project_root, &format!("{}/assets/source", base_dir))?;
+            ensure_project_dir(&options.project_root, &format!("{}/assets/generated", base_dir))?;
+            ensure_project_dir(&options.project_root, &format!("{}/assets/selected", base_dir))?;
 
-    let manifest = create_storyboard_assets_manifest(
-        &options.title,
-        &project_id,
-        &base_dir,
-        &rel_path(&base_dir, "storyboard.md"),
-        &rel_path(&base_dir, "image-prompts.md"),
-        &prompts,
-        &chrono::Utc::now().to_rfc3339(),
-    );
-    write_project_json(&options.project_root, &format!("{}/assets.json", base_dir), &manifest)?;
+            let manifest = create_storyboard_assets_manifest(
+                &options.title,
+                &project_id,
+                &base_dir,
+                &rel_path(&base_dir, "storyboard.md"),
+                &rel_path(&base_dir, "image-prompts.md"),
+                &prompts,
+                &chrono::Utc::now().to_rfc3339(),
+            );
+            write_project_json(&options.project_root, &format!("{}/assets.json", base_dir), &manifest)?;
 
-    // story-graph 生成未实现
-    tracing::info!("[interactive-film] story-graph 生成未实现，跳过 story-graph.json");
+            tracing::info!("[interactive-film] story-graph 生成未实现，跳过 story-graph.json");
 
-    let status = RunStatusJson {
-        status: "completed".to_string(),
-        kind: "interactive_film".to_string(),
-        title: options.title.clone(),
-        completed_at: chrono::Utc::now().to_rfc3339(),
-    };
-    write_project_json(&options.project_root, &format!("{}/status.json", base_dir), &status)?;
+            let status = RunStatusJson {
+                status: "completed".to_string(),
+                kind: "interactive_film".to_string(),
+                title: options.title.clone(),
+                completed_at: chrono::Utc::now().to_rfc3339(),
+            };
+            write_project_json(&options.project_root, &format!("{}/status.json", base_dir), &status)?;
 
-    Ok(InteractiveFilmCreationRunResult {
-        project_id,
-        base_dir: base_dir.clone(),
-        story_graph_path,
-        spec_path: rel_path(&base_dir, "interactive-spec.md"),
-        story_tree_path: rel_path(&base_dir, "story-tree.md"),
-        flags_path: rel_path(&base_dir, "flags.md"),
-        script_path: rel_path(&base_dir, "script.md"),
-        storyboard_path: rel_path(&base_dir, "storyboard.md"),
-        image_prompts_path: rel_path(&base_dir, "image-prompts.md"),
-        assets_manifest_path: rel_path(&base_dir, "assets.json"),
-        assets_dir: rel_path(&base_dir, "assets"),
-    })
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "run_interactive_film_creation", title = %options.title, duration_ms, project_id, "出口");
+
+            Ok(InteractiveFilmCreationRunResult {
+                project_id,
+                base_dir: base_dir.clone(),
+                story_graph_path,
+                spec_path: rel_path(&base_dir, "interactive-spec.md"),
+                story_tree_path: rel_path(&base_dir, "story-tree.md"),
+                flags_path: rel_path(&base_dir, "flags.md"),
+                script_path: rel_path(&base_dir, "script.md"),
+                storyboard_path: rel_path(&base_dir, "storyboard.md"),
+                image_prompts_path: rel_path(&base_dir, "image-prompts.md"),
+                assets_manifest_path: rel_path(&base_dir, "assets.json"),
+                assets_dir: rel_path(&base_dir, "assets"),
+            })
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "run_interactive_film_creation", title = %options.title, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

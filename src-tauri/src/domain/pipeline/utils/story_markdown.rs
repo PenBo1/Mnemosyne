@@ -1,19 +1,21 @@
-// Story Markdown 解析器。
-//
-// 提供 3 个解析器，从 markdown 真相文件构建结构化 JSON 索引：
-// 1. parse_current_state_facts: current_state.md → Vec<CurrentStateFact>
-// 2. parse_pending_hooks_markdown: pending_hooks.md → Vec<HookRecord>
-// 3. parse_chapter_summaries_markdown: chapter_summaries.md → Vec<ChapterSummaryRow>
-//
-// 设计原则：纯函数 + 无 I/O。调用方负责读取 .md 文件内容传入。
-// 兼容契约：表格优先 + bullet 列表 fallback。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Pipeline Utils Story Markdown - Story Markdown 解析器
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 提供 3 个解析器，从 markdown 真相文件构建结构化 JSON 索引：
+//! 1. parse_current_state_facts: current_state.md -> Vec<CurrentStateFact>
+//! 2. parse_pending_hooks_markdown: pending_hooks.md -> Vec<HookRecord>
+//! 3. parse_chapter_summaries_markdown: chapter_summaries.md -> Vec<ChapterSummaryRow>
+//!
+//! 设计原则：纯函数 + 无 I/O。调用方负责读取 .md 文件内容传入。
+//! 兼容契约：表格优先 + bullet 列表 fallback。
 
 use crate::domain::pipeline::state::types::{
     ChapterSummaryRow, CurrentStateFact, HookPayoffTiming, HookRecord, HookStatus,
 };
 use crate::domain::pipeline::types::Language;
 
-// ── 1. parse_current_state_facts ──────────────────────────────
+// ── 1. parse_current_state_facts ────────────────────────────────────────────
 
 /// 解析 current_state.md → Vec<CurrentStateFact>。
 ///

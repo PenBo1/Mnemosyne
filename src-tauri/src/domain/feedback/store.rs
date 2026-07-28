@@ -1,8 +1,13 @@
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 反馈存储 - 错误事件与约束教训存储
+//! ═══════════════════════════════════════════════════════════════════════════
 
 use regex::Regex;
 use std::sync::OnceLock;
 
 use super::types::{ErrorEvent, Severity, ConstraintLesson, FeedbackRules};
+
+// ── 密钥脱敏 ────────────────────────────────────────────────────────────────
 
 pub struct SecretRedactor;
 
@@ -12,20 +17,18 @@ impl Default for SecretRedactor {
     }
 }
 
-/// 预编译的 value-redaction 正则集合。
-/// 匹配 `key=value` / `key: value` / `key="value"` / `Bearer token` / `sk-xxx` 等，
-/// 整体替换 value 部分（而非仅替换 key 名）。
+/// 预编译的 value-redaction 正则集合
 fn value_redaction_regex() -> &'static Vec<Regex> {
     static REGEXES: OnceLock<Vec<Regex>> = OnceLock::new();
     REGEXES.get_or_init(|| {
         vec![
-            // key=value 或 key=value（value 到空白/行尾/引号为止）
+            // key=value 格式
             Regex::new(r#"(?i)(api[_-]?key|secret|password|passwd|token|credential|auth|access[_-]?key)\s*[=:]\s*[^\s,;"'\]]+"#).unwrap(),
-            // key="value" 或 key='value'
+            // key="value" 格式
             Regex::new(r#"(?i)(api[_-]?key|secret|password|passwd|token|credential|auth|access[_-]?key)\s*[=:]\s*["'][^"']*["']"#).unwrap(),
-            // Bearer <token>
+            // Bearer token
             Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]+").unwrap(),
-            // sk-xxx (OpenAI 风格 key)
+            // OpenAI 风格 key
             Regex::new(r"sk-[A-Za-z0-9]{20,}").unwrap(),
         ]
     })
@@ -39,13 +42,11 @@ impl SecretRedactor {
         for re in value_redaction_regex() {
             let matches: Vec<(usize, usize)> = re.find_iter(&redacted.clone()).map(|m| (m.start(), m.end())).collect();
             if matches.is_empty() { continue; }
-            // 从后往前替换避免 offset 偏移
             for (start, end) in matches.into_iter().rev() {
                 let replacement = if redacted[start..end].to_lowercase().starts_with("bearer") {
                     "bearer [REDACTED]".to_string()
                 } else if redacted[start..end].contains('=') || redacted[start..end].contains(':') {
-                    // 保留 key= 前缀,只替换 value
-                    let prefix_end = redacted[start..end].find(|c| c == '=' || c == ':').map(|i| start + i + 1).unwrap_or(end);
+                    let prefix_end = redacted[start..end].find(['=', ':']).map(|i| start + i + 1).unwrap_or(end);
                     format!("{} [REDACTED]", &redacted[start..prefix_end])
                 } else {
                     "[REDACTED]".to_string()
@@ -57,6 +58,8 @@ impl SecretRedactor {
         (redacted, count)
     }
 }
+
+// ── 存储类型 ────────────────────────────────────────────────────────────────
 
 pub struct FeedbackStore {
     events: Vec<ErrorEvent>,
@@ -73,6 +76,7 @@ impl Default for FeedbackStore {
 impl FeedbackStore {
     pub fn new() -> Self { Self { events: Vec::new(), lessons: Vec::new(), rules: FeedbackRules::default() } }
 
+    /// 记录错误事件
     pub fn record_event(&mut self, mut event: ErrorEvent) {
         let redactor = SecretRedactor::new();
         let (redacted_msg, redactions) = redactor.redact(&event.message);
@@ -81,6 +85,7 @@ impl FeedbackStore {
         self.check_and_generate_lessons();
     }
 
+    /// 检查并生成约束教训
     fn check_and_generate_lessons(&mut self) {
         let mut groups: std::collections::HashMap<String, Vec<&ErrorEvent>> = std::collections::HashMap::new();
         for event in &self.events { groups.entry(event.error_type.clone()).or_default().push(event); }
@@ -103,8 +108,10 @@ impl FeedbackStore {
         }
     }
 
+    /// 获取活跃的约束教训
     pub fn active_lessons(&self) -> Vec<&ConstraintLesson> { self.lessons.iter().filter(|l| l.active).take(self.rules.max_active_lessons).collect() }
 
+    /// 格式化约束教训用于 prompt
     pub fn format_lessons_for_prompt(&self) -> String {
         let lessons = self.active_lessons();
         if lessons.is_empty() { return String::new(); }
@@ -115,12 +122,16 @@ impl FeedbackStore {
     pub fn events(&self) -> &[ErrorEvent] { &self.events }
     pub fn lessons(&self) -> &[ConstraintLesson] { &self.lessons }
 
+    /// 停用约束教训
     pub fn deactivate_lesson(&mut self, lesson_id: &str) -> bool {
         if let Some(lesson) = self.lessons.iter_mut().find(|l| l.id == lesson_id) { lesson.active = false; true } else { false }
     }
 
+    /// 清理旧事件
     pub fn prune_events(&mut self, keep: usize) { if self.events.len() > keep { let drain_count = self.events.len() - keep; self.events.drain(..drain_count); } }
 }
+
+// ── 测试 ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

@@ -1,8 +1,10 @@
-// 雷达数据源:从小说平台抓取排行榜数据。
-//
-// 用 reqwest 异步抓取 + regex 解析。
-// 网络错误静默跳过(返回空 entries),不阻断扫描流程——
-// LLM 会基于已获取的数据分析,全部失败时基于自身知识分析。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 雷达数据源 - 平台排行榜抓取
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 用 reqwest 异步抓取 + regex 解析。
+//! 网络错误静默跳过(返回空 entries),不阻断扫描流程——
+//! LLM 会基于已获取的数据分析,全部失败时基于自身知识分析。
 
 use std::sync::OnceLock;
 
@@ -135,9 +137,15 @@ impl RadarSource for QidianRadarSource {
     }
 
     async fn fetch(&self) -> PlatformRankings {
+        let start = std::time::Instant::now();
+        tracing::debug!("[RadarSource] Fetching from Qidian");
+        
         let client = match qidian_client() {
             Some(c) => c,
-            None => return PlatformRankings { platform: "起点中文网".into(), entries: vec![] },
+            None => {
+                tracing::warn!("[RadarSource] Failed to create Qidian HTTP client");
+                return PlatformRankings { platform: "起点中文网".into(), entries: vec![] };
+            }
         };
 
         let resp = match client.get("https://www.qidian.com/rank/").send().await {
@@ -177,6 +185,11 @@ impl RadarSource for QidianRadarSource {
             }
         }
 
+        tracing::debug!(
+            entries = entries.len(),
+            duration_ms = start.elapsed().as_millis() as u64,
+            "[RadarSource] Qidian fetch completed"
+        );
         PlatformRankings { platform: "起点中文网".into(), entries }
     }
 }

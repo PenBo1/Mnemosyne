@@ -1,10 +1,10 @@
-// Composer Agent。
-//
-// 职责：为 writer 编译上下文。包含两个 LLM 子任务：
-// 1. select_outline_sections —— 语义选段，从候选大纲段落中挑出当前章节真正需要的部分
-// 2. compile_compressible_context —— 语义压缩，把可压缩上下文编译为简洁 Markdown
-//
-// prompt 策略：语义选段 + 受保护/可压缩分区编译模式。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Composer Agent - 上下文编译代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：为 writer 编译上下文。包含两个 LLM 子任务：
+//! 1. select_outline_sections —— 语义选段，从候选大纲段落中挑出当前章节真正需要的部分
+//! 2. compile_compressible_context —— 语义压缩，把可压缩上下文编译为简洁 Markdown
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -60,8 +60,24 @@ pub async fn select_outline_sections(
     engine: &AgentEngine,
     request: &OutlineSelectionRequest,
 ) -> Result<Vec<String>, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "select_outline_sections",
+        chapter_number = request.chapter_number,
+        candidates_count = request.candidates.len(),
+        "入口"
+    );
+
     // 候选 ≤ 1 直接返回全部
     if should_skip_selection(&request.candidates) {
+        tracing::info!(
+            function = "select_outline_sections",
+            chapter_number = request.chapter_number,
+            skipped = true,
+            reason = "candidates <= 1",
+            duration_ms = start.elapsed().as_millis() as u64,
+            "出口"
+        );
         return Ok(request
             .candidates
             .iter()
@@ -80,10 +96,20 @@ pub async fn select_outline_sections(
         .map(|c| c.source.as_str())
         .collect();
     let selected = parse_selected_sources(&response)?;
-    Ok(selected
+    let result: Vec<String> = selected
         .into_iter()
         .filter(|s| allowed.contains(s.as_str()))
-        .collect())
+        .collect();
+
+    tracing::info!(
+        function = "select_outline_sections",
+        chapter_number = request.chapter_number,
+        selected_count = result.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
+
+    Ok(result)
 }
 
 /// 判断是否需要调用 LLM（候选 ≤ 1 时直接返回全部，无需 LLM）
@@ -99,9 +125,28 @@ pub async fn compile_compressible_context(
     engine: &AgentEngine,
     request: &CompressibleContextRequest,
 ) -> Result<String, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "compile_compressible_context",
+        chapter_number = request.chapter_number,
+        protected_count = request.protected_entries.len(),
+        compressible_count = request.compressible_entries.len(),
+        max_tokens = request.max_input_tokens,
+        "入口"
+    );
+
     let system_prompt = build_compile_system_prompt();
     let user_message = build_compile_user_message(request);
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
+
+    tracing::info!(
+        function = "compile_compressible_context",
+        chapter_number = request.chapter_number,
+        result_len = response.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
+
     Ok(response.trim().to_string())
 }
 

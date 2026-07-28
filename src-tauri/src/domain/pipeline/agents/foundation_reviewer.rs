@@ -1,9 +1,11 @@
-// FoundationReviewer Agent。
-//
-// 职责：对 Architect 生成的 5-SECTION 基础设定做结构评审，输出 5 维度评分 + 总评。
-// 评分标准：80+ 通过 / 60-79 需修改 / <60 方向性错误。
-//
-// prompt 策略：保留 5 维度评分 + === DIMENSION: N === 输出格式。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! FoundationReviewer Agent - 基础设定评审代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：对 Architect 生成的 5-SECTION 基础设定做结构评审，输出 5 维度评分 + 总评。
+//! 评分标准：80+ 通过 / 60-79 需修改 / <60 方向性错误。
+
+use std::time::Instant;
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -33,11 +35,25 @@ pub async fn review_foundation(
     foundation: &ArchitectOutput,
     target_chapters: u32,
 ) -> Result<FoundationReviewResult, AppError> {
+    let start = Instant::now();
+    tracing::info!(function = "review_foundation", target_chapters, "入口");
+
     let system_prompt = build_system_prompt(target_chapters);
     let user_message = build_user_message(foundation);
 
-    let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    Ok(parse_review_result(&response))
+    match engine.prompt_once(&system_prompt, &user_message).await {
+        Ok(response) => {
+            let result = parse_review_result(&response);
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::info!(function = "review_foundation", target_chapters, duration_ms, total_score = result.total_score, passed = result.passed, "出口");
+            Ok(result)
+        }
+        Err(e) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            tracing::error!(function = "review_foundation", target_chapters, duration_ms, error = %e, "错误");
+            Err(e)
+        }
+    }
 }
 
 // 5 个评审维度

@@ -1,15 +1,14 @@
-// Reviser Agent。
-//
-// 职责：根据审计意见修订章节。支持 6 种模式：
-// - auto: 自动路由（根据 issue 类型决定 patch-only / rewrite-only / allow-full）
-// - polish: 只改表达、节奏、段落呼吸，不改事实与剧情
-// - rewrite: 重组问题段落，保留原文绝大部分句段
-// - rework: 重构场景推进和冲突组织，不改主设定和大事件
-// - anti-detect: 反 AI 检测改写
-// - spot-fix: 定点修复，只改审稿指出的具体句子
-//
-// prompt 策略：保留修稿原则、PATCHES/REVISED_CONTENT 路由、输出格式。
-// 精简 governed context、spot-fix patch 应用器等高级特性。
+//! ═══════════════════════════════════════════════════════════════════════════
+//! Reviser Agent - 章节修订代理
+//! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 职责：根据审计意见修订章节。支持 6 种模式：
+//! - auto: 自动路由（根据 issue 类型决定 patch-only / rewrite-only / allow-full）
+//! - polish: 只改表达、节奏、段落呼吸，不改事实与剧情
+//! - rewrite: 重组问题段落，保留原文绝大部分句段
+//! - rework: 重构场景推进和冲突组织，不改主设定和大事件
+//! - anti-detect: 反 AI 检测改写
+//! - spot-fix: 定点修复，只改审稿指出的具体句子
 
 use crate::core::agent::engine::AgentEngine;
 use crate::shared::error::AppError;
@@ -73,6 +72,16 @@ pub async fn revise_chapter(
     mode: ReviseMode,
     ctx: &ReviserContext,
 ) -> Result<ReviseOutput, AppError> {
+    let start = std::time::Instant::now();
+    tracing::info!(
+        function = "revise_chapter",
+        chapter_number,
+        book_id = %book.id,
+        mode = ?mode,
+        issues_count = issues.len(),
+        "入口"
+    );
+
     let auto_output_mode = if mode == ReviseMode::Auto {
         resolve_auto_output_mode(issues)
     } else {
@@ -83,7 +92,19 @@ pub async fn revise_chapter(
     let user_message = build_user_message(book, chapter_number, chapter_content, issues, mode, ctx);
 
     let response = engine.prompt_once(&system_prompt, &user_message).await?;
-    Ok(parse_output(&response, mode, auto_output_mode, chapter_content))
+    let result = parse_output(&response, mode, auto_output_mode, chapter_content);
+
+    tracing::info!(
+        function = "revise_chapter",
+        chapter_number,
+        applied = result.applied,
+        word_count = result.word_count,
+        fixed_count = result.fixed_issues.len(),
+        duration_ms = start.elapsed().as_millis() as u64,
+        "出口"
+    );
+
+    Ok(result)
 }
 
 // ── Auto 路由：根据 issue 类型决定输出模式 ───────────────────
