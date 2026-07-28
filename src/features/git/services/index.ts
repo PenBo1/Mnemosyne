@@ -1,21 +1,13 @@
-﻿import { ipc, ipcVoid } from "@/services/ipc";
-import type { Commit, Diff, GitConfig, GitInitResult, GitStatus, InstallResult, RollbackMode } from "@/features/git/types";
+import { ipc, ipcVoid } from "@/services/ipc";
+import type { Commit, Diff, GitConfig, GitInitResult, GitStatus, RollbackMode } from "@/features/git/types";
 
-// ── Install & Init ─────────────────────────────────────────
-
-export async function checkGitInstalled(): Promise<boolean> {
-  return ipc<boolean>("git_check_installed");
-}
-
-export async function installGit(): Promise<InstallResult> {
-  return ipc<InstallResult>("git_install");
-}
+// ── 初始化 ─────────────────────────────────────────
 
 export async function initRepository(workspacePath: string): Promise<GitInitResult> {
   return ipc<GitInitResult>("git_init", { workspacePath });
 }
 
-// ── Status & History ───────────────────────────────────────
+// ── 状态与历史 ───────────────────────────────────────
 
 export async function getGitStatus(workspacePath: string): Promise<GitStatus> {
   return ipc<GitStatus>("git_status", { workspacePath });
@@ -23,22 +15,28 @@ export async function getGitStatus(workspacePath: string): Promise<GitStatus> {
 
 export async function getGitLog(
   workspacePath: string,
-  limit: number | null = null
+  limit?: number,
+  skip?: number
 ): Promise<Commit[]> {
-  return ipc<Commit[]>("git_log", { workspacePath, limit });
+  return ipc<Commit[]>("git_log", { workspacePath, limit, skip });
 }
 
 export async function getGitDiff(
   workspacePath: string,
-  commitHash: string | null = null
+  staged?: boolean,
+  commitHash?: string
 ): Promise<Diff> {
-  return ipc<Diff>("git_diff", { workspacePath, commitHash });
+  return ipc<Diff>("git_diff", { workspacePath, staged, commitHash });
 }
 
-// ── Mutations ──────────────────────────────────────────────
+// ── 变更操作 ──────────────────────────────────────────────
 
 export async function stageFiles(workspacePath: string, paths: string[]): Promise<void> {
   await ipcVoid("git_stage", { workspacePath, paths });
+}
+
+export async function unstageFiles(workspacePath: string, paths: string[]): Promise<void> {
+  await ipcVoid("git_unstage", { workspacePath, paths });
 }
 
 export async function commitChanges(workspacePath: string, message: string): Promise<string> {
@@ -53,12 +51,27 @@ export async function rollbackCommit(
   await ipcVoid("git_rollback", { workspacePath, commitHash, mode });
 }
 
-// ── Config ─────────────────────────────────────────────────
+// ── 配置 ─────────────────────────────────────────────────
 
-export async function getGitConfig(workspacePath: string): Promise<GitConfig> {
-  return ipc<GitConfig>("git_get_config", { workspacePath });
+export async function getGitConfig(
+  workspacePath: string,
+  key?: string,
+  global?: boolean
+): Promise<GitConfig> {
+  return ipc<GitConfig>("git_get_config", { workspacePath, key, global });
 }
 
-export async function setGitConfig(workspacePath: string, config: GitConfig): Promise<void> {
-  await ipcVoid("git_set_config", { workspacePath, config });
+export async function setGitConfig(
+  workspacePath: string,
+  key: string,
+  value: string,
+  global?: boolean
+): Promise<void> {
+  await ipcVoid("git_set_config", { workspacePath, key, value, global });
+}
+
+// ── 分支 ─────────────────────────────────────────────────
+
+export async function getBranches(workspacePath: string): Promise<string[]> {
+  return ipc<string[]>("git_branches", { workspacePath });
 }

@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitLogView - Git 提交历史视图组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +13,8 @@ import { HistoryIcon, RotateCcwIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import type { Commit } from "@/features/git/types";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface GitLogViewProps {
   commits: Commit[];
   selectedHash: string | null;
@@ -15,9 +23,14 @@ interface GitLogViewProps {
   onRollback: (hash: string) => void;
 }
 
-function formatRelative(dateStr: string): string {
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 格式化相对时间
+ */
+function formatRelative(timestamp: number): string {
   try {
-    const date = new Date(dateStr);
+    const date = new Date(timestamp * 1000);
     const now = Date.now();
     const diffMs = now - date.getTime();
     const seconds = Math.floor(diffMs / 1000);
@@ -33,10 +46,15 @@ function formatRelative(dateStr: string): string {
     const years = Math.floor(months / 12);
     return `${years}y ago`;
   } catch {
-    return dateStr;
+    return String(timestamp);
   }
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Git 提交历史视图，展示提交记录列表
+ */
 export function GitLogView({
   commits,
   selectedHash,
@@ -45,6 +63,8 @@ export function GitLogView({
   onRollback,
 }: GitLogViewProps) {
   const { t } = useI18n();
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
     <Card className="flex flex-col">
@@ -63,27 +83,30 @@ export function GitLogView({
               <EmptyState title={t.git.log.empty} />
             ) : (
               commits.map((commit) => {
-                const isSelected = selectedHash === commit.hash;
+                const isSelected = selectedHash === commit.id;
                 return (
                   <div
-                    key={commit.hash}
+                    key={commit.id}
                     className={cn(
                       "flex flex-col gap-1 rounded-[var(--radius-3)] border border-transparent p-2 cursor-pointer transition-colors hover:bg-accent",
                       isSelected && "border-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]"
                     )}
-                    onClick={() => onSelectCommit(commit.hash)}
+                    onClick={() => onSelectCommit(commit.id)}
                   >
+                    {/* ── 提交哈希和时间 ──────────────────────────────────────── */}
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-xs text-muted-foreground">
-                        {commit.short_hash}
+                        {commit.short_id}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {formatRelative(commit.date)}
+                        {formatRelative(commit.time)}
                       </span>
                     </div>
+                    {/* ── 提交信息 ────────────────────────────────────────────── */}
                     <div className="text-sm line-clamp-2 break-words">
                       {commit.message}
                     </div>
+                    {/* ── 作者和回滚按钮 ──────────────────────────────────────── */}
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-muted-foreground truncate">
                         {commit.author}
@@ -94,7 +117,7 @@ export function GitLogView({
                           size="xs"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onRollback(commit.hash);
+                            onRollback(commit.id);
                           }}
                         >
                           <RotateCcwIcon className="size-4" />

@@ -1,9 +1,23 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitCommitDialog - Git 提交对话框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmptyState } from "@/components/shared/state";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +30,28 @@ import { PlusIcon, GitCommitIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import type { FileChange } from "@/features/git/types";
 
+// ── 常量配置 ────────────────────────────────────────────────────────────────
+
+/** 提交类型列表 */
+const COMMIT_TYPES = [
+  "feat",
+  "fix",
+  "docs",
+  "style",
+  "refactor",
+  "perf",
+  "test",
+  "build",
+  "ci",
+  "chore",
+  "revert",
+] as const;
+
+/** 提交主题长度警告阈值 */
+const SUBJECT_WARN_LIMIT = 50;
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface GitCommitDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,6 +63,11 @@ interface GitCommitDialogProps {
   onCommit: (message: string) => void;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Git 提交对话框，用于编写提交信息并提交暂存文件
+ */
 export function GitCommitDialog({
   open,
   onOpenChange,
@@ -39,24 +80,62 @@ export function GitCommitDialog({
 }: GitCommitDialogProps) {
   const { t } = useI18n();
   const [message, setMessage] = useState("");
+  const [commitType, setCommitType] = useState<string>("");
+  const [scope, setScope] = useState("");
+
+  // ── 状态重置 ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!open) {
       setMessage("");
+      setCommitType("");
+      setScope("");
     }
   }, [open]);
+
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
+
+  const subject = message.split("\n")[0] ?? "";
+  const subjectLength = subject.length;
+  const subjectTooLong = subjectLength > SUBJECT_WARN_LIMIT;
+
+  /**
+   * 构建提交信息
+   */
+  const buildMessage = (): string => {
+    if (!commitType) return message;
+    const trimmedScope = scope.trim();
+    const prefix = trimmedScope
+      ? `${commitType}(${trimmedScope}): `
+      : `${commitType}: `;
+    return `${prefix}${message}`;
+  };
 
   const canSubmit = message.trim().length > 0 && stagedFiles.length > 0 && !loading;
   const hasUnstaged = unstagedPaths.length > 0 || untrackedPaths.length > 0;
 
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 提交处理
+   */
+  const handleSubmit = () => {
+    if (canSubmit) {
+      onCommit(buildMessage());
+    }
+  };
+
+  /**
+   * 键盘快捷键处理
+   */
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
-      if (canSubmit) {
-        onCommit(message);
-      }
+      handleSubmit();
     }
   };
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,10 +151,55 @@ export function GitCommitDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <Label className="text-xs text-muted-foreground">
+                {t.git.commitType}
+              </Label>
+              <Select
+                value={commitType || "none"}
+                onValueChange={(v) => setCommitType(v === "none" ? "" : v)}
+              >
+                <SelectTrigger className="w-full" size="sm">
+                  <SelectValue placeholder={t.git.commitType} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {COMMIT_TYPES.map((tp) => (
+                    <SelectItem key={tp} value={tp}>
+                      {tp}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5 w-32 shrink-0">
+              <Label className="text-xs text-muted-foreground">
+                {t.git.commitScope}
+              </Label>
+              <Input
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                placeholder="ui"
+                className="h-6"
+              />
+            </div>
+          </div>
+
           <div className="flex flex-col gap-1.5">
-            <Label>
-              {t.git.commit.messageLabel}
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label>{t.git.commit.messageLabel}</Label>
+              <span
+                className={
+                  subjectTooLong
+                    ? "text-xs text-[var(--status-warning-default)]"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                {subjectLength}
+                {subjectTooLong && ` · ${t.git.subjectTooLong}`}
+              </span>
+            </div>
             <Textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -129,7 +253,7 @@ export function GitCommitDialog({
             {t.git.commit.cancel}
           </Button>
           <Button
-            onClick={() => onCommit(message)}
+            onClick={handleSubmit}
             disabled={!canSubmit}
           >
             <GitCommitIcon className="size-4" />

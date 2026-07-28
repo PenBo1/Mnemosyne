@@ -1,8 +1,16 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitStatusBar - Git 状态栏组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { GitBranchIcon, RefreshCwIcon, DownloadIcon, GitCommitIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
+
+// ── 类型定义 ────────────────────────────────────────────────────────────────
 
 interface GitStatusBarProps {
   branch: string | null;
@@ -17,6 +25,11 @@ interface GitStatusBarProps {
   onInitRepo: () => void;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Git 状态栏，显示当前分支、未提交数量和操作按钮
+ */
 export function GitStatusBar({
   branch,
   uncommittedCount,
@@ -30,6 +43,8 @@ export function GitStatusBar({
   onInitRepo,
 }: GitStatusBarProps) {
   const { t } = useI18n();
+
+  // ── Git 未安装状态 ────────────────────────────────────────────────────────
 
   if (gitInstalled === false) {
     return (
@@ -48,9 +63,12 @@ export function GitStatusBar({
     );
   }
 
+  // ── 正常状态渲染 ──────────────────────────────────────────────────────────
+
   return (
     <Card size="sm">
       <CardContent className="flex items-center justify-between gap-3">
+        {/* ── 分支和状态信息 ────────────────────────────────────────────────── */}
         <div className="flex items-center gap-3 text-sm">
           <div className="flex items-center gap-1.5">
             <GitBranchIcon className="size-4 text-muted-foreground" />
@@ -70,6 +88,7 @@ export function GitStatusBar({
             </span>
           )}
         </div>
+        {/* ── 操作按钮 ──────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-2">
           <Button
             variant="outline"

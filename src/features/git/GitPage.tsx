@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitPage - Git 版本控制主页面
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,9 +36,6 @@ import {
   RefreshCwIcon,
   GitCommitIcon,
   RotateCcwIcon,
-  PlusIcon,
-  MinusIcon,
-  PencilIcon,
 } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { useWorkspaceStore } from "@/features/workspace/store/workspace";
@@ -40,12 +43,18 @@ import { useGit } from "@/features/git/hooks/useGit";
 import {
   GitCommitDialog,
   GitRollbackDialog,
+  ChangesPanel,
 } from "@/features/git/components";
-import type { RollbackMode, Commit, FileChange, FileDiff } from "@/features/git/types";
+import type { RollbackMode, Commit, FileDiff } from "@/features/git/types";
 
-function formatRelative(dateStr: string): string {
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/**
+ * 格式化相对时间
+ */
+function formatRelative(timestamp: number): string {
   try {
-    const date = new Date(dateStr);
+    const date = new Date(timestamp * 1000);
     const now = Date.now();
     const diffMs = now - date.getTime();
     const seconds = Math.floor(diffMs / 1000);
@@ -61,25 +70,15 @@ function formatRelative(dateStr: string): string {
     const years = Math.floor(months / 12);
     return `${years}y ago`;
   } catch {
-    return dateStr;
+    return String(timestamp);
   }
 }
 
-function getStatusIcon(status: string) {
-  switch (status) {
-    case "added":
-      return <PlusIcon className="size-3 text-[var(--status-success-default)]" />;
-    case "deleted":
-      return <MinusIcon className="size-3 text-destructive" />;
-    case "modified":
-      return <PencilIcon className="size-3 text-muted-foreground" />;
-    case "renamed":
-      return <RefreshCwIcon className="size-3 text-muted-foreground" />;
-    default:
-      return null;
-  }
-}
+// ── 主组件 ──────────────────────────────────────────────────────────────────
 
+/**
+ * Git 版本控制主页面，展示提交历史和文件变更
+ */
 export function GitPage() {
   const { t } = useI18n();
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -89,18 +88,16 @@ export function GitPage() {
     () => workspaces.find((ws) => ws.id === activeWorkspaceId) ?? null,
     [workspaces, activeWorkspaceId]
   );
-  // 每个工作区是独立的 git 仓库，Git 操作路径来自活动工作区
+  // 每个工作区是独立的 git 仓库
   const workspacePath = activeWorkspace?.path ?? "";
 
-  // 细粒度 selector —— 避免 store 任意字段变化都触发整页重渲染
-  const gitInstalled = useGit((s) => s.gitInstalled);
-  const gitVersion = useGit((s) => s.gitVersion);
+  // ── 状态管理 ──────────────────────────────────────────────────────────────
+
+  // 细粒度 selector
   const gitStatus = useGit((s) => s.gitStatus);
   const gitLog = useGit((s) => s.gitLog);
   const gitDiff = useGit((s) => s.gitDiff);
   const loading = useGit((s) => s.loading);
-  const checkInstalled = useGit((s) => s.checkInstalled);
-  const install = useGit((s) => s.install);
   const init = useGit((s) => s.init);
   const refresh = useGit((s) => s.refresh);
   const stageFiles = useGit((s) => s.stageFiles);
@@ -114,47 +111,47 @@ export function GitPage() {
   const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
   const [rollbackTarget, setRollbackTarget] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (gitInstalled === null) {
-      void checkInstalled();
-    }
-  }, [gitInstalled, checkInstalled]);
+  // ── 初始化和刷新 ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (workspacePath && gitInstalled === true) {
-      void refresh(workspacePath);
+    let cancelled = false;
+    if (workspacePath) {
+      refresh(workspacePath).catch((err: Error) => {
+        if (!cancelled) console.error("[GitPage] refresh failed", err);
+      });
     }
-  }, [workspacePath, gitInstalled, refresh]);
+    return () => {
+      cancelled = true;
+    };
+  }, [workspacePath, refresh]);
 
   useEffect(() => {
-    if (workspacePath && gitInstalled === true && selectedHash) {
-      void loadDiff(workspacePath, selectedHash);
+    let cancelled = false;
+    if (workspacePath && activeTab === "history" && selectedHash) {
+      loadDiff(workspacePath, false, selectedHash).catch((err: Error) => {
+        if (!cancelled) console.error("[GitPage] loadDiff failed", err);
+      });
     }
-  }, [workspacePath, gitInstalled, selectedHash, loadDiff]);
+    return () => {
+      cancelled = true;
+    };
+  }, [workspacePath, activeTab, selectedHash, loadDiff]);
 
-  // 未安装 Git：前置阻断
-  if (gitInstalled === false) {
-    return (
-      <PageContainer>
-        <PageHeader>
-          <PageHeading>
-            <PageTitle>
-            <GitBranchIcon className="size-4" />
-            {t.git.title}
-          </PageTitle>
-            <PageDescription>{t.git.notAvailable}</PageDescription>
-          </PageHeading>
-          <PageActions>
-            <Button onClick={() => void install()} disabled={loading}>
-              {loading ? t.git.install.installing : t.git.install.button}
-            </Button>
-          </PageActions>
-        </PageHeader>
-      </PageContainer>
-    );
-  }
+  // 变更页内联 diff
+  useEffect(() => {
+    let cancelled = false;
+    if (workspacePath && activeTab === "changes") {
+      loadDiff(workspacePath, false).catch((err: Error) => {
+        if (!cancelled) console.error("[GitPage] loadDiff failed", err);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [workspacePath, activeTab, loadDiff]);
 
-  // 无活动工作区：提示用户先选择工作区（每个工作区是独立 git 仓库）
+  // ── 无活动工作区 ──────────────────────────────────────────────────────────
+
   if (!workspacePath) {
     return (
       <PageContainer>
@@ -176,10 +173,13 @@ export function GitPage() {
     );
   }
 
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
+
   const uncommittedCount =
-    (gitStatus?.staged.length ?? 0) +
-    (gitStatus?.unstaged.length ?? 0) +
-    (gitStatus?.untracked.length ?? 0);
+    (gitStatus?.staged ?? 0) +
+    (gitStatus?.unstaged ?? 0);
+
+  // ── 事件处理 ──────────────────────────────────────────────────────────────
 
   const handleSelectCommit = (hash: string) => {
     setSelectedHash(hash);
@@ -202,12 +202,14 @@ export function GitPage() {
 
   const handleStageAll = async () => {
     if (!workspacePath || !gitStatus) return;
-    const allPaths = [
-      ...gitStatus.unstaged.map((c) => c.path),
-      ...gitStatus.untracked,
-    ];
+    const allPaths = gitStatus.files.map((f) => f.path);
     if (allPaths.length === 0) return;
     await stageFiles(workspacePath, allPaths);
+  };
+
+  const handleStage = async (path: string) => {
+    if (!workspacePath) return;
+    await stageFiles(workspacePath, [path]);
   };
 
   const handleCommit = async (message: string) => {
@@ -226,18 +228,7 @@ export function GitPage() {
     }
   };
 
-  const allChanges: FileChange[] = useMemo(() => {
-    if (!gitStatus) return [];
-    return [
-      ...gitStatus.staged,
-      ...gitStatus.unstaged,
-      ...gitStatus.untracked.map((path) => ({
-        path,
-        status: "added" as const,
-        staged: false,
-      })),
-    ];
-  }, [gitStatus]);
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
     <PageContainer>
@@ -252,19 +243,14 @@ export function GitPage() {
           </PageDescription>
         </PageHeading>
         <PageActions>
-          {gitVersion && (
-            <Badge variant="outline" className="text-xs">
-              {t.git.status.version.replace("{version}", gitVersion)}
-            </Badge>
-          )}
           <Button
             variant="outline"
             size="sm"
             onClick={handleInitRepo}
-            disabled={loading || !gitStatus?.branch}
+            disabled={loading}
           >
             <GitBranchIcon className="size-4" />
-            {t.git.status.initRepo}
+            初始化仓库
           </Button>
           <Button
             variant="outline"
@@ -278,7 +264,7 @@ export function GitPage() {
           <Button
             size="sm"
             onClick={() => setCommitDialogOpen(true)}
-            disabled={loading || (gitStatus?.is_clean ?? true)}
+            disabled={loading || uncommittedCount === 0}
           >
             <GitCommitIcon className="size-4" />
             {t.git.commit.submit}
@@ -312,6 +298,7 @@ export function GitPage() {
           </TabsTrigger>
         </TabsList>
 
+        {/* ── 历史记录 ──────────────────────────────────────────────────────── */}
         <TabsContent value="history" className="flex-1 mt-0">
           <Card className="flex flex-col h-full">
             <CardHeader className="border-b py-3">
@@ -343,17 +330,17 @@ export function GitPage() {
                     <TableBody>
                       {gitLog.map((commit: Commit) => (
                         <TableRow
-                          key={commit.hash}
+                          key={commit.id}
                           className={
-                            selectedHash === commit.hash
+                            selectedHash === commit.id
                               ? "bg-[var(--bg-overlay-l3)]"
                               : ""
                           }
-                          onClick={() => handleSelectCommit(commit.hash)}
+                          onClick={() => handleSelectCommit(commit.id)}
                         >
                           <TableCell>
                             <span className="font-mono text-xs text-muted-foreground">
-                              {commit.short_hash}
+                              {commit.short_id}
                             </span>
                           </TableCell>
                           <TableCell>
@@ -366,17 +353,17 @@ export function GitPage() {
                           </TableCell>
                           <TableCell>
                             <span className="text-xs text-muted-foreground">
-                              {formatRelative(commit.date)}
+                              {formatRelative(commit.time)}
                             </span>
                           </TableCell>
                           <TableCell className="text-right">
-                            {selectedHash === commit.hash && (
+                            {selectedHash === commit.id && (
                               <Button
                                 variant="outline"
                                 size="xs"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleRollbackClick(commit.hash);
+                                  handleRollbackClick(commit.id);
                                 }}
                               >
                                 <RotateCcwIcon />
@@ -436,6 +423,7 @@ export function GitPage() {
           )}
         </TabsContent>
 
+        {/* ── 文件变更 ──────────────────────────────────────────────────────── */}
         <TabsContent value="changes" className="flex-1 mt-0">
           <Card className="flex flex-col h-full">
             <CardHeader className="border-b py-3">
@@ -447,49 +435,19 @@ export function GitPage() {
             <CardContent className="flex-1 p-0 overflow-hidden">
               {loading ? (
                 <LoadingState label={t.common.loading} />
-              ) : allChanges.length === 0 ? (
+              ) : !gitStatus || gitStatus.files.length === 0 ? (
                 <EmptyState
                   icon={<FileTextIcon />}
                   title={t.git.noChanges}
                 />
               ) : (
                 <ScrollArea className="h-full">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-8"></TableHead>
-                        <TableHead>{t.git.diff.file}</TableHead>
-                        <TableHead>{t.git.status.branch}</TableHead>
-                        <TableHead className="text-right">{t.git.commit.stagedFiles}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allChanges.map((change: FileChange) => (
-                        <TableRow key={change.path}>
-                          <TableCell>{getStatusIcon(change.status)}</TableCell>
-                          <TableCell className="font-mono text-xs truncate max-w-[300px]">
-                            {change.path}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {change.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {change.staged ? (
-                              <Badge variant="secondary" className="text-xs">
-                                {t.git.commit.stagedFiles}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">
-                                —
-                              </span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <ChangesPanel
+                    status={gitStatus}
+                    diff={gitDiff}
+                    onStage={(path: string) => void handleStage(path)}
+                    onStageAll={() => void handleStageAll()}
+                  />
                 </ScrollArea>
               )}
             </CardContent>
@@ -500,9 +458,9 @@ export function GitPage() {
       <GitCommitDialog
         open={commitDialogOpen}
         onOpenChange={setCommitDialogOpen}
-        stagedFiles={gitStatus?.staged ?? []}
-        unstagedPaths={gitStatus?.unstaged.map((c) => c.path) ?? []}
-        untrackedPaths={gitStatus?.untracked ?? []}
+        stagedFiles={gitStatus?.files ?? []}
+        unstagedPaths={[]}
+        untrackedPaths={[]}
         loading={loading}
         onStageAll={handleStageAll}
         onCommit={handleCommit}

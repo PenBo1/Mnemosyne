@@ -1,53 +1,55 @@
-﻿// ── Git ────────────────────────────────────────────────────
+// ── Git 类型定义 ────────────────────────────────────────────────────
 
 export interface Commit {
-  hash: string;
-  short_hash: string;
+  id: string;
+  short_id: string;
   author: string;
-  email: string;
-  date: string;
+  author_email: string;
+  time: number;
   message: string;
 }
 
-export type FileChangeStatus = "modified" | "added" | "deleted" | "renamed";
+export type FileStatusType =
+  | "unmodified"
+  | "added"
+  | "modified"
+  | "deleted"
+  | "untracked"
+  | "renamed"
+  | "copied"
+  | "conflicted";
 
 export interface FileChange {
   path: string;
-  status: FileChangeStatus;
-  staged: boolean;
+  status: FileStatusType;
 }
 
 export interface GitStatus {
   branch: string;
-  staged: FileChange[];
-  unstaged: FileChange[];
-  untracked: string[];
-  is_clean: boolean;
+  files: FileChange[];
+  ahead: number;
+  behind: number;
+  staged: number;
+  unstaged: number;
 }
 
 export interface FileDiff {
   path: string;
   additions: number;
   deletions: number;
-  patch: string;
+  binary: boolean;
 }
 
 export interface Diff {
   files: FileDiff[];
+  total_additions: number;
+  total_deletions: number;
 }
 
 export interface GitConfig {
   user_name: string | null;
   user_email: string | null;
-  auto_stage: boolean;
-  commit_message_template: string | null;
-  enable_remote: boolean;
-}
-
-export interface InstallResult {
-  success: boolean;
-  message: string;
-  version: string | null;
+  custom: Record<string, string>;
 }
 
 export interface GitInitResult {
@@ -55,4 +57,4 @@ export interface GitInitResult {
   path: string;
 }
 
-export type RollbackMode = "Soft" | "Hard";
+export type RollbackMode = "soft" | "mixed" | "hard";

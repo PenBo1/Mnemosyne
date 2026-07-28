@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitRollbackDialog - Git 回滚对话框组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,6 +22,8 @@ import { AlertTriangleIcon, RotateCcwIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import type { RollbackMode } from "@/features/git/types";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface GitRollbackDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,6 +32,11 @@ interface GitRollbackDialogProps {
   onConfirm: (mode: RollbackMode) => void;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Git 回滚对话框，用于选择回滚模式并执行回滚操作
+ */
 export function GitRollbackDialog({
   open,
   onOpenChange,
@@ -32,13 +45,17 @@ export function GitRollbackDialog({
   onConfirm,
 }: GitRollbackDialogProps) {
   const { t } = useI18n();
-  const [mode, setMode] = useState<RollbackMode>("Soft");
+  const [mode, setMode] = useState<RollbackMode>("soft");
+
+  // ── 状态重置 ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (open) {
-      setMode("Soft");
+      setMode("soft");
     }
   }, [open]);
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,10 +73,12 @@ export function GitRollbackDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
+          {/* ── 警告提示 ────────────────────────────────────────────────────── */}
           <Alert>
             <AlertDescription>{t.git.rollback.warning}</AlertDescription>
           </Alert>
 
+          {/* ── 回滚模式选择 ──────────────────────────────────────────────── */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-medium">{t.git.rollback.mode}</Label>
             <RadioGroup
@@ -67,28 +86,43 @@ export function GitRollbackDialog({
               onValueChange={(v) => setMode(v as RollbackMode)}
               className="flex flex-col gap-1.5"
             >
+              {/* ── 软回滚 ────────────────────────────────────────────────── */}
               <Label
                 htmlFor="rollback-soft"
                 className={cn(
                   "flex items-start gap-2 rounded-[var(--radius-3)] border p-2.5 cursor-pointer transition-colors",
-                  mode === "Soft"
+                  mode === "soft"
                     ? "border-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]"
                     : "border-[var(--border-neutral-l1)] hover:bg-accent"
                 )}
               >
-                <RadioGroupItem value="Soft" id="rollback-soft" className="mt-0.5" />
+                <RadioGroupItem value="soft" id="rollback-soft" className="mt-0.5" />
                 <span className="text-xs font-medium">{t.git.rollback.softMode}</span>
               </Label>
+              {/* ── 混合回滚 ────────────────────────────────────────────────── */}
+              <Label
+                htmlFor="rollback-mixed"
+                className={cn(
+                  "flex items-start gap-2 rounded-[var(--radius-3)] border p-2.5 cursor-pointer transition-colors",
+                  mode === "mixed"
+                    ? "border-[var(--border-brand-l1)] bg-[var(--bg-overlay-l3)]"
+                    : "border-[var(--border-neutral-l1)] hover:bg-accent"
+                )}
+              >
+                <RadioGroupItem value="mixed" id="rollback-mixed" className="mt-0.5" />
+                <span className="text-xs font-medium">混合模式</span>
+              </Label>
+              {/* ── 硬回滚 ────────────────────────────────────────────────── */}
               <Label
                 htmlFor="rollback-hard"
                 className={cn(
                   "flex items-start gap-2 rounded-[var(--radius-3)] border p-2.5 cursor-pointer transition-colors",
-                  mode === "Hard"
+                  mode === "hard"
                     ? "border-destructive bg-destructive/5"
                     : "border-[var(--border-neutral-l1)] hover:bg-accent"
                 )}
               >
-                <RadioGroupItem value="Hard" id="rollback-hard" className="mt-0.5" />
+                <RadioGroupItem value="hard" id="rollback-hard" className="mt-0.5" />
                 <div className="flex flex-col gap-0.5">
                   <span className="text-xs font-medium text-destructive">
                     {t.git.rollback.hardMode}
@@ -107,7 +141,7 @@ export function GitRollbackDialog({
             {t.git.rollback.cancel}
           </Button>
           <Button
-            variant={mode === "Hard" ? "destructive" : "default"}
+            variant={mode === "hard" ? "destructive" : "default"}
             onClick={() => onConfirm(mode)}
             disabled={loading || !commitHash}
           >

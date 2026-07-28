@@ -1,5 +1,10 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GitDiffView - Git 差异视图组件
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -9,17 +14,28 @@ import { FileDiffIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import type { Diff } from "@/features/git/types";
 
+// ── 类型定义 ────────────────────────────────────────────────────────────────
+
 interface GitDiffViewProps {
   diff: Diff | null;
   loading: boolean;
 }
 
+// ── 主组件 ──────────────────────────────────────────────────────────────────
+
+/**
+ * Git 差异视图，展示文件变更的详细内容
+ */
 export function GitDiffView({ diff, loading }: GitDiffViewProps) {
   const { t } = useI18n();
   const [activeFileIndex, setActiveFileIndex] = useState(0);
 
+  // ── 计算属性 ──────────────────────────────────────────────────────────────
+
   const files = diff?.files ?? [];
   const activeFile = files[activeFileIndex] ?? null;
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
     <Card className="flex flex-col">
@@ -36,6 +52,7 @@ export function GitDiffView({ diff, loading }: GitDiffViewProps) {
           <EmptyState title={t.git.diff.empty} />
         ) : (
           <>
+            {/* ── 文件标签栏 ────────────────────────────────────────────────── */}
             <div className="flex flex-wrap gap-1 p-2">
               {files.map((file, idx) => (
                 <Button
@@ -50,6 +67,7 @@ export function GitDiffView({ diff, loading }: GitDiffViewProps) {
               ))}
             </div>
             <Separator />
+            {/* ── 文件信息 ──────────────────────────────────────────────────── */}
             {activeFile && (
               <>
                 <div className="flex items-center gap-3 px-3 py-1.5 text-xs">
@@ -66,24 +84,17 @@ export function GitDiffView({ diff, loading }: GitDiffViewProps) {
                 <Separator />
               </>
             )}
+            {/* ── 差异内容 ──────────────────────────────────────────────────── */}
             <ScrollArea className="flex-1">
-              <pre className="text-xs font-mono leading-relaxed">
-                {activeFile?.patch
-                  ? activeFile.patch.split("\n").map((line, idx) => (
-                      <div
-                        key={idx}
-                        className={cn(
-                          "px-3 py-0.5 whitespace-pre-wrap break-all",
-                          line.startsWith("+") && !line.startsWith("+++") && "bg-[var(--status-success-surface-l1)]",
-                          line.startsWith("-") && !line.startsWith("---") && "bg-[var(--status-error-surface-l1)]",
-                          (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ")) && "bg-[var(--bg-overlay-l1)] text-muted-foreground"
-                        )}
-                      >
-                        {line}
-                      </div>
-                    ))
-                  : t.git.diff.noDiff}
-              </pre>
+              {activeFile?.binary ? (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  二进制文件
+                </div>
+              ) : (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  {t.git.diff.noDiff}
+                </div>
+              )}
             </ScrollArea>
           </>
         )}
