@@ -71,6 +71,10 @@ interface AgentState {
   loadMessages: (sessionId: string) => Promise<void>;
   /** 清空当前会话引用（进入空白对话页，不创建新会话） */
   clearCurrentSession: () => void;
+  /** 检查是否有正在运行的任务（streaming 或 pending confirmation） */
+  isAgentRunning: () => boolean;
+  /** 强制停止当前运行的任务 */
+  forceStop: () => void;
   appendMessage: (message: Message) => void;
   replaceMessages: (messages: Message[]) => void;
   updateStreamingContent: (delta: string) => void;
@@ -180,6 +184,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   switchSession: async (sessionId: string) => {
+    // 如果 agent 正在运行，先停止
+    const state = get();
+    if (state.streaming || state.pendingConfirmation) {
+      // 标记停止，让流式处理逻辑感知
+      set({ streaming: false });
+    }
     set({ currentSessionId: sessionId, loading: true, error: null, streaming: false, streamingContent: "", streamingReasoning: "", activeToolCalls: [], pendingConfirmation: null, submittingConfirmation: false, pendingClear: false });
     try {
       const messages = await sessionListMessages(sessionId);
@@ -228,6 +238,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   clearCurrentSession: () => {
+    // 如果 agent 正在运行，先停止
+    const state = get();
+    if (state.streaming || state.pendingConfirmation) {
+      set({ streaming: false });
+    }
     set({
       currentSessionId: null,
       messages: [],
@@ -239,6 +254,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       pendingConfirmation: null,
       submittingConfirmation: false,
       pendingClear: true,
+    });
+  },
+
+  isAgentRunning: () => {
+    const state = get();
+    return state.streaming || state.pendingConfirmation !== null;
+  },
+
+  forceStop: () => {
+    set({
+      streaming: false,
+      streamingContent: "",
+      streamingReasoning: "",
+      activeToolCalls: [],
+      pendingConfirmation: null,
     });
   },
 

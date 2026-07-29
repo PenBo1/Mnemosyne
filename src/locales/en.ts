@@ -945,6 +945,11 @@ export default {
       failedToDeleteSession: "Failed to delete session",
       unknown: "Unknown error",
     },
+    agentRunningDialog: {
+      title: "Agent is Running",
+      description: "An Agent is currently running a task. Interrupting will lose current progress. Continue?",
+      interruptAndContinue: "Interrupt and Continue",
+    },
     attachment: {
       noWorkspace: "Cannot resolve chapter attachment: no active workspace",
       parseFailed: "Failed to parse attachment \"{label}\": {error}",

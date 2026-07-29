@@ -86,6 +86,35 @@ export function AppSidebar() {
     dispatch({ type: "SET_PAGE", payload: page });
   }, [dispatch]);
 
+  // 处理新建任务按钮点击
+  const handleNewTaskClick = useCallback(async () => {
+    const { useAgentStore } = await import("@/features/chat/store");
+    const store = useAgentStore.getState();
+
+    if (store.isAgentRunning()) {
+      // Agent 正在运行，显示确认对话框（使用 Tauri 原生对话框）
+      const { ask } = await import("@tauri-apps/plugin-dialog");
+      const confirmed = await ask(
+        t.chat.agentRunningDialog.description,
+        {
+          title: t.chat.agentRunningDialog.title,
+          kind: "warning",
+          okLabel: t.chat.agentRunningDialog.interruptAndContinue,
+          cancelLabel: t.common.cancel,
+        }
+      );
+
+      if (confirmed) {
+        store.forceStop();
+        store.clearCurrentSession();
+        navigateTo("chat");
+      }
+    } else {
+      store.clearCurrentSession();
+      navigateTo("chat");
+    }
+  }, [navigateTo, t]);
+
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader>
@@ -121,14 +150,7 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       isActive={currentPage === "chat" || currentPage === "main-agent"}
-                      onClick={() => {
-                        // 仅进入空白页，不创建会话（输入消息时才创建）
-                        // 动态 import 避免 layout 静态依赖 @/features/chat/store
-                        void import("@/features/chat/store").then((m) =>
-                          m.useAgentStore.getState().clearCurrentSession()
-                        );
-                        navigateTo("chat");
-                      }}
+                      onClick={handleNewTaskClick}
                       tooltip={t.sidebar.newTask}
                     >
                       <BotIcon />

@@ -946,6 +946,11 @@ export default {
       failedToDeleteSession: "删除会话失败",
       unknown: "未知错误",
     },
+    agentRunningDialog: {
+      title: "Agent 正在运行",
+      description: "当前有 Agent 正在运行任务。中断任务将丢失当前进度，是否继续？",
+      interruptAndContinue: "中断并继续",
+    },
     attachment: {
       noWorkspace: "无法解析章节附件：当前无活动工作区",
       parseFailed: "附件「{label}」解析失败：{error}",

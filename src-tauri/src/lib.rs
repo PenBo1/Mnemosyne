@@ -27,7 +27,7 @@ use crate::infrastructure::workspace::registry::WorkspaceRegistry;
 use crate::infrastructure::mcp::state::McpState;
 use crate::security_kernel::SecurityKernelState;
 use crate::security_kernel::hooks::HookEngineState;
-use tauri::Manager;
+use tauri::{Manager, Emitter, Listener};
 use tokio_util::sync::CancellationToken;
 
 /// 应用关闭信号，用于优雅停止后台任务
@@ -55,6 +55,7 @@ pub fn run() {
             }
         }))
         // 窗口关闭事件拦截：根据设置决定是隐藏窗口（最小化到托盘）还是退出程序
+        // 同时检查 Agent 是否正在运行，如果是则显示确认对话框
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // 读取关闭行为设置
@@ -80,10 +81,11 @@ pub fn run() {
                     window.hide().ok();
                     api.prevent_close();
                 } else {
-                    // 允许关闭：触发关闭令牌，优雅停止后台任务
-                    if let Some(shutdown_token) = window.try_state::<ShutdownToken>() {
-                        shutdown_token.0.cancel();
-                    }
+                    // 阻止本次关闭，向前端发送事件检查 Agent 状态
+                    api.prevent_close();
+                    // 发送事件让前端检查 Agent 是否正在运行
+                    // 前端会显示确认对话框，然后通过 "allow-close" 事件通知是否允许关闭
+                    let _ = window.emit("close-requested", ());
                 }
             }
         })
@@ -272,6 +274,22 @@ pub fn run() {
                                 kernel_state.cleanup();
                             }
                         }
+                    }
+                });
+            }
+
+            // 监听前端发送的允许关闭事件（Agent 确认后）
+            // 当前端确认可以关闭时，触发关闭令牌并关闭窗口
+            {
+                let app_handle = app.handle().clone();
+                let _ = app.listen("allow-close", move |_event| {
+                    // 触发关闭令牌，优雅停止后台任务
+                    if let Some(shutdown_token) = app_handle.try_state::<ShutdownToken>() {
+                        shutdown_token.0.cancel();
+                    }
+                    // 关闭主窗口
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.close();
                     }
                 });
             }
