@@ -5,7 +5,7 @@
  */
 
 import { memo } from "react";
-import { Plus, Trash2, PanelRightOpen, ListChecks, Database, Repeat2, Timeline } from "lucide-react";
+import { Plus, Trash2, PanelRightOpen, ListChecks, Database, Repeat2 } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,14 +22,12 @@ interface ChatHeaderProps {
   panelOpen: boolean;
   memoryPanelOpen: boolean;
   loopPanelOpen: boolean;
-  timelineExpanded: boolean;
   onNewSession: () => void;
   onDeleteSession: () => void;
   onTogglePanel: () => void;
   onTogglePlanMode: () => void;
   onToggleMemoryPanel: () => void;
   onToggleLoopPanel: () => void;
-  onToggleTimeline: () => void;
 }
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -45,14 +43,12 @@ export const ChatHeader = memo(function ChatHeader({
   panelOpen,
   memoryPanelOpen,
   loopPanelOpen,
-  timelineExpanded,
   onNewSession,
   onDeleteSession,
   onTogglePanel,
   onTogglePlanMode,
   onToggleMemoryPanel,
   onToggleLoopPanel,
-  onToggleTimeline,
 }: ChatHeaderProps) {
   const { t } = useI18n();
 
@@ -64,24 +60,6 @@ export const ChatHeader = memo(function ChatHeader({
       </div>
 
       <div className="flex items-center gap-0.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={onToggleTimeline}
-              aria-label={t.chat.timeline}
-              className={cn(
-                "text-muted-foreground hover:text-foreground",
-                timelineExpanded && "bg-muted text-foreground",
-              )}
-            >
-              <Timeline className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t.chat.timeline}</TooltipContent>
-        </Tooltip>
-
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

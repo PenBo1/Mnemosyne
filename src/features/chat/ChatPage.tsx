@@ -59,7 +59,6 @@ export default function ChatPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [loopPanelOpen, setLoopPanelOpen] = useState(false);
-  const [timelineExpanded, setTimelineExpanded] = useState(true);
   const [activeCommand, setActiveCommand] = useState<SlashCommand | null>(null);
   const [failures, setFailures] = useState<FailurePattern[]>([]);
   
@@ -220,7 +219,6 @@ export default function ChatPage() {
   const togglePanel = useCallback(() => setPanelOpen((v) => !v), []);
   const toggleMemoryPanel = useCallback(() => setMemoryPanelOpen((v) => !v), []);
   const toggleLoopPanel = useCallback(() => setLoopPanelOpen((v) => !v), []);
-  const toggleTimeline = useCallback(() => setTimelineExpanded((v) => !v), []);
   const closeMemoryPanel = useCallback(() => setMemoryPanelOpen(false), []);
   const closeLoopPanel = useCallback(() => setLoopPanelOpen(false), []);
   const dismissFailures = useCallback(() => setFailures([]), []);
@@ -228,7 +226,6 @@ export default function ChatPage() {
 
   // 时间线节点点击：滚动到对应消息
   const handleTimelineNodeClick = useCallback((messageIndex: number) => {
-    // 通过自定义事件通知 MessageList 滚动到指定消息
     const event = new CustomEvent("timeline-scroll-to", { detail: { messageIndex } });
     window.dispatchEvent(event);
   }, []);
@@ -238,14 +235,12 @@ export default function ChatPage() {
   // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full bg-background">
-      {/* 时间线侧边栏 */}
+    <div className="relative flex h-full bg-background">
+      {/* 时间线悬浮层 */}
       <ConversationTimeline
         messages={messages}
         streaming={streaming}
-        expanded={timelineExpanded}
         onNodeClick={handleTimelineNodeClick}
-        className="border-r border-border/50"
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
@@ -257,14 +252,12 @@ export default function ChatPage() {
           panelOpen={panelOpen}
           memoryPanelOpen={memoryPanelOpen}
           loopPanelOpen={loopPanelOpen}
-          timelineExpanded={timelineExpanded}
           onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
           onTogglePanel={togglePanel}
           onTogglePlanMode={togglePlanMode}
           onToggleMemoryPanel={toggleMemoryPanel}
           onToggleLoopPanel={toggleLoopPanel}
-          onToggleTimeline={toggleTimeline}
         />
 
         <MessageList
