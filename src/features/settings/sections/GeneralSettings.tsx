@@ -16,7 +16,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SettingsSection, SettingsRow } from "@/features/settings/components/settings-section";
-import { useGeneralSettings } from "@/features/settings/hooks";
+import { useGeneralSettings, type CloseBehavior } from "@/features/settings/hooks";
 import {
   PageContainer,
   PageHeader,
@@ -48,9 +48,11 @@ export function GeneralSettings() {
     logLevel,
     logLevelChanged,
     restoreWindow,
+    closeBehavior,
     toggleNotifications,
     changeLogLevel,
     toggleRestoreWindow,
+    changeCloseBehavior,
   } = useGeneralSettings();
 
   // ── 渲染 ──────────────────────────────────────────────────────────────────
@@ -102,6 +104,21 @@ export function GeneralSettings() {
       <SettingsSection title={t.settings.startup}>
         <SettingsRow label={t.settings.field.restoreWindow} description={t.settings.description.restoreWindow}>
           <Switch size="default" checked={restoreWindow} onCheckedChange={toggleRestoreWindow} />
+        </SettingsRow>
+      </SettingsSection>
+
+      {/* ── 窗口关闭行为设置 ────────────────────────────────────────────────── */}
+      <SettingsSection title={t.settings.closeBehavior.title}>
+        <SettingsRow label={t.settings.closeBehavior.label} description={t.settings.closeBehavior.description}>
+          <Select value={closeBehavior} onValueChange={(v) => changeCloseBehavior(v as CloseBehavior)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="exit">{t.settings.closeBehavior.exit}</SelectItem>
+              <SelectItem value="minimizeToTray">{t.settings.closeBehavior.minimizeToTray}</SelectItem>
+            </SelectContent>
+          </Select>
         </SettingsRow>
       </SettingsSection>
 

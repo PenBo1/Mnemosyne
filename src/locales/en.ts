@@ -390,6 +390,13 @@ export default {
     shortcuts: "Shortcuts",
     shortcutsDesc: "Keyboard shortcuts reference",
     startup: "Startup",
+    closeBehavior: {
+      title: "Window Close Behavior",
+      label: "Close Button Action",
+      description: "Choose what happens when you click the close button",
+      exit: "Exit Application",
+      minimizeToTray: "Minimize to System Tray",
+    },
     openDataDir: "Open Folder",
     copyPath: "Copy Path",
     logs: {

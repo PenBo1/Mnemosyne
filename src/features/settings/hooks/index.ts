@@ -1,4 +1,4 @@
-export { useGeneralSettings } from "./useGeneralSettings";
+export { useGeneralSettings, type CloseBehavior } from "./useGeneralSettings";
 export { useModelSettings } from "./useModelSettings";
 export { useGitSettings } from "./useGitSettings";
 export { useStartupSettings } from "./useStartupSettings";

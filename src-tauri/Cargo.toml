@@ -18,11 +18,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["image-png", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-store = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
@@ -51,6 +52,7 @@ base64 = "0.22"
 sysinfo = "0.38"
 thiserror = "2"
 git2 = "0.19"
+keyring = "3"
 dashmap = "6"
 lazy_static = "1"
 ignore = "0.4"

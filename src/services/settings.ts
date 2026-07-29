@@ -50,6 +50,7 @@ export interface AppSettings {
     locale: "en" | "zh";
     notifications: boolean;
     restoreWindowState: boolean;
+    closeBehavior: "exit" | "minimizeToTray";
   };
   system: {
     log_level: LogLevel;
@@ -83,6 +84,7 @@ const DEFAULTS: AppSettings = {
     locale: "en",
     notifications: true,
     restoreWindowState: false,
+    closeBehavior: "exit",
   },
   system: {
     log_level: "info",
@@ -241,6 +243,19 @@ export async function setRestoreWindowState(enabled: boolean): Promise<void> {
 
 export async function setWindowBounds(bounds: WindowBounds | null): Promise<void> {
   await saveSettings({ window: { bounds } });
+}
+
+// ── 关闭行为设置 ─────────────────────────────────────────────────────────────
+
+export async function getCloseBehavior(): Promise<"exit" | "minimizeToTray"> {
+  const settings = await loadSettings();
+  return settings.ui.closeBehavior;
+}
+
+export async function setCloseBehavior(behavior: "exit" | "minimizeToTray"): Promise<void> {
+  const settings = await loadSettings();
+  settings.ui.closeBehavior = behavior;
+  await saveSettings({ ui: settings.ui }, settings);
 }
 
 // ── 自定义指令 ────────────────────────────────────────────────────────────────

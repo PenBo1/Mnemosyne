@@ -391,6 +391,13 @@ export default {
     shortcuts: "快捷键",
     shortcutsDesc: "键盘快捷键参考",
     startup: "启动",
+    closeBehavior: {
+      title: "窗口关闭行为",
+      label: "关闭按钮动作",
+      description: "选择点击关闭按钮时的行为",
+      exit: "退出程序",
+      minimizeToTray: "最小化到系统托盘",
+    },
     openDataDir: "打开文件夹",
     copyPath: "复制路径",
     logs: {

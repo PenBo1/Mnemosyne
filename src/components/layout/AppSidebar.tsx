@@ -45,8 +45,6 @@ import {
   PaletteIcon,
   BrainIcon,
   BarChart3Icon,
-  ActivityIcon,
-  ScrollTextIcon,
 } from "lucide-react";
 import { useAppState, useAppDispatch } from "@/lib/app-context";
 import { useI18n } from "@/locales/i18n";
@@ -54,8 +52,6 @@ import type { AppPage, SettingsPage } from "@/types";
 import { isSettingsPage } from "@/types";
 import { SidebarHeaderNav } from "./sidebar-header";
 import { SessionSection } from "./session-section";
-import { openProcessMonitorWindow } from "@/services/process-monitor-window";
-import { openLogViewerWindow } from "@/services/log-viewer-window";
 
 // ── 常量配置 ────────────────────────────────────────────────────────────────
 
@@ -218,22 +214,6 @@ export function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
-          {!isSettings && (
-            <>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => void openProcessMonitorWindow()}>
-                  <ActivityIcon />
-                  <span>{t.sidebar.processMonitor}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => void openLogViewerWindow()}>
-                  <ScrollTextIcon />
-                  <span>{t.sidebar.logViewer}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </>
-          )}
           <SidebarMenuItem>
             {isSettings ? (
               <SidebarMenuButton onClick={() => navigateTo("trends")}>

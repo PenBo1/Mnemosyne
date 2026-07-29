@@ -9,8 +9,12 @@ import { getLogLevel, setLogLevel } from "@/features/settings/services";
 import {
   getRestoreWindowState,
   setRestoreWindowState,
+  getCloseBehavior,
+  setCloseBehavior,
 } from "@/services/settings";
 import type { LogLevel } from "@/services/settings";
+
+export type CloseBehavior = "exit" | "minimizeToTray";
 
 export function useGeneralSettings() {
   const { t } = useI18n();
@@ -18,6 +22,7 @@ export function useGeneralSettings() {
   const [logLevel, setLogLevelState] = useState<LogLevel>("info");
   const [logLevelChanged, setLogLevelChanged] = useState(false);
   const [restoreWindow, setRestoreWindowValue] = useState(false);
+  const [closeBehavior, setCloseBehaviorValue] = useState<CloseBehavior>("exit");
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +31,9 @@ export function useGeneralSettings() {
     });
     void getRestoreWindowState().then((enabled) => {
       if (!cancelled) setRestoreWindowValue(enabled);
+    });
+    void getCloseBehavior().then((behavior) => {
+      if (!cancelled) setCloseBehaviorValue(behavior);
     });
     return () => {
       cancelled = true;
@@ -59,13 +67,25 @@ export function useGeneralSettings() {
     }
   }, []);
 
+  const changeCloseBehavior = useCallback(async (behavior: CloseBehavior) => {
+    setCloseBehaviorValue(behavior);
+    try {
+      await setCloseBehavior(behavior);
+    } catch (e) {
+      console.error("[general] set close behavior failed", e);
+      toast.error(t.common.failedToSave);
+    }
+  }, []);
+
   return {
     notifications,
     logLevel,
     logLevelChanged,
     restoreWindow,
+    closeBehavior,
     toggleNotifications,
     changeLogLevel,
     toggleRestoreWindow,
+    changeCloseBehavior,
   };
 }

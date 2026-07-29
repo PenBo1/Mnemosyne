@@ -36,6 +36,42 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // 单实例回调：当用户尝试启动第二个实例时，聚焦主窗口
+            if let Some(window) = app.get_webview_window("main") {
+                window.show().ok();
+                window.set_focus().ok();
+            }
+        }))
+        // 窗口关闭事件拦截：根据设置决定是隐藏窗口（最小化到托盘）还是退出程序
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // 读取关闭行为设置
+                let close_behavior = window
+                    .state::<DataDir>()
+                    .root()
+                    .join("config.json");
+
+                let minimize_to_tray = match std::fs::read_to_string(&close_behavior) {
+                    Ok(content) => {
+                        // 解析 JSON 并检查 closeBehavior 设置
+                        serde_json::from_str::<serde_json::Value>(&content)
+                            .ok()
+                            .and_then(|v| v.get("ui").and_then(|ui| ui.get("closeBehavior")).cloned())
+                            .map(|v| v.as_str() == Some("minimizeToTray"))
+                            .unwrap_or(false)
+                    }
+                    Err(_) => false,
+                };
+
+                if minimize_to_tray {
+                    // 隐藏窗口而不是关闭
+                    window.hide().ok();
+                    api.prevent_close();
+                }
+                // 如果 close_behavior 是 "exit"，则允许默认关闭行为（退出程序）
+            }
+        })
         .setup(|app| {
             let app_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_dir)?;
@@ -214,6 +250,12 @@ pub fn run() {
                         kernel_state.cleanup();
                     }
                 });
+            }
+
+            // 初始化系统托盘
+            // 托盘提供：打开主窗口、关于、进程监视器、日志查看器、退出
+            if let Err(e) = crate::infrastructure::tray::build_tray(app.handle()) {
+                tracing::error!(error = %e, "Failed to initialize system tray");
             }
 
             Ok(())
