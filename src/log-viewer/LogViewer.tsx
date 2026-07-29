@@ -11,18 +11,20 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { getLogFiles, readLogFile } from "./services";
+import { useI18n } from "@/locales/i18n";
 
 // ── 日志等级类型 ────────────────────────────────────────────────────────────────
 
 type LogLevel = "all" | "error" | "warn" | "info" | "debug" | "trace";
 
+/** 日志等级显示颜色（使用语义化颜色，支持浅色主题） */
 const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
   all: "",
-  error: "text-red-500 font-medium",
-  warn: "text-amber-500",
-  info: "text-sky-500",
-  debug: "text-emerald-600",
-  trace: "text-gray-500",
+  error: "text-red-600 dark:text-red-400 font-semibold",
+  warn: "text-amber-600 dark:text-amber-400",
+  info: "text-sky-600 dark:text-sky-400",
+  debug: "text-emerald-700 dark:text-emerald-400",
+  trace: "text-muted-foreground",
 };
 
 // ── 日志行解析 ────────────────────────────────────────────────────────────────
@@ -90,16 +92,18 @@ function parseLogLine(line: string): ParsedLogLine {
 interface LogLevelSelectProps {
   value: LogLevel;
   onChange: (value: LogLevel) => void;
+  levelLabel: string;
+  allLabel: string;
 }
 
-function LogLevelSelect({ value, onChange }: LogLevelSelectProps) {
+function LogLevelSelect({ value, onChange, levelLabel, allLabel }: LogLevelSelectProps) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as LogLevel)}>
       <SelectTrigger size="sm" className="w-[100px]">
-        <SelectValue placeholder="等级" />
+        <SelectValue placeholder={levelLabel} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="all">全部</SelectItem>
+        <SelectItem value="all">{allLabel}</SelectItem>
         <SelectItem value="error">ERROR</SelectItem>
         <SelectItem value="warn">WARN</SelectItem>
         <SelectItem value="info">INFO</SelectItem>
@@ -113,6 +117,7 @@ function LogLevelSelect({ value, onChange }: LogLevelSelectProps) {
 // ── 主组件 ────────────────────────────────────────────────────────────────
 
 export function LogViewer() {
+  const { t } = useI18n();
   const [logFiles, setLogFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>("");
   const [content, setContent] = useState<string>("");
@@ -135,10 +140,10 @@ export function LogViewer() {
         setIsLoading(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "获取日志文件列表失败");
+      setError(err instanceof Error ? err.message : t.logViewer.fetchError);
       setIsLoading(false);
     }
-  }, [selectedFile]);
+  }, [selectedFile, t.logViewer.fetchError]);
 
   // ── 加载日志内容 ────────────────────────────────────────────────────────────────
   const loadLogContent = useCallback(async () => {
@@ -148,11 +153,11 @@ export function LogViewer() {
       setContent(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "读取日志失败");
+      setError(err instanceof Error ? err.message : t.logViewer.fetchError);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedFile]);
+  }, [selectedFile, t.logViewer.fetchError]);
 
   // ── 初始化加载 ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -197,7 +202,7 @@ export function LogViewer() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background text-xs text-muted-foreground">
-        加载中...
+        {t.logViewer.loading}
       </div>
     );
   }
@@ -206,12 +211,12 @@ export function LogViewer() {
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* 头部区域 */}
       <header className="flex-shrink-0 px-2 py-1.5 border-b flex items-center gap-2 flex-wrap">
-        <h1 className="text-xs font-medium">日志</h1>
+        <h1 className="text-xs font-medium">{t.logViewer.title}</h1>
 
         {/* 文件选择 */}
         <Select value={selectedFile} onValueChange={setSelectedFile}>
           <SelectTrigger size="sm" className="w-[160px]">
-            <SelectValue placeholder="选择文件" />
+            <SelectValue placeholder={t.logViewer.selectFile} />
           </SelectTrigger>
           <SelectContent>
             {logFiles.map((file) => (
@@ -223,12 +228,17 @@ export function LogViewer() {
         </Select>
 
         {/* 日志等级选择 */}
-        <LogLevelSelect value={levelFilter} onChange={setLevelFilter} />
+        <LogLevelSelect
+          value={levelFilter}
+          onChange={setLevelFilter}
+          levelLabel={t.logViewer.level}
+          allLabel={t.logViewer.all}
+        />
 
         {/* 搜索框 */}
         <Input
           type="text"
-          placeholder="搜索日志..."
+          placeholder={t.logViewer.searchPlaceholder}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="h-6 w-[140px] text-[10px] px-2"
@@ -241,7 +251,7 @@ export function LogViewer() {
             checked={autoScroll}
             onCheckedChange={setAutoScroll}
           />
-          自动滚动
+          {t.logViewer.autoScroll}
         </Label>
       </header>
 
@@ -256,27 +266,27 @@ export function LogViewer() {
       <ScrollArea ref={scrollRef} className="flex-1">
         <div className="p-2 font-mono text-[11px] leading-relaxed">
           {filteredLines.length === 0 && content && (
-            <div className="text-muted-foreground">无匹配日志</div>
+            <div className="text-muted-foreground">{t.logViewer.noMatch}</div>
           )}
           {content === "" && (
-            <div className="text-muted-foreground">暂无日志内容</div>
+            <div className="text-muted-foreground">{t.logViewer.noContent}</div>
           )}
           {filteredLines.map((line, i) => (
             <div key={i} className="whitespace-nowrap hover:bg-muted/30 px-1 -mx-1">
               {/* 时间戳 */}
               {line.timestamp && (
-                <span className="text-gray-500">{line.timestamp} </span>
+                <span className="text-muted-foreground">{line.timestamp} </span>
               )}
-              {/* 日志等级 */}
-              <span className={`${LOG_LEVEL_COLORS[line.level]} font-semibold`}>
-                {line.level.toUpperCase().padEnd(5)}{" "}
+              {/* 日志等级（固定宽度 + inline-block 实现对齐） */}
+              <span className={`inline-block w-[3.5rem] ${LOG_LEVEL_COLORS[line.level]}`}>
+                {line.level.toUpperCase()}
               </span>
               {/* 代码位置 */}
               {line.location && (
-                <span className="text-gray-500">{line.location}: </span>
+                <span className="text-muted-foreground">{line.location}: </span>
               )}
-              {/* 日志消息 */}
-              <span className="text-gray-300">{line.message}</span>
+              {/* 日志消息（使用主题感知颜色） */}
+              <span className="text-foreground/80 dark:text-foreground/70">{line.message}</span>
             </div>
           ))}
         </div>

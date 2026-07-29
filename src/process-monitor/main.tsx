@@ -7,6 +7,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ProcessMonitor } from "./ProcessMonitor";
+import { I18nProvider } from "@/locales/i18n";
 import "../styles/index.css";
 
 // ── 常量定义 ────────────────────────────────────────────────────────────────
@@ -59,7 +60,9 @@ const root = document.getElementById("root");
 if (root) {
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
-      <ProcessMonitor />
+      <I18nProvider>
+        <ProcessMonitor />
+      </I18nProvider>
     </React.StrictMode>
   );
 }

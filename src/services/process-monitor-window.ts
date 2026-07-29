@@ -11,6 +11,8 @@ import type { Event } from "@tauri-apps/api/event";
 
 const WINDOW_LABEL = "process-monitor";
 
+const STORAGE_KEY_THEME = "mnemosyne-theme";
+
 // ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 // 检测是否为开发模式
@@ -25,6 +27,19 @@ const getProcessMonitorUrl = (): string => {
   // 生产模式：使用构建后的路径
   return "/src/process-monitor/index.html";
 };
+
+/** 获取当前主题（用于窗口标题栏） */
+function getTheme(): "light" | "dark" | undefined {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_THEME);
+    if (stored === "light") return "light";
+    if (stored === "dark") return "dark";
+    // system 或未设置：不指定主题，让系统决定
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // ── 窗口操作 ────────────────────────────────────────────────────────────────
 
@@ -42,6 +57,7 @@ export async function openProcessMonitorWindow(): Promise<void> {
     return;
   }
 
+  const theme = getTheme();
   // 创建新窗口
   const webview = new WebviewWindow(WINDOW_LABEL, {
     url: getProcessMonitorUrl(),
@@ -55,6 +71,7 @@ export async function openProcessMonitorWindow(): Promise<void> {
     decorations: true,
     transparent: false,
     alwaysOnTop: false,
+    theme,
   });
 
   // 监听窗口创建错误

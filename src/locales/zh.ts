@@ -56,9 +56,14 @@ export default {
   logViewer: {
     title: "日志查看",
     noContent: "暂无日志内容",
+    noMatch: "无匹配日志",
     loading: "加载中...",
     autoScroll: "自动滚动",
     fetchError: "读取日志失败",
+    selectFile: "选择文件",
+    searchPlaceholder: "搜索日志...",
+    level: "等级",
+    all: "全部",
   },
   processMonitor: {
     title: "进程监控",

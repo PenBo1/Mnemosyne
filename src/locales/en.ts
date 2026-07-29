@@ -56,9 +56,14 @@ export default {
   logViewer: {
     title: "Log Viewer",
     noContent: "No log content",
+    noMatch: "No matching logs",
     loading: "Loading...",
     autoScroll: "Auto Scroll",
     fetchError: "Failed to read log",
+    selectFile: "Select file",
+    searchPlaceholder: "Search logs...",
+    level: "Level",
+    all: "All",
   },
   processMonitor: {
     title: "Process Monitor",

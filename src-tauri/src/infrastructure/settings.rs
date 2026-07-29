@@ -22,14 +22,24 @@ fn parse_theme(theme: &str) -> Result<Option<tauri::Theme>, AppError> {
 
 #[tauri::command]
 pub fn set_window_theme(app: tauri::AppHandle, theme: String) -> Result<IpcResponse<()>, AppError> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| AppError::not_found("Main window not found"))?;
-
     let tauri_theme = parse_theme(&theme)?;
-    window
-        .set_theme(tauri_theme)
-        .map_err(|e| AppError::internal(e.to_string()))?;
+
+    // 更新主窗口主题
+    if let Some(window) = app.get_webview_window("main") {
+        window
+            .set_theme(tauri_theme)
+            .map_err(|e| AppError::internal(e.to_string()))?;
+    }
+
+    // 更新日志查看窗口主题
+    if let Some(window) = app.get_webview_window("log-viewer") {
+        let _ = window.set_theme(tauri_theme);
+    }
+
+    // 更新进程监控窗口主题
+    if let Some(window) = app.get_webview_window("process-monitor") {
+        let _ = window.set_theme(tauri_theme);
+    }
 
     Ok(IpcResponse::ok(()))
 }

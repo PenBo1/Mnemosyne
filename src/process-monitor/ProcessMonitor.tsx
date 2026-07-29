@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { getProcessList } from "./services";
 import type { ProcessInfo, ProcessType } from "./types";
+import { useI18n } from "@/locales/i18n";
 
 // ── 工具函数 ────────────────────────────────────────────────────────────────
 
@@ -36,32 +37,31 @@ function formatCpu(cpu: number): string {
   return `${cpu.toFixed(1)}%`;
 }
 
-// ── 常量定义 ────────────────────────────────────────────────────────────────
-
-/** 进程类型显示名称 */
-const processTypeLabels: Record<ProcessType, string> = {
-  main: "主进程",
-  renderer: "渲染",
-  gpu: "GPU",
-  utility: "工具",
-  unknown: "未知",
-};
-
-/** 进程类型 Badge 变体 */
-const processTypeVariants: Record<ProcessType, "default" | "secondary" | "destructive" | "outline"> = {
-  main: "default",
-  renderer: "secondary",
-  gpu: "outline",
-  utility: "outline",
-  unknown: "outline",
-};
-
 // ── 组件实现 ────────────────────────────────────────────────────────────────
 
 export function ProcessMonitor() {
+  const { t } = useI18n();
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  /** 进程类型显示名称（i18n） */
+  const processTypeLabels: Record<ProcessType, string> = {
+    main: t.processMonitor.types.main,
+    renderer: t.processMonitor.types.renderer,
+    gpu: t.processMonitor.types.gpu,
+    utility: t.processMonitor.types.utility,
+    unknown: t.processMonitor.types.unknown,
+  };
+
+  /** 进程类型 Badge 变体 */
+  const processTypeVariants: Record<ProcessType, "default" | "secondary" | "destructive" | "outline"> = {
+    main: "default",
+    renderer: "secondary",
+    gpu: "outline",
+    utility: "outline",
+    unknown: "outline",
+  };
 
   const fetchProcesses = useCallback(async () => {
     try {
@@ -69,11 +69,11 @@ export function ProcessMonitor() {
       setProcesses(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "获取进程数据失败");
+      setError(err instanceof Error ? err.message : t.processMonitor.fetchError);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t.processMonitor.fetchError]);
 
   useEffect(() => {
     fetchProcesses();
@@ -84,7 +84,7 @@ export function ProcessMonitor() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background text-xs text-muted-foreground">
-        加载中...
+        {t.processMonitor.loading}
       </div>
     );
   }
@@ -101,9 +101,9 @@ export function ProcessMonitor() {
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* 头部区域 */}
       <header className="flex-shrink-0 px-2 py-1.5 border-b flex items-center gap-2">
-        <h1 className="text-xs font-medium">进程监控</h1>
+        <h1 className="text-xs font-medium">{t.processMonitor.title}</h1>
         <span className="text-[10px] text-muted-foreground">
-          {processes.length} 个进程
+          {t.processMonitor.processCount.replace("{count}", String(processes.length))}
         </span>
       </header>
 
@@ -113,16 +113,16 @@ export function ProcessMonitor() {
           <TableHeader className="sticky top-0 bg-background z-10">
             <TableRow className="hover:bg-transparent">
               <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground">
-                进程
+                {t.processMonitor.columns.process}
               </TableHead>
               <TableHead className="h-7 px-2 w-[70px] text-[10px] font-medium text-muted-foreground">
-                PID
+                {t.processMonitor.columns.pid}
               </TableHead>
               <TableHead className="h-7 px-2 w-[60px] text-[10px] font-medium text-muted-foreground text-right">
-                CPU
+                {t.processMonitor.columns.cpu}
               </TableHead>
               <TableHead className="h-7 px-2 w-[80px] text-[10px] font-medium text-muted-foreground text-right">
-                内存
+                {t.processMonitor.columns.memory}
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -172,7 +172,7 @@ export function ProcessMonitor() {
 
         {processes.length === 0 && (
           <div className="text-center py-4 text-xs text-muted-foreground">
-            未找到相关进程
+            {t.processMonitor.noProcesses}
           </div>
         )}
       </ScrollArea>

@@ -11,6 +11,8 @@ import type { Event } from "@tauri-apps/api/event";
 
 const WINDOW_LABEL = "log-viewer";
 
+const STORAGE_KEY_THEME = "mnemosyne-theme";
+
 // ── 辅助函数 ────────────────────────────────────────────────────────────────
 
 // 检测是否为开发模式
@@ -23,6 +25,19 @@ const getLogViewerUrl = (): string => {
   }
   return "/src/log-viewer/index.html";
 };
+
+/** 获取当前主题（用于窗口标题栏） */
+function getTheme(): "light" | "dark" | undefined {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_THEME);
+    if (stored === "light") return "light";
+    if (stored === "dark") return "dark";
+    // system 或未设置：不指定主题，让系统决定
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // ── 窗口操作 ────────────────────────────────────────────────────────────────
 
@@ -38,6 +53,7 @@ export async function openLogViewerWindow(): Promise<void> {
     return;
   }
 
+  const theme = getTheme();
   const webview = new WebviewWindow(WINDOW_LABEL, {
     url: getLogViewerUrl(),
     title: "Log Viewer - Mnemosyne",
@@ -50,6 +66,7 @@ export async function openLogViewerWindow(): Promise<void> {
     decorations: true,
     transparent: false,
     alwaysOnTop: false,
+    theme,
   });
 
   webview.once("tauri://error", (e: Event<unknown>) => {
