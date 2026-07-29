@@ -6,7 +6,7 @@
 
 import { useState, useRef, useCallback, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Paperclip, ArrowUp, Square, X, FileText, BookOpen, FileCode, Type, Terminal } from "lucide-react";
+import { Paperclip, ArrowUp, Square, X, FileText, BookOpen, FileCode, Type, Terminal, Sparkles, Undo2, Loader2 } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -69,6 +69,8 @@ interface ChatInputProps {
   onRemoveAttachment: (index: number) => void;
   activeCommand?: SlashCommand | null;
   onActiveCommandChange?: (cmd: SlashCommand | null) => void;
+  /** 提示词优化回调 */
+  onOptimizePrompt?: () => Promise<string | null>;
 }
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -87,11 +89,16 @@ export function ChatInput({
   onRemoveAttachment,
   activeCommand,
   onActiveCommandChange,
+  onOptimizePrompt,
 }: ChatInputProps) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+
+  // 提示词优化状态
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [originalPrompt, setOriginalPrompt] = useState<string | null>(null);
 
   const bindings = useShortcutBindings();
   const submitBindings = bindings.submitMessage ?? [];
@@ -193,6 +200,40 @@ export function ChatInput({
     }
   };
 
+  // ── 提示词优化处理 ────────────────────────────────────────────────────────
+
+  /**
+   * 开始优化提示词
+   */
+  const handleOptimizePrompt = useCallback(async () => {
+    if (!onOptimizePrompt || !value.trim() || isOptimizing) return;
+
+    // 保存原始提示词
+    setOriginalPrompt(value);
+    setIsOptimizing(true);
+
+    try {
+      const optimized = await onOptimizePrompt();
+      if (optimized) {
+        onChange(optimized);
+      }
+    } catch (error) {
+      console.error("Prompt optimization failed:", error);
+    } finally {
+      setIsOptimizing(false);
+    }
+  }, [onOptimizePrompt, value, isOptimizing, onChange]);
+
+  /**
+   * 撤回优化，恢复原始提示词
+   */
+  const handleUndoOptimization = useCallback(() => {
+    if (originalPrompt !== null) {
+      onChange(originalPrompt);
+      setOriginalPrompt(null);
+    }
+  }, [originalPrompt, onChange]);
+
   // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   const placeholder = attachments.length > 0
@@ -265,6 +306,7 @@ export function ChatInput({
           rows={1}
           placeholder={activeCommand ? t.agentChat.slashHintArgs : placeholder}
           className="max-h-[200px] min-h-7"
+          disabled={isOptimizing}
         />
 
         <InputGroupAddon align="block-end" className="justify-between gap-2 border-t border-border/60 pt-2">
@@ -291,13 +333,60 @@ export function ChatInput({
             <span className="hidden text-[10px] text-muted-foreground sm:inline">
               <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd>
             </span>
+
+            {/* 提示词优化按钮 */}
+            {onOptimizePrompt && !streaming && (
+              originalPrompt !== null ? (
+                // 撤回按钮
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleUndoOptimization}
+                      disabled={isOptimizing}
+                      aria-label={t.agentChat.undoOptimize}
+                      className="rounded-lg size-8"
+                    >
+                      <Undo2 className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">{t.agentChat.undoOptimize}</TooltipContent>
+                </Tooltip>
+              ) : (
+                // 优化按钮
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleOptimizePrompt}
+                      disabled={!value.trim() || isOptimizing}
+                      aria-label={t.agentChat.optimizePrompt}
+                      className="rounded-lg size-8"
+                    >
+                      {isOptimizing ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {isOptimizing ? t.agentChat.optimizing : t.agentChat.optimizePrompt}
+                  </TooltipContent>
+                </Tooltip>
+              )
+            )}
+
+            {/* 发送/停止按钮 */}
             {streaming ? (
               <Button
                 variant="destructive"
                 size="icon"
                 onClick={onCancel}
                 aria-label={t.agentChat.stop}
-                className="rounded-full"
+                className="rounded-lg size-8"
               >
                 <Square className="size-3.5 fill-current" />
               </Button>
@@ -307,9 +396,9 @@ export function ChatInput({
                   <Button
                     size="icon"
                     onClick={onSubmit}
-                    disabled={!value.trim() && !activeCommand}
+                    disabled={(!value.trim() && !activeCommand) || isOptimizing}
                     aria-label={t.agentChat.send}
-                    className="rounded-full"
+                    className="rounded-lg size-8"
                   >
                     <ArrowUp className="size-4" />
                   </Button>

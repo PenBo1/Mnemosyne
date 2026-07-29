@@ -21,6 +21,8 @@ import { LoopPanel } from "@/features/agent/components/LoopPanel";
 import { FailureReport, type FailurePattern } from "@/features/agent/components/FailureReport";
 import { SLASH_COMMANDS, type SlashCommand } from "@/features/chat/components/slash-commands";
 import { ConversationTimeline } from "@/features/chat/components/conversation-timeline";
+import { optimizePromptDirect } from "@/features/chat/services/prompt-optimizer";
+import { loadSettings, type AiModelConfig } from "@/services/settings";
 import type { AttachmentSpec } from "@/features/chat/types";
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -214,6 +216,51 @@ export default function ChatPage() {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  // ── 提示词优化 ────────────────────────────────────────────────────────────
+
+  /**
+   * 优化当前输入的提示词
+   */
+  const handleOptimizePrompt = useCallback(async (): Promise<string | null> => {
+    try {
+      // 加载设置获取当前模型配置
+      const settings = await loadSettings();
+      const models = settings.ai.models;
+      const activeModelId = settings.ai.active_model_id;
+
+      if (!activeModelId) {
+        toast.error(t.chat.errors.noModelConfigured);
+        return null;
+      }
+
+      const modelConfig = models.find((m: AiModelConfig) => m.id === activeModelId);
+      if (!modelConfig) {
+        toast.error(t.chat.errors.noModelConfigured);
+        return null;
+      }
+
+      // 调用优化服务
+      const optimized = await optimizePromptDirect(input, {
+        provider: modelConfig.provider,
+        model: modelConfig.model,
+        api_key: modelConfig.api_key,
+        base_url: modelConfig.base_url,
+      });
+
+      if (optimized) {
+        toast.success(t.agentChat.promptOptimized);
+        return optimized;
+      } else {
+        toast.error(t.agentChat.optimizeFailed);
+        return null;
+      }
+    } catch (error) {
+      console.error("Prompt optimization error:", error);
+      toast.error(t.agentChat.optimizeFailed);
+      return null;
+    }
+  }, [input, t]);
+
   // ── 面板控制 ──────────────────────────────────────────────────────────────
 
   const togglePanel = useCallback(() => setPanelOpen((v) => !v), []);
@@ -297,6 +344,7 @@ export default function ChatPage() {
           onRemoveAttachment={handleRemoveAttachment}
           activeCommand={activeCommand}
           onActiveCommandChange={handleActiveCommandChange}
+          onOptimizePrompt={handleOptimizePrompt}
         />
       </main>
 
