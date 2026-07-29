@@ -15,11 +15,14 @@ import { useI18n } from "@/locales/i18n";
 
 // ── 日志等级类型 ────────────────────────────────────────────────────────────────
 
-type LogLevel = "all" | "error" | "warn" | "info" | "debug" | "trace";
+/** 日志等级（从日志行解析） */
+type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
+/** 日志过滤器等级（包含 "all" 选项） */
+type LogLevelFilter = "all" | LogLevel;
 
 /** 日志等级显示颜色（使用语义化颜色，支持浅色主题） */
 const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
-  all: "",
   error: "text-red-600 dark:text-red-400 font-semibold",
   warn: "text-amber-600 dark:text-amber-400",
   info: "text-sky-600 dark:text-sky-400",
@@ -32,7 +35,7 @@ const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
 interface ParsedLogLine {
   raw: string;
   timestamp: string;
-  level: LogLevel;
+  level: LogLevel | null; // null 表示未解析成功，不显示等级
   location: string;
   message: string;
 }
@@ -41,11 +44,11 @@ interface ParsedLogLine {
  * 解析日志行格式：2026-07-28T08:30:34.749837Z  INFO mnemosyne_lib: message
  */
 function parseLogLine(line: string): ParsedLogLine {
-  // 默认值
+  // 默认值（未解析成功的行）
   const defaultResult: ParsedLogLine = {
     raw: line,
     timestamp: "",
-    level: "info",
+    level: null,
     location: "",
     message: line,
   };
@@ -90,15 +93,15 @@ function parseLogLine(line: string): ParsedLogLine {
 // ── 日志等级选择组件 ────────────────────────────────────────────────────────────────
 
 interface LogLevelSelectProps {
-  value: LogLevel;
-  onChange: (value: LogLevel) => void;
+  value: LogLevelFilter;
+  onChange: (value: LogLevelFilter) => void;
   levelLabel: string;
   allLabel: string;
 }
 
 function LogLevelSelect({ value, onChange, levelLabel, allLabel }: LogLevelSelectProps) {
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as LogLevel)}>
+    <Select value={value} onValueChange={(v) => onChange(v as LogLevelFilter)}>
       <SelectTrigger size="sm" className="w-[100px]">
         <SelectValue placeholder={levelLabel} />
       </SelectTrigger>
@@ -125,7 +128,7 @@ export function LogViewer() {
   const [isLoading, setIsLoading] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [levelFilter, setLevelFilter] = useState<LogLevel>("all");
+  const [levelFilter, setLevelFilter] = useState<LogLevelFilter>("all");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // ── 加载日志文件列表 ────────────────────────────────────────────────────────────────
@@ -187,9 +190,11 @@ export function LogViewer() {
     const parsed = lines.map(parseLogLine);
 
     return parsed.filter((line) => {
-      // 等级过滤
-      if (levelFilter !== "all" && line.level !== levelFilter) {
-        return false;
+      // 等级过滤（未解析的行只显示在 "全部" 模式）
+      if (levelFilter !== "all") {
+        if (line.level === null || line.level !== levelFilter) {
+          return false;
+        }
       }
       // 搜索过滤
       if (searchQuery && !line.raw.toLowerCase().includes(searchQuery.toLowerCase())) {
@@ -277,10 +282,14 @@ export function LogViewer() {
               {line.timestamp && (
                 <span className="text-muted-foreground">{line.timestamp} </span>
               )}
-              {/* 日志等级（固定宽度 + inline-block 实现对齐） */}
-              <span className={`inline-block w-[3.5rem] ${LOG_LEVEL_COLORS[line.level]}`}>
-                {line.level.toUpperCase()}
-              </span>
+              {/* 日志等级（固定宽度 + inline-block 实现对齐，null 时不显示等级） */}
+              {line.level !== null ? (
+                <span className={`inline-block w-[3.5rem] ${LOG_LEVEL_COLORS[line.level]}`}>
+                  {line.level.toUpperCase()}
+                </span>
+              ) : (
+                <span className="inline-block w-[3.5rem] text-muted-foreground/50">---</span>
+              )}
               {/* 代码位置 */}
               {line.location && (
                 <span className="text-muted-foreground">{line.location}: </span>
