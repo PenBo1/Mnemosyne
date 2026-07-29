@@ -26,17 +26,18 @@ pub fn set_window_theme(app: tauri::AppHandle, theme: String) -> Result<IpcRespo
 
     // 更新主窗口主题
     if let Some(window) = app.get_webview_window("main") {
-        window
-            .set_theme(tauri_theme)
-            .map_err(|e| AppError::internal(e.to_string()))?;
+        // 忽略窗口已关闭或句柄无效的错误
+        if let Err(e) = window.set_theme(tauri_theme) {
+            tracing::debug!("Failed to set theme for main window: {}", e);
+        }
     }
 
-    // 更新日志查看窗口主题
+    // 更新日志查看窗口主题（忽略错误，窗口可能未打开或已关闭）
     if let Some(window) = app.get_webview_window("log-viewer") {
         let _ = window.set_theme(tauri_theme);
     }
 
-    // 更新进程监控窗口主题
+    // 更新进程监控窗口主题（忽略错误，窗口可能未打开或已关闭）
     if let Some(window) = app.get_webview_window("process-monitor") {
         let _ = window.set_theme(tauri_theme);
     }

@@ -282,14 +282,16 @@ export function LogViewer() {
               {line.timestamp && (
                 <span className="text-muted-foreground">{line.timestamp} </span>
               )}
-              {/* 日志等级（固定宽度 + inline-block 实现对齐，null 时不显示等级） */}
+              {/* 日志等级（右对齐 + 固定宽度，null 时不显示等级） */}
               {line.level !== null ? (
-                <span className={`inline-block w-[3.5rem] ${LOG_LEVEL_COLORS[line.level]}`}>
+                <span className={`inline-block w-[5ch] text-right ${LOG_LEVEL_COLORS[line.level]}`}>
                   {line.level.toUpperCase()}
                 </span>
               ) : (
-                <span className="inline-block w-[3.5rem] text-muted-foreground/50">---</span>
+                <span className="inline-block w-[5ch] text-right text-muted-foreground/50">---</span>
               )}
+              {/* 空格（与原始日志格式一致） */}
+              <span> </span>
               {/* 代码位置 */}
               {line.location && (
                 <span className="text-muted-foreground">{line.location}: </span>
