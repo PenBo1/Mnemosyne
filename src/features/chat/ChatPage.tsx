@@ -20,6 +20,7 @@ import { MemoryPanel } from "@/features/agent/components/MemoryPanel";
 import { LoopPanel } from "@/features/agent/components/LoopPanel";
 import { FailureReport, type FailurePattern } from "@/features/agent/components/FailureReport";
 import { SLASH_COMMANDS, type SlashCommand } from "@/features/chat/components/slash-commands";
+import { ConversationTimeline } from "@/features/chat/components/conversation-timeline";
 import type { AttachmentSpec } from "@/features/chat/types";
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ export default function ChatPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [loopPanelOpen, setLoopPanelOpen] = useState(false);
+  const [timelineExpanded, setTimelineExpanded] = useState(true);
   const [activeCommand, setActiveCommand] = useState<SlashCommand | null>(null);
   const [failures, setFailures] = useState<FailurePattern[]>([]);
   
@@ -218,10 +220,18 @@ export default function ChatPage() {
   const togglePanel = useCallback(() => setPanelOpen((v) => !v), []);
   const toggleMemoryPanel = useCallback(() => setMemoryPanelOpen((v) => !v), []);
   const toggleLoopPanel = useCallback(() => setLoopPanelOpen((v) => !v), []);
+  const toggleTimeline = useCallback(() => setTimelineExpanded((v) => !v), []);
   const closeMemoryPanel = useCallback(() => setMemoryPanelOpen(false), []);
   const closeLoopPanel = useCallback(() => setLoopPanelOpen(false), []);
   const dismissFailures = useCallback(() => setFailures([]), []);
   const handleApplyAll = useCallback(async () => { await planApplyAll(); }, [planApplyAll]);
+
+  // 时间线节点点击：滚动到对应消息
+  const handleTimelineNodeClick = useCallback((messageIndex: number) => {
+    // 通过自定义事件通知 MessageList 滚动到指定消息
+    const event = new CustomEvent("timeline-scroll-to", { detail: { messageIndex } });
+    window.dispatchEvent(event);
+  }, []);
 
   const totalTokens = (activeSession?.input_tokens ?? 0) + (activeSession?.output_tokens ?? 0);
 
@@ -229,6 +239,15 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full bg-background">
+      {/* 时间线侧边栏 */}
+      <ConversationTimeline
+        messages={messages}
+        streaming={streaming}
+        expanded={timelineExpanded}
+        onNodeClick={handleTimelineNodeClick}
+        className="border-r border-border/50"
+      />
+
       <main className="flex min-w-0 flex-1 flex-col">
         <ChatHeader
           title={title}
@@ -238,12 +257,14 @@ export default function ChatPage() {
           panelOpen={panelOpen}
           memoryPanelOpen={memoryPanelOpen}
           loopPanelOpen={loopPanelOpen}
+          timelineExpanded={timelineExpanded}
           onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
           onTogglePanel={togglePanel}
           onTogglePlanMode={togglePlanMode}
           onToggleMemoryPanel={toggleMemoryPanel}
           onToggleLoopPanel={toggleLoopPanel}
+          onToggleTimeline={toggleTimeline}
         />
 
         <MessageList

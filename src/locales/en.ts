@@ -921,6 +921,7 @@ export default {
   },
   chat: {
     title: "AI Chat",
+    timeline: "Timeline",
     description: "Chat with AI for writing assistance",
     empty: "Start a conversation with AI",
     placeholder: "Describe a task or ask a question...",

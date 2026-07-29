@@ -922,6 +922,7 @@ export default {
   },
   chat: {
     title: "AI 对话",
+    timeline: "时间线",
     description: "与 AI 对话获取写作帮助",
     empty: "开始与 AI 对话",
     placeholder: "描述任务或提出问题...",

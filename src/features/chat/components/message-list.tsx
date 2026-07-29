@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useEffect } from "react";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -14,6 +14,7 @@ import {
   MessageScrollerContent,
   MessageScrollerItem,
   MessageScrollerButton,
+  useMessageScroller,
 } from "@/components/ui/message-scroller";
 import { MessageGroup } from "@/components/ui/message";
 import { useAgentStore } from "@/features/chat/store";
@@ -35,6 +36,47 @@ interface MessageListProps {
   streaming: boolean;
   error: string | null;
   onRegenerate: () => void;
+}
+
+// ── 时间线滚动监听组件 ──────────────────────────────────────────────────────
+
+/**
+ * 监听时间线滚动事件并滚动到对应消息
+ */
+function TimelineScrollListener({
+  groups,
+}: {
+  groups: Array<{ role: string; messages: ChatMessage[]; startIdx: number }>;
+}) {
+  const scrollerApi = useMessageScroller();
+
+  useEffect(() => {
+    const handleTimelineScroll = (e: CustomEvent<{ messageIndex: number }>) => {
+      const { messageIndex } = e.detail;
+
+      // 找到包含该消息索引的分组
+      for (const group of groups) {
+        const endIdx = group.startIdx + group.messages.length;
+        if (messageIndex >= group.startIdx && messageIndex < endIdx) {
+          // 找到该消息的 ID
+          const msgIdx = messageIndex - group.startIdx;
+          const msg = group.messages[msgIdx];
+          if (msg && scrollerApi) {
+            // 使用 messageId 滚动到对应消息
+            scrollerApi.scrollToMessage(msg.id);
+          }
+          break;
+        }
+      }
+    };
+
+    window.addEventListener("timeline-scroll-to", handleTimelineScroll as EventListener);
+    return () => {
+      window.removeEventListener("timeline-scroll-to", handleTimelineScroll as EventListener);
+    };
+  }, [groups, scrollerApi]);
+
+  return null;
 }
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -87,6 +129,7 @@ export const MessageList = memo(function MessageList({
 
   return (
     <MessageScrollerProvider>
+      <TimelineScrollListener groups={groups} />
       <MessageScroller className="flex-1 bg-background">
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto max-w-3xl px-4 py-6 gap-5">
