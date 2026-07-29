@@ -7,6 +7,7 @@ use tauri::{
     tray::{TrayIcon, TrayIconBuilder},
     AppHandle, Manager, Runtime,
 };
+use crate::ShutdownToken;
 
 // ── 托盘菜单项 ID ──────────────────────────────────────────────────────────
 
@@ -70,6 +71,10 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> Result<TrayIcon<R>, Box<dyn
                     open_log_viewer_window(app);
                 }
                 MENU_QUIT => {
+                    // 触发关闭令牌，优雅停止后台任务
+                    if let Some(shutdown_token) = app.try_state::<ShutdownToken>() {
+                        shutdown_token.0.cancel();
+                    }
                     // 完全退出应用
                     app.exit(0);
                 }

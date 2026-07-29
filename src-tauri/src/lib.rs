@@ -28,6 +28,17 @@ use crate::infrastructure::mcp::state::McpState;
 use crate::security_kernel::SecurityKernelState;
 use crate::security_kernel::hooks::HookEngineState;
 use tauri::Manager;
+use tokio_util::sync::CancellationToken;
+
+/// 应用关闭信号，用于优雅停止后台任务
+/// 当应用退出时，取消令牌被触发，所有监听此令牌的后台任务应停止
+pub struct ShutdownToken(pub CancellationToken);
+
+impl Default for ShutdownToken {
+    fn default() -> Self {
+        Self(CancellationToken::new())
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -68,8 +79,12 @@ pub fn run() {
                     // 隐藏窗口而不是关闭
                     window.hide().ok();
                     api.prevent_close();
+                } else {
+                    // 允许关闭：触发关闭令牌，优雅停止后台任务
+                    if let Some(shutdown_token) = window.try_state::<ShutdownToken>() {
+                        shutdown_token.0.cancel();
+                    }
                 }
-                // 如果 close_behavior 是 "exit"，则允许默认关闭行为（退出程序）
             }
         })
         .setup(|app| {
@@ -229,25 +244,34 @@ pub fn run() {
             // Agent Registry —— 统一 Agent 元数据注册表（main + 15 pipeline + 3 subagent + 3 loopskill）
             app.manage(crate::core::agent::registry::AgentRegistryState::new());
 
+            // 创建关闭令牌，用于优雅停止后台任务
+            // 当窗口关闭时，令牌被取消，所有监听此令牌的后台任务应停止
+            let shutdown_token = ShutdownToken::default();
+            app.manage(shutdown_token);
+
             // SecurityKernel 定期清理（每 5 分钟清理过期的 policy/rate_limiter/audit/approval 条目）
             // 防止 RateStore / ApprovalStore 等无限增长导致内存泄漏
             //
-            // 注：setup 闭包在主线程同步执行，不在 Tokio runtime context 内，
-            // 直接 tokio::spawn 会 panic（"no reactor running"）。
-            // 必须用 tauri::async_runtime::spawn —— 它内部走 Tauri 管理的 runtime，
-            // 可在任意线程调用。
-            //
-            // 此任务为 fire-and-forget，无 shutdown signal。Tauri 桌面应用退出时
-            // runtime 会被 Builder::Drop 终止，所有 spawn 的任务随之丢弃。
-            // cleanup 是幂等的纯内存操作，被强行中断不会留下不一致状态。
+            // 使用 CancellationToken 实现优雅关闭：
+            // - 当窗口关闭时，shutdown_token 被取消
+            // - cleanup 任务收到取消信号后退出循环
+            // - 避免在事件循环销毁后尝试发送事件（PostMessage 0x80070578 错误）
             {
                 let kernel_state = app.state::<SecurityKernelState>().inner().clone();
+                let shutdown = app.state::<ShutdownToken>().inner().0.clone();
                 tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
                     interval.tick().await; // 跳过首次立即触发
                     loop {
-                        interval.tick().await;
-                        kernel_state.cleanup();
+                        tokio::select! {
+                            _ = shutdown.cancelled() => {
+                                tracing::info!("SecurityKernel cleanup task received shutdown signal");
+                                break;
+                            }
+                            _ = interval.tick() => {
+                                kernel_state.cleanup();
+                            }
+                        }
                     }
                 });
             }
