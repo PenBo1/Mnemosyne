@@ -88,7 +88,7 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> Result<TrayIcon<R>, Box<dyn
 
 // ── 窗口打开函数 ────────────────────────────────────────────────────────────
 
-/// 打开关于窗口
+/// 打开关于窗口（使用主窗口路由）
 fn open_about_window<R: Runtime>(app: &AppHandle<R>) {
     let label = "about";
     
@@ -99,16 +99,21 @@ fn open_about_window<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
 
-    // 创建新窗口
+    // 创建新窗口 - 使用主应用的关于页面路由
     let _ = tauri::WebviewWindowBuilder::new(
         app,
         label,
-        tauri::WebviewUrl::App("about".into()),
+        tauri::WebviewUrl::App("index.html".into()), // 主应用入口
     )
     .title("关于 Mnemosyne")
     .inner_size(400.0, 300.0)
     .resizable(false)
     .maximizable(false)
+    .initialization_script(r##"
+        setTimeout(() => {
+            window.location.hash = "#/settings";
+        }, 100);
+    "##)
     .build();
 }
 
@@ -123,11 +128,11 @@ fn open_process_monitor_window<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
 
-    // 创建新窗口
+    // 创建新窗口 - 使用正确的构建路径
     let _ = tauri::WebviewWindowBuilder::new(
         app,
         label,
-        tauri::WebviewUrl::App("process-monitor".into()),
+        tauri::WebviewUrl::App("src/process-monitor/index.html".into()),
     )
     .title("进程监视器")
     .inner_size(600.0, 400.0)
@@ -145,11 +150,11 @@ fn open_log_viewer_window<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
 
-    // 创建新窗口
+    // 创建新窗口 - 使用正确的构建路径
     let _ = tauri::WebviewWindowBuilder::new(
         app,
         label,
-        tauri::WebviewUrl::App("log-viewer".into()),
+        tauri::WebviewUrl::App("src/log-viewer/index.html".into()),
     )
     .title("日志查看器")
     .inner_size(800.0, 600.0)
