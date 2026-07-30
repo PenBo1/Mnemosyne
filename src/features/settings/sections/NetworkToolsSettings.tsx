@@ -17,8 +17,7 @@ import { ToolLimitsSettings } from "./ToolLimitsSettings";
 
 export function NetworkToolsSettings() {
   const { t } = useI18n();
-  // 使用 any 绕过类型检查
-  const tn = (t.settings as any).networkToolsSettings;
+  const tn = t.settings.networkToolsSettings;
 
   return (
     <PageContainer>

@@ -422,6 +422,7 @@ pub fn run() {
             crate::infrastructure::sandbox::commands::sandbox_evaluate_network,
             crate::infrastructure::llm::commands::llm_model_list,
             crate::infrastructure::llm::commands::llm_list_provider_presets,
+            crate::infrastructure::llm::commands::prompt_optimize,
             crate::infrastructure::providers::provider_list,
             crate::infrastructure::providers::provider_models,
             crate::infrastructure::providers::provider_test_connection,

@@ -55,7 +55,7 @@ function isStyleValue(s: string): boolean {
  */
 export const CollaborationStylePicker = memo(function CollaborationStylePicker() {
   const { t } = useI18n();
-  const [style, setStyle] = useState<CollaborationStyle>(getCurrentCollaborationStyle());
+  const [style, setStyle] = useState<CollaborationStyle>(() => getCurrentCollaborationStyle());
 
   // 同步外部变更(如其他组件修改了 style)
   useEffect(() => {

@@ -6,15 +6,14 @@
 //! 本地与云端统一 OpenAI 兼容协议，前端参数用 camelCase。
 
 use tauri::State;
-
 use crate::shared::error::{AppError, IpcResponse};
 use crate::infrastructure::db::state::DbState;
-use super::types::{EmbeddingConfig, IndexDocParams, SearchParams};
-use super::{client, chunker, ingest};
+use super::types::{EmbeddingConfig, IndexDocParams, SearchParams, IngestFileParams, ALLOWED_DOC_TYPES};
+use super::{config, service};
 
-/// 允许的文档类型白名单
-const ALLOWED_DOC_TYPES: &[&str] = &["chapter", "wiki", "message", "material"];
+// ── 参数验证 ────────────────────────────────────────────────────────────────
 
+/// 验证文档类型
 fn validate_doc_type(doc_type: &str) -> Result<(), AppError> {
     if !ALLOWED_DOC_TYPES.contains(&doc_type) {
         return Err(AppError::invalid_input(format!(
@@ -24,53 +23,15 @@ fn validate_doc_type(doc_type: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// 从 config.json 读取 embedding 配置(缺省时返回默认值)
-fn read_embedding_config(config_path: &std::path::Path) -> EmbeddingConfig {
-    if let Ok(data) = std::fs::read_to_string(config_path) {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
-            if let Some(ai) = json.get("ai") {
-                if let Some(emb) = ai.get("embedding") {
-                    if let Ok(cfg) = serde_json::from_value::<EmbeddingConfig>(emb.clone()) {
-                        return cfg;
-                    }
-                }
-            }
-        }
-    }
-    EmbeddingConfig::default()
-}
-
-/// 写入 embedding 配置到 config.json(保留其他字段)
-fn write_embedding_config(config_path: &std::path::Path, cfg: &EmbeddingConfig) -> Result<(), AppError> {
-    let mut json: serde_json::Value = if let Ok(data) = std::fs::read_to_string(config_path) {
-        serde_json::from_str(&data).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    if json.get("ai").is_none() {
-        json["ai"] = serde_json::json!({});
-    }
-    json["ai"]["embedding"] = serde_json::to_value(cfg)
-        .map_err(|e| AppError::internal(format!("Failed to serialize embedding config: {}", e)))?;
-    let pretty = serde_json::to_string_pretty(&json)
-        .map_err(|e| AppError::internal(format!("Failed to serialize config: {}", e)))?;
-    std::fs::write(config_path, pretty)
-        .map_err(|e| AppError::internal(format!("Failed to write config: {}", e)))?;
-    Ok(())
-}
+// ── 配置命令 ────────────────────────────────────────────────────────────────
 
 /// 读取 embedding 配置
 #[tauri::command]
 pub fn embedding_get_config(state: State<'_, DbState>) -> Result<IpcResponse<EmbeddingConfig>, AppError> {
-    let start = std::time::Instant::now();
-    tracing::info!("embedding_get_config: enter");
-    
-    let cfg = read_embedding_config(&state.data_dir.config_path());
-    
+    let cfg = config::read_embedding_config(&state.data_dir.config_path());
     tracing::info!(
         enabled = cfg.enabled,
         model = %cfg.model,
-        duration_ms = start.elapsed().as_millis(),
         "embedding_get_config: exit"
     );
     Ok(IpcResponse::ok(cfg))
@@ -82,26 +43,28 @@ pub fn embedding_set_config(
     state: State<'_, DbState>,
     config: EmbeddingConfig,
 ) -> Result<IpcResponse<()>, AppError> {
-    write_embedding_config(&state.data_dir.config_path(), &config)?;
+    config::write_embedding_config(&state.data_dir.config_path(), &config)?;
     tracing::info!(enabled = config.enabled, model = %config.model, "Embedding config saved");
     Ok(IpcResponse::ok(()))
 }
 
-/// 测试 embedding 连接:返回实际维度
+// ── 测试命令 ────────────────────────────────────────────────────────────────
+
+/// 测试 embedding 连接：返回实际维度
 #[tauri::command]
-pub async fn embedding_test(
-    state: State<'_, DbState>,
-) -> Result<IpcResponse<usize>, AppError> {
-    let cfg = read_embedding_config(&state.data_dir.config_path());
+pub async fn embedding_test(state: State<'_, DbState>) -> Result<IpcResponse<usize>, AppError> {
+    let cfg = config::read_embedding_config(&state.data_dir.config_path());
     if !cfg.enabled {
         return Err(AppError::invalid_input("Embedding is disabled, enable it first"));
     }
-    let dim = client::test_connection(&cfg).await?;
+    let dim = super::client::test_connection(&cfg).await?;
     tracing::info!(dim, "Embedding test passed");
     Ok(IpcResponse::ok(dim))
 }
 
-/// 索引文档:切分 -> embed -> 存入向量表
+// ── 索引命令 ────────────────────────────────────────────────────────────────
+
+/// 索引文档：切分 -> embed -> 存入向量表
 #[tauri::command]
 pub async fn embedding_index_doc(
     state: State<'_, DbState>,
@@ -114,50 +77,18 @@ pub async fn embedding_index_doc(
         workspace_id = ?params.workspace_id,
         "embedding_index_doc: enter"
     );
-    
+
+    // 参数验证
     validate_doc_type(&params.doc_type)?;
     if params.doc_id.trim().is_empty() {
-        tracing::error!("embedding_index_doc: doc_id is empty");
         return Err(AppError::invalid_input("doc_id is empty"));
     }
     if params.content.trim().is_empty() {
-        tracing::error!("embedding_index_doc: content is empty");
         return Err(AppError::invalid_input("content is empty"));
     }
 
-    let cfg = read_embedding_config(&state.data_dir.config_path());
-    if !cfg.enabled {
-        tracing::error!("embedding_index_doc: Embedding is disabled");
-        return Err(AppError::invalid_input("Embedding is disabled"));
-    }
-
-    let chunks = chunker::split_text(&params.content, None);
-    if chunks.is_empty() {
-        tracing::error!("embedding_index_doc: content is empty after chunking");
-        return Err(AppError::invalid_input("content is empty after chunking"));
-    }
-    tracing::info!(doc_type = %params.doc_type, doc_id = %params.doc_id, chunks = chunks.len(), "Indexing document");
-
-    let embeddings = client::embed_batch(&chunks, &cfg).await.map_err(|e| {
-        tracing::error!(error = %e, "embedding_index_doc: Failed to embed chunks");
-        e
-    })?;
-
-    let pairs: Vec<(String, Vec<f32>)> = chunks.into_iter()
-        .zip(embeddings.into_iter())
-        .collect();
-
-    let count = state.db.upsert_vectors(
-        params.workspace_id.as_deref(),
-        &params.doc_type,
-        &params.doc_id,
-        &pairs,
-        &cfg.model,
-        cfg.dim,
-    ).map_err(|e| {
-        tracing::error!(error = %e, "embedding_index_doc: Failed to store vectors");
-        e
-    })?;
+    // 委托给服务层
+    let count = service::index_document(&state.db, &state.data_dir.config_path(), params).await?;
 
     tracing::info!(
         count,
@@ -167,12 +98,15 @@ pub async fn embedding_index_doc(
     Ok(IpcResponse::ok(count))
 }
 
+// ── 搜索命令 ────────────────────────────────────────────────────────────────
+
 /// 语义搜索
 #[tauri::command]
 pub async fn embedding_search(
     state: State<'_, DbState>,
     params: SearchParams,
 ) -> Result<IpcResponse<Vec<super::types::SearchResult>>, AppError> {
+    // 参数验证
     if let Some(ref dt) = params.doc_type {
         validate_doc_type(dt)?;
     }
@@ -180,23 +114,13 @@ pub async fn embedding_search(
         return Err(AppError::invalid_input("query is empty"));
     }
 
-    let cfg = read_embedding_config(&state.data_dir.config_path());
-    if !cfg.enabled {
-        return Err(AppError::invalid_input("Embedding is disabled"));
-    }
-
-    let query_vec = client::embed(&params.query, &cfg).await?;
-    let limit = params.limit.unwrap_or(10);
-    let results = state.db.search_similar(
-        params.workspace_id.as_deref(),
-        &query_vec,
-        &cfg.model,
-        params.doc_type.as_deref(),
-        limit,
-    )?;
+    // 委托给服务层
+    let results = service::search(&state.db, &state.data_dir.config_path(), params).await?;
 
     Ok(IpcResponse::ok(results))
 }
+
+// ── 删除命令 ────────────────────────────────────────────────────────────────
 
 /// 删除指定文档的向量索引
 #[tauri::command]
@@ -213,6 +137,8 @@ pub fn embedding_delete_doc(
     Ok(IpcResponse::ok(n))
 }
 
+// ── 统计命令 ────────────────────────────────────────────────────────────────
+
 /// 向量索引统计
 #[tauri::command]
 pub fn embedding_stats(
@@ -222,44 +148,14 @@ pub fn embedding_stats(
     Ok(IpcResponse::ok(stats))
 }
 
+// ── 文件摄入命令 ────────────────────────────────────────────────────────────
+
 /// 摄入文件(PDF/HTML/EPUB/TXT/MD)→ 提取文本 → 切分 → embed → 存入向量表
-///
-/// `file_path` 必须是已通过前端沙箱校验的本地文件路径。
-/// `doc_id` 不传时,基于文件名+时间戳生成。
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IngestFileParams {
-    /// 本地文件绝对路径
-    pub file_path: String,
-    /// 文档 id(可选,不传则自动生成)
-    pub doc_id: Option<String>,
-    /// 工作空间 id(可选)
-    pub workspace_id: Option<String>,
-}
-
-/// 摄入结果
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IngestResult {
-    /// 文档类型(pdf/html/epub/text)
-    pub kind: String,
-    /// 提取的标题(可能为空)
-    pub title: Option<String>,
-    /// 提取的纯文本字符数
-    pub char_count: usize,
-    /// 切分后的 chunk 数(=索引条数)
-    pub chunk_count: usize,
-    /// 实际存入 DB 的 doc_id
-    pub doc_id: String,
-    /// 文本前 200 字预览
-    pub excerpt: String,
-}
-
 #[tauri::command]
 pub async fn embedding_ingest_file(
     state: State<'_, DbState>,
     params: IngestFileParams,
-) -> Result<IpcResponse<IngestResult>, AppError> {
+) -> Result<IpcResponse<super::types::IngestResult>, AppError> {
     let start = std::time::Instant::now();
     tracing::info!(
         file_path = %params.file_path,
@@ -267,92 +163,18 @@ pub async fn embedding_ingest_file(
         workspace_id = ?params.workspace_id,
         "embedding_ingest_file: enter"
     );
-    
-    let path = std::path::Path::new(&params.file_path);
-    if !path.is_absolute() {
-        tracing::error!("embedding_ingest_file: file_path must be absolute");
-        return Err(AppError::invalid_input("file_path must be absolute"));
-    }
-    if params.file_path.contains("..") {
-        tracing::error!("embedding_ingest_file: file_path contains '..'");
-        return Err(AppError::invalid_input("file_path contains '..'"));
-    }
-    if !path.exists() {
-        tracing::error!(file_path = %params.file_path, "embedding_ingest_file: File not found");
-        return Err(AppError::not_found(format!("File not found: {}", params.file_path)));
-    }
 
-    let cfg = read_embedding_config(&state.data_dir.config_path());
-    if !cfg.enabled {
-        tracing::error!("embedding_ingest_file: Embedding is disabled");
-        return Err(AppError::invalid_input("Embedding is disabled"));
-    }
-
-    let material = ingest::extract_text_from_file(path).map_err(|e| {
-        tracing::error!(error = %e, "embedding_ingest_file: Failed to extract text");
-        e
-    })?;
-    
-    let char_count = material.text.chars().count();
-    let excerpt = material.text.chars().take(200).collect();
-
-    let doc_id = params.doc_id.unwrap_or_else(|| {
-        let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("material");
-        let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
-        format!("{}-{}", filename, timestamp)
-    });
-
-    let chunks = chunker::split_text(&material.text, None);
-    if chunks.is_empty() {
-        tracing::error!("embedding_ingest_file: Material text is empty after chunking");
-        return Err(AppError::invalid_input("Material text is empty after chunking"));
-    }
-    
-    let chunk_count = chunks.len();
-    tracing::info!(
-        kind = ?material.kind,
-        doc_id = %doc_id,
-        char_count,
-        chunks = chunk_count,
-        "Ingesting material"
-    );
-
-    let embeddings = client::embed_batch(&chunks, &cfg).await.map_err(|e| {
-        tracing::error!(error = %e, "embedding_ingest_file: Failed to embed chunks");
-        e
-    })?;
-
-    let pairs: Vec<(String, Vec<f32>)> = chunks.into_iter()
-        .zip(embeddings.into_iter())
-        .collect();
-
-    state.db.upsert_vectors(
-        params.workspace_id.as_deref(),
-        "material",
-        &doc_id,
-        &pairs,
-        &cfg.model,
-        cfg.dim,
-    ).map_err(|e| {
-        tracing::error!(error = %e, "embedding_ingest_file: Failed to store vectors");
-        e
-    })?;
+    // 委托给服务层（服务层包含路径验证）
+    let result = service::ingest_file(&state.db, &state.data_dir.config_path(), params).await?;
 
     tracing::info!(
-        kind = format!("{:?}", material.kind).to_lowercase(),
-        doc_id = %doc_id,
-        char_count,
-        chunk_count,
+        kind = %result.kind,
+        doc_id = %result.doc_id,
+        char_count = result.char_count,
+        chunk_count = result.chunk_count,
         duration_ms = start.elapsed().as_millis(),
         "embedding_ingest_file: exit"
     );
-    
-    Ok(IpcResponse::ok(IngestResult {
-        kind: format!("{:?}", material.kind).to_lowercase(),
-        title: material.title,
-        char_count,
-        chunk_count,
-        doc_id,
-        excerpt,
-    }))
+
+    Ok(IpcResponse::ok(result))
 }

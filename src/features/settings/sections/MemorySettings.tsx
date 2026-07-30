@@ -19,8 +19,7 @@ import { SkillEvolutionSettings } from "./SkillEvolutionSettings";
 
 export function MemorySettings() {
   const { t } = useI18n();
-  // 使用 any 绕过类型检查
-  const tm = (t.settings as any).memorySettings;
+  const tm = t.settings.memorySettings;
 
   return (
     <PageContainer>

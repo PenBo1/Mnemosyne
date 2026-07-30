@@ -93,6 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_novel ON sessions(novel_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
 
 -- ═══════════════════════════════════════════════════════════
 -- Messages（含 thinking/model/provider/tokens/latency 列）
@@ -117,6 +118,7 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_role_created ON messages(role, created_at);
 
 -- ═══════════════════════════════════════════════════════════
 -- Prompts
@@ -366,6 +368,7 @@ CREATE INDEX IF NOT EXISTS idx_loop_runs_book ON loop_runs(book_id);
 CREATE INDEX IF NOT EXISTS idx_loop_runs_started_at ON loop_runs(started_at);
 CREATE INDEX IF NOT EXISTS idx_loop_runs_pattern_started ON loop_runs(pattern_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_loop_runs_state ON loop_runs(loop_state_id);
+CREATE INDEX IF NOT EXISTS idx_loop_runs_outcome ON loop_runs(outcome, started_at DESC);
 
 -- ═══════════════════════════════════════════════════════════
 -- Story Facts（时序事实表）
@@ -479,6 +482,7 @@ CREATE TABLE IF NOT EXISTS vectors (
 
 CREATE INDEX IF NOT EXISTS idx_vectors_doc ON vectors(doc_type, doc_id);
 CREATE INDEX IF NOT EXISTS idx_vectors_workspace ON vectors(workspace_id, model);
+CREATE INDEX IF NOT EXISTS idx_vectors_model ON vectors(model);
 
 -- ═══════════════════════════════════════════════════════════
 -- Memory Entries（Agent 记忆加速层）
@@ -608,6 +612,7 @@ CREATE INDEX IF NOT EXISTS idx_trace_spans_trace ON trace_spans(trace_id, start_
 CREATE INDEX IF NOT EXISTS idx_trace_spans_name ON trace_spans(name, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_trace_spans_start ON trace_spans(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_trace_spans_workspace ON trace_spans(workspace_id, start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_trace_spans_status ON trace_spans(status, start_time DESC);
 
 -- ═══════════════════════════════════════════════════════════
 -- Metric Points（OpenTelemetry 风格 metric 存储）

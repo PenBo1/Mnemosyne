@@ -210,40 +210,37 @@ impl Database {
     }
 
     /// 获取 Span 统计
+    ///
+    /// 使用单次查询聚合，避免多次全表扫描。
     pub fn span_stats(&self) -> Result<SpanStats, AppError> {
         let conn = self.conn()?;
-        let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM trace_spans", [], |row| row.get(0))
-            .map_err(db_err)?;
-        let error_count: i64 = conn
+
+        // 单次查询聚合所有统计
+        let (total, error_count, trace_count, avg_duration): (i64, i64, i64, f64) = conn
             .query_row(
-                "SELECT COUNT(*) FROM trace_spans WHERE status = 'error'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(db_err)?;
-        let trace_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(DISTINCT trace_id) FROM trace_spans",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(db_err)?;
-        let avg_duration_ms: f64 = conn
-            .query_row(
-                "SELECT AVG(end_time - start_time) FROM trace_spans WHERE end_time IS NOT NULL",
+                "SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as errors,
+                    COUNT(DISTINCT trace_id) as traces,
+                    AVG(CASE WHEN end_time IS NOT NULL THEN end_time - start_time ELSE NULL END) as avg_dur
+                 FROM trace_spans",
                 [],
                 |row| {
-                    let avg: Option<f64> = row.get(0)?;
-                    Ok(avg.unwrap_or(0.0))
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+                    ))
                 },
             )
             .map_err(db_err)?;
+
         Ok(SpanStats {
             total_spans: total,
             error_spans: error_count,
             total_traces: trace_count,
-            avg_duration_ms,
+            avg_duration_ms: avg_duration,
         })
     }
 }

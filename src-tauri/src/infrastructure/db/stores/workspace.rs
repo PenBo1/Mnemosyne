@@ -102,21 +102,58 @@ impl Database {
     /// 删除工作区
     ///
     /// 级联删除关联会话及其消息。
+    /// 使用临时表批量删除，避免 N+1 问题。
     pub fn delete_workspace(&self, id: &str) -> Result<bool, AppError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(db_err)?;
-        // 先收集关联会话 ID
-        let session_ids: Vec<String> = {
-            let mut stmt = tx.prepare("SELECT id FROM sessions WHERE workspace_id = ?").map_err(db_err)?;
-            let rows = stmt.query_map([id], |row| row.get::<_, String>(0)).map_err(db_err)?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?
-        };
-        for sid in &session_ids {
-            tx.execute("DELETE FROM messages WHERE session_id = ?", params![sid]).map_err(db_err)?;
-        }
-        tx.execute("DELETE FROM sessions WHERE workspace_id = ?", params![id]).map_err(db_err)?;
-        let affected = tx.execute("DELETE FROM workspaces WHERE id = ?", params![id]).map_err(db_err)?;
+
+        // 创建临时表存储要删除的 session ID
+        tx.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _delete_session_ids (id TEXT PRIMARY KEY)",
+            [],
+        )
+        .map_err(db_err)?;
+        tx.execute("DELETE FROM _delete_session_ids", []).map_err(db_err)?;
+
+        // 插入所有关联的 session ID
+        tx.execute(
+            "INSERT INTO _delete_session_ids SELECT id FROM sessions WHERE workspace_id = ?",
+            [id],
+        )
+        .map_err(db_err)?;
+
+        // 批量删除 messages
+        let messages_deleted = tx
+            .execute(
+                "DELETE FROM messages WHERE session_id IN (SELECT id FROM _delete_session_ids)",
+                [],
+            )
+            .map_err(db_err)?;
+
+        // 批量删除 sessions
+        let sessions_deleted = tx
+            .execute("DELETE FROM sessions WHERE workspace_id = ?", [id])
+            .map_err(db_err)?;
+
+        // 删除 workspace
+        let affected = tx
+            .execute("DELETE FROM workspaces WHERE id = ?", [id])
+            .map_err(db_err)?;
+
+        // 清理临时表
+        tx.execute("DROP TABLE _delete_session_ids", [])
+            .map_err(db_err)?;
+
         tx.commit().map_err(db_err)?;
+
+        tracing::debug!(
+            workspace_id = id,
+            workspaces_deleted = affected,
+            sessions_deleted,
+            messages_deleted,
+            "delete_workspace completed"
+        );
+
         Ok(affected > 0)
     }
 }

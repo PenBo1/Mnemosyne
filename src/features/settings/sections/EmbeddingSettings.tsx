@@ -61,13 +61,17 @@ export function EmbeddingSettings() {
     (async () => {
       setLoading(true);
       try {
-        const [cfg, st] = await Promise.all([
-          embeddingGetConfig(),
-          embeddingStats().catch(() => null),
-        ]);
+        // 先加载配置（快速）
+        const cfg = await embeddingGetConfig();
         if (cancelled) return;
         setConfig(cfg);
-        setStats(st);
+
+        // 只有启用时才加载统计（可能较慢）
+        if (cfg.enabled) {
+          const st = await embeddingStats().catch(() => null);
+          if (cancelled) return;
+          setStats(st);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

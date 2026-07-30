@@ -187,22 +187,49 @@ impl Database {
             )
             .map_err(db_err)?;
 
-        // 当前连续活跃天数
-        let current_streak: i64 = conn
-            .query_row(
-                "WITH RECURSIVE dates(date) AS (
-                    SELECT DATE('now')
-                    UNION ALL
-                    SELECT DATE(date, '-1 day') FROM dates
-                )
-                SELECT COUNT(*) FROM dates 
-                WHERE date IN (SELECT DISTINCT DATE(created_at) FROM sessions)
-                AND date >= DATE('now', '-365 days')
-                LIMIT 30",
-                [],
-                |row| row.get(0),
-            )
+        // 当前连续活跃天数（优化：直接获取最近活跃日期，在 Rust 端计算连续天数）
+        let mut active_dates_stmt = conn.prepare_cached(
+            "SELECT DISTINCT DATE(created_at) as date
+             FROM sessions
+             WHERE created_at >= DATE('now', '-30 days')
+             ORDER BY date DESC"
+        ).map_err(db_err)?;
+        let active_dates_rows = active_dates_stmt
+            .query_map([], |row| row.get::<_, String>(0))
             .map_err(db_err)?;
+        let active_dates: Vec<String> = active_dates_rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+
+        // 计算连续活跃天数（从今天或昨天开始往前数）
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let yesterday = (chrono::Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+        let mut current_streak: i64 = 0;
+
+        // 检查今天或昨天是否有活动
+        if active_dates.contains(&today) || active_dates.contains(&yesterday) {
+            let start_date = if active_dates.contains(&today) {
+                chrono::Local::now().date_naive()
+            } else {
+                (chrono::Local::now() - chrono::Duration::days(1)).date_naive()
+            };
+
+            // 遍历计算连续天数
+            let mut check_date = start_date;
+            let mut streak_count = 0;
+            loop {
+                let date_str = check_date.format("%Y-%m-%d").to_string();
+                if active_dates.contains(&date_str) {
+                    streak_count += 1;
+                    check_date -= chrono::Duration::days(1);
+                } else {
+                    break;
+                }
+                // 最多计算 30 天
+                if streak_count >= 30 {
+                    break;
+                }
+            }
+            current_streak = streak_count;
+        }
 
         // 热力图数据
         let mut heatmap_stmt = conn.prepare_cached(&format!(

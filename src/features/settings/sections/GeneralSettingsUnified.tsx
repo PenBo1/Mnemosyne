@@ -92,25 +92,25 @@ const REPO_URL = "https://github.com/admin/Mnemosyne";
 const WEBSITE_URL = "https://github.com/admin/Mnemosyne";
 
 /**
- * 检测操作系统平台
+ * 检测操作系统平台（只执行一次）
  */
-function detectPlatform(): string {
+const PLATFORM = (() => {
   const ua = navigator.userAgent;
   if (ua.includes("Win")) return "Windows";
   if (ua.includes("Mac")) return "macOS";
   if (ua.includes("Linux")) return "Linux";
   return "Unknown";
-}
+})();
 
 /**
- * 检测 CPU 架构
+ * 检测 CPU 架构（只执行一次）
  */
-function detectArch(): string {
+const ARCH = (() => {
   const ua = navigator.userAgent;
   if (ua.includes("x64") || ua.includes("Win64") || ua.includes("x86_64")) return "x86_64";
   if (ua.includes("arm64") || ua.includes("aarch64")) return "arm64";
   return "unknown";
-}
+})();
 
 // ── 子组件 ──────────────────────────────────────────────────────────────────
 
@@ -261,8 +261,7 @@ function Recorder({
 export function GeneralSettingsUnified() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
-  // 使用 any 绕过类型检查
-  const tg = (t.settings as any).settingsGeneral;
+  const tg = t.settings.settingsGeneral;
   const {
     notifications,
     logLevel,
@@ -283,8 +282,9 @@ export function GeneralSettingsUnified() {
 
   const [appName, setAppName] = useState("Mnemosyne");
   const [appVersion, setAppVersion] = useState("0.1.0");
-  const [platform] = useState(detectPlatform);
-  const [arch] = useState(detectArch);
+  // 平台和架构是静态值，在会话期间不会改变
+  const platform = PLATFORM;
+  const arch = ARCH;
 
   // ── 快捷键状态 ──────────────────────────────────────────────────────────
 

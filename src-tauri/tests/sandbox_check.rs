@@ -1,12 +1,12 @@
-//! 沙箱策略测试
-//!
-//! 测试 SandboxPolicy 的基本功能：
-//! - 默认策略
-//! - 序列化/反序列化
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 沙箱策略测试 - 测试 SandboxPolicy 的基本功能
+//! ═══════════════════════════════════════════════════════════════════════════
 
 mod common;
 
 use mnemosyne_lib::infrastructure::sandbox::policy::SandboxPolicy;
+
+// ── 默认策略测试 ──────────────────────────────────────────────────────────────
 
 /// 测试默认沙箱策略
 ///
@@ -39,6 +39,8 @@ fn test_sandbox_policy_clone() {
     assert_eq!(policy.allow_exec, cloned.allow_exec);
     assert_eq!(policy.allow_network, cloned.allow_network);
 }
+
+// ── 序列化测试 ────────────────────────────────────────────────────────────────
 
 /// 测试沙箱策略序列化
 ///
@@ -77,6 +79,8 @@ fn test_sandbox_policy_deserialize() {
     assert!(policy.allow_network);
     assert_eq!(policy.blocked_commands.len(), 2);
 }
+
+// ── 黑名单测试 ────────────────────────────────────────────────────────────────
 
 /// 测试沙箱策略默认命令黑名单
 ///

@@ -181,16 +181,22 @@ impl Database {
         );
         let pattern = format!("%{}%", query);
 
+        // 安全收集参数（避免 SQL 注入）
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(pattern.clone())];
+
         if let Some(tags) = tags_filter {
             for tag in tags {
-                sql.push_str(&format!(" AND tags_json LIKE '%{}%'", tag));
+                sql.push_str(" AND tags_json LIKE ?");
+                params_vec.push(Box::new(format!("%{}%", tag)));
             }
         }
 
         sql.push_str(" ORDER BY created_at DESC LIMIT ?");
+        params_vec.push(Box::new(limit));
 
         let mut stmt = conn.prepare_cached(&sql).map_err(db_err)?;
-        let rows = stmt.query_map(params![pattern, limit], map_row).map_err(db_err)?;
+        let params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params.as_slice(), map_row).map_err(db_err)?;
         rows.map(|r| r.map_err(db_err)).collect()
     }
 
@@ -209,11 +215,13 @@ impl Database {
             "SELECT {} FROM archival_memory WHERE embedding_model = ?",
             SELECT_COLUMNS
         );
-        let params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(embedding_model.to_string())];
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(embedding_model.to_string())];
 
+        // 安全收集参数（避免 SQL 注入）
         if let Some(tags) = tags_filter {
             for tag in tags {
-                sql.push_str(&format!(" AND tags_json LIKE '%{}%'", tag));
+                sql.push_str(" AND tags_json LIKE ?");
+                params_vec.push(Box::new(format!("%{}%", tag)));
             }
         }
 
@@ -265,13 +273,19 @@ impl Database {
 
         let conn = self.conn()?;
         let mut sql = format!("SELECT {} FROM archival_memory WHERE 1=1", SELECT_COLUMNS);
+
+        // 安全收集参数（避免 SQL 注入）
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         for tag in tags {
-            sql.push_str(&format!(" AND tags_json LIKE '%{}%'", tag));
+            sql.push_str(" AND tags_json LIKE ?");
+            params_vec.push(Box::new(format!("%{}%", tag)));
         }
         sql.push_str(" ORDER BY created_at DESC LIMIT ?");
+        params_vec.push(Box::new(limit));
 
         let mut stmt = conn.prepare_cached(&sql).map_err(db_err)?;
-        let rows = stmt.query_map(params![limit], map_row).map_err(db_err)?;
+        let params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params.as_slice(), map_row).map_err(db_err)?;
         rows.map(|r| r.map_err(db_err)).collect()
     }
 

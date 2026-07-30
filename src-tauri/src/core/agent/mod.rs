@@ -26,6 +26,7 @@ pub mod context;
 pub mod memory;
 pub mod curator;
 pub mod user_profile;
+pub mod prompt_optimizer;
 
 // ── 公开类型导出 ─────────────────────────────────────────────────────────────
 
@@ -40,3 +41,4 @@ pub use prompt_cache::{SystemPromptBuilder, ConversationPromptCache, PromptCache
 pub use compaction::{CompactionPolicy, CompactionStrategy};
 pub use context::{ContextEngine, ContextEngineStatus};
 pub use multi_turn::{MultiTurnEvent, MultiTurnOutcome, MultiTurnRunner, MultiTurnStream};
+pub use prompt_optimizer::PromptOptimizer;

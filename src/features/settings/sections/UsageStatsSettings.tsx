@@ -49,8 +49,7 @@ const HEAT_LEVELS = [
 
 export function UsageStatsSettings() {
   const { t } = useI18n();
-  // 使用 any 绕过类型检查
-  const tu = (t.settings as any).usageStats;
+  const tu = t.settings.usageStats;
   const [timeRange, setTimeRange] = useState<TimeRange>(7);
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [loading, setLoading] = useState(true);

@@ -1,13 +1,13 @@
-//! 文件系统操作集成测试
-//!
-//! 测试文件系统模块的核心功能：
-//! - DataDir 目录管理
-//! - 文件名安全处理
+//! ═══════════════════════════════════════════════════════════════════════════
+//! 文件系统操作集成测试 - 测试文件系统模块的核心功能
+//! ═══════════════════════════════════════════════════════════════════════════
 
 mod common;
 
 use common::FsTestFixture;
 use mnemosyne_lib::infrastructure::fs::data_dir::DataDir;
+
+// ── DataDir 初始化测试 ────────────────────────────────────────────────────────
 
 /// 测试 DataDir 初始化
 ///
@@ -44,6 +44,8 @@ fn test_data_dir_subdirectories() {
     let logs_subdir = data_dir.logs_dir();
     assert!(logs_subdir.ends_with("logs"));
 }
+
+// ── Fixture 功能测试 ──────────────────────────────────────────────────────────
 
 /// 测试 FsTestFixture 子目录创建
 ///
@@ -91,6 +93,8 @@ fn test_fixture_create_nested_file() {
     let parent = file_path.parent().unwrap();
     assert!(parent.ends_with("deep/nested/path"));
 }
+
+// ── DataDir 路径测试 ──────────────────────────────────────────────────────────
 
 /// 测试 DataDir 路径拼接
 ///

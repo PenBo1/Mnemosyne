@@ -56,7 +56,9 @@ pub async fn git_init(
     let path = validate_workspace_path(&workspace_path)?;
     tracing::debug!(path = %path.display(), "git_init");
 
-    let result = init_repository(&path)?;
+    let result = tokio::task::spawn_blocking(move || init_repository(&path))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     tracing::info!(
         initialized = result.initialized,
@@ -72,7 +74,9 @@ pub async fn git_status(
     workspace_path: String,
 ) -> Result<IpcResponse<GitStatus>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
-    let status = get_status(&path)?;
+    let status = tokio::task::spawn_blocking(move || get_status(&path))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(status))
 }
 
@@ -86,7 +90,9 @@ pub async fn git_log(
     let path = validate_workspace_path(&workspace_path)?;
     let limit = limit.unwrap_or(50);
     let skip = skip.unwrap_or(0);
-    let commits = get_log(&path, limit, skip)?;
+    let commits = tokio::task::spawn_blocking(move || get_log(&path, limit, skip))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(commits))
 }
 
@@ -99,11 +105,15 @@ pub async fn git_diff(
 ) -> Result<IpcResponse<Diff>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
     
-    let diff = if let Some(hash) = commit_hash {
-        get_commit_diff(&path, &hash)?
-    } else {
-        get_diff(&path, staged.unwrap_or(false))?
-    };
+    let diff = tokio::task::spawn_blocking(move || {
+        if let Some(hash) = commit_hash {
+            get_commit_diff(&path, &hash)
+        } else {
+            get_diff(&path, staged.unwrap_or(false))
+        }
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     
     Ok(IpcResponse::ok(diff))
 }
@@ -133,7 +143,10 @@ pub async fn git_stage(
         }
     }
 
-    stage_files(&path, &paths)?;
+    let paths_clone = paths.clone();
+    tokio::task::spawn_blocking(move || stage_files(&path, &paths_clone))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::no_content())
 }
 
@@ -162,7 +175,10 @@ pub async fn git_unstage(
         }
     }
 
-    unstage_files(&path, &paths)?;
+    let paths_clone = paths.clone();
+    tokio::task::spawn_blocking(move || unstage_files(&path, &paths_clone))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::no_content())
 }
 
@@ -180,7 +196,9 @@ pub async fn git_commit(
         return Err(AppError::invalid_input("Commit message too long (max 8192 chars)"));
     }
 
-    let hash = commit_changes(&path, &message)?;
+    let hash = tokio::task::spawn_blocking(move || commit_changes(&path, &message))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(hash))
 }
 
@@ -200,7 +218,9 @@ pub async fn git_rollback(
         );
     }
 
-    rollback(&path, &commit_hash, mode)?;
+    tokio::task::spawn_blocking(move || rollback(&path, &commit_hash, mode))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::no_content())
 }
 
@@ -221,7 +241,10 @@ pub async fn git_get_config(
             validate_workspace_path(&workspace_path)?
         };
         
-        let value = get_config(&path, &k, is_global)?;
+        let k_clone = k.clone();
+        let value = tokio::task::spawn_blocking(move || get_config(&path, &k_clone, is_global))
+            .await
+            .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
         
         let config = GitConfig {
             user_name: if k == "user.name" { value.clone() } else { None },
@@ -240,7 +263,9 @@ pub async fn git_get_config(
             Ok(IpcResponse::ok(config))
         } else {
             let path = validate_workspace_path(&workspace_path)?;
-            let config = get_all_config(&path)?;
+            let config = tokio::task::spawn_blocking(move || get_all_config(&path))
+                .await
+                .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
             Ok(IpcResponse::ok(config))
         }
     }
@@ -265,7 +290,9 @@ pub async fn git_set_config(
         validate_workspace_path(&workspace_path)?
     };
     
-    set_config(&path, &key, &value, is_global)?;
+    tokio::task::spawn_blocking(move || set_config(&path, &key, &value, is_global))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
 
     tracing::info!(
         duration_ms = start.elapsed().as_millis(),
@@ -280,7 +307,9 @@ pub async fn git_branches(
     workspace_path: String,
 ) -> Result<IpcResponse<Vec<String>>, AppError> {
     let path = validate_workspace_path(&workspace_path)?;
-    let branches = get_branches(&path)?;
+    let branches = tokio::task::spawn_blocking(move || get_branches(&path))
+        .await
+        .map_err(|e| AppError::internal(format!("spawn_blocking join failed: {}", e)))??;
     Ok(IpcResponse::ok(branches))
 }
 

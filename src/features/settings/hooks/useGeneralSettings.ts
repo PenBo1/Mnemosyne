@@ -18,7 +18,7 @@ export type CloseBehavior = "exit" | "minimizeToTray";
 
 export function useGeneralSettings() {
   const { t } = useI18n();
-  const [notifications, setNotifications] = useState(isNotificationsEnabled);
+  const [notifications, setNotifications] = useState(() => isNotificationsEnabled());
   const [logLevel, setLogLevelState] = useState<LogLevel>("info");
   const [logLevelChanged, setLogLevelChanged] = useState(false);
   const [restoreWindow, setRestoreWindowValue] = useState(false);

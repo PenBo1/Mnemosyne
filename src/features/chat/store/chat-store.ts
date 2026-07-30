@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ChatStore - 聊天状态管理
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { create } from "zustand";
 import { toast } from "sonner";
 import type { Session, Message, PendingConfirmation } from "@/types/session";

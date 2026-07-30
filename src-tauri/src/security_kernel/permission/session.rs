@@ -91,9 +91,9 @@ impl PermissionManager {
     }
 
     pub fn check(&self, op: &Operation, workspace: &WorkspaceId) -> Result<(), AppError> {
-        // 系统工作区（nil UUID）跳过 permission check
+        // 系统工作区（nil UUID）仅允许特定系统级操作
         if workspace == &uuid::Uuid::nil().to_string() {
-            return Ok(());
+            return self.check_system_workspace_operation(op);
         }
 
         let session = self.sessions.get(workspace).ok_or_else(|| {
@@ -120,6 +120,55 @@ impl PermissionManager {
         self.check_scope_constraints(op, session)?;
 
         Ok(())
+    }
+
+    /// 系统工作区操作检查
+    ///
+    /// 系统工作区（nil UUID）仅允许以下操作：
+    /// - Network 请求到已知 AI Provider 端点（openai/anthropic/ollama）
+    fn check_system_workspace_operation(&self, op: &Operation) -> Result<(), AppError> {
+        match op {
+            Operation::Network { scope, endpoint, .. } => {
+                // 仅允许到已知 AI Provider 的网络请求
+                let allowed_hosts = [
+                    "api.openai.com",
+                    "api.anthropic.com",
+                    "localhost",  // Ollama
+                    "127.0.0.1",  // Ollama
+                ];
+
+                let is_allowed = allowed_hosts.iter().any(|host| {
+                    endpoint.contains(host) || endpoint.starts_with(host) || endpoint.ends_with(host)
+                });
+
+                if !is_allowed {
+                    return Err(AppError::forbidden(format!(
+                        "System workspace only allows network requests to known AI providers, got: {}",
+                        endpoint
+                    )));
+                }
+
+                // 验证 scope 是否为 Provider 类型
+                if !matches!(scope, NetworkScope::Provider { .. }) {
+                    return Err(AppError::forbidden(
+                        "System workspace only allows Provider-scoped network requests"
+                    ));
+                }
+
+                Ok(())
+            }
+            // 系统工作区禁止文件系统和 Shell 操作
+            Operation::Filesystem { .. } => {
+                Err(AppError::forbidden(
+                    "System workspace is not allowed to access filesystem"
+                ))
+            }
+            Operation::Shell { .. } => {
+                Err(AppError::forbidden(
+                    "System workspace is not allowed to execute shell commands"
+                ))
+            }
+        }
     }
 
     fn check_scope_constraints(&self, op: &Operation, session: &PermissionSession) -> Result<(), AppError> {

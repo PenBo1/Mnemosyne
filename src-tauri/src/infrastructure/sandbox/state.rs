@@ -1,17 +1,23 @@
 //! ═══════════════════════════════════════════════════════════════════════════
 //! 沙箱状态 - 状态管理
 //! ═══════════════════════════════════════════════════════════════════════════
+//!
+//! 仅负责状态持有和访问，验证逻辑委托给 validator 模块。
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use super::heuristics;
+use super::constants::EXEC_POLICY_CONF;
+use super::validator::{PathValidator, CommandValidator, UrlValidator};
 use super::execpolicy::{self, evaluator::Evaluation, ExecPolicy, NetworkProtocol};
 use super::policy::SandboxPolicy;
 use super::types::SandboxStatus;
 
-/// ExecPolicy 配置文件名（位于 data_dir 根目录）。
-const EXEC_POLICY_CONF: &str = "exec_policy.conf";
+// ── 沙箱状态 ────────────────────────────────────────────────────────────────
 
+/// 沙箱状态容器
+///
+/// 管理沙箱的策略配置和执行策略。
+/// 验证逻辑委托给 validator 模块。
 pub struct SandboxState {
     root: PathBuf,
     policy: Mutex<SandboxPolicy>,
@@ -19,6 +25,7 @@ pub struct SandboxState {
 }
 
 impl SandboxState {
+    /// 创建沙箱状态
     pub fn new(root: PathBuf) -> Self {
         let exec_policy = Self::load_or_init_exec_policy(&root);
         Self {
@@ -28,7 +35,90 @@ impl SandboxState {
         }
     }
 
-    /// 加载 exec_policy.conf；文件不存在时用默认策略初始化并持久化。
+    // ── 状态访问 ────────────────────────────────────────────────────────────
+
+    /// 获取沙箱状态
+    pub fn get_status(&self) -> SandboxStatus {
+        SandboxStatus {
+            enabled: true,
+            root_path: self.root.display().to_string(),
+            mode: "strict".to_string(),
+        }
+    }
+
+    /// 获取沙箱策略
+    pub fn get_policy(&self) -> SandboxPolicy {
+        self.policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 获取执行策略
+    pub fn get_exec_policy(&self) -> ExecPolicy {
+        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    // ── 验证方法（委托给 validator）────────────────────────────────────────
+
+    /// 验证路径
+    pub fn validate_path(&self, path: &PathBuf, is_write: bool) -> Result<bool, crate::shared::error::AppError> {
+        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
+        let validator = PathValidator::new(&self.root, &policy);
+        validator.validate(path, is_write)
+    }
+
+    /// 验证命令
+    pub fn validate_command(&self, command: &str) -> Result<bool, crate::shared::error::AppError> {
+        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
+        let exec_policy = self.exec_policy.lock().unwrap_or_else(|e| e.into_inner());
+        let validator = CommandValidator::new(&policy, &exec_policy);
+        validator.validate(command)
+    }
+
+    /// 验证 URL
+    pub fn validate_url(&self, url: &str) -> Result<bool, crate::shared::error::AppError> {
+        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
+        let exec_policy = self.exec_policy.lock().unwrap_or_else(|e| e.into_inner());
+        let validator = UrlValidator::new(&policy, &exec_policy);
+        validator.validate(url)
+    }
+
+    // ── 评估方法 ────────────────────────────────────────────────────────────
+
+    /// 评估命令（返回完整 PolicyDecision）
+    pub fn evaluate_command(&self, command: &str) -> Evaluation {
+        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).evaluate_command(command)
+    }
+
+    /// 评估路径
+    pub fn evaluate_path(&self, path: &str) -> Evaluation {
+        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).evaluate_path(path)
+    }
+
+    /// 评估网络请求
+    pub fn evaluate_network(&self, host: &str, protocol: NetworkProtocol) -> Evaluation {
+        self.exec_policy
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .evaluate_network(host, protocol)
+    }
+
+    // ── 策略更新 ────────────────────────────────────────────────────────────
+
+    /// 更新执行策略并持久化
+    pub fn update_exec_policy(&self, policy: ExecPolicy) {
+        self.persist_exec_policy(&policy);
+        *self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()) = policy;
+    }
+
+    /// 重置执行策略为默认值
+    pub fn reset_exec_policy(&self) {
+        let default = execpolicy::default_policy();
+        self.persist_exec_policy(&default);
+        *self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()) = default;
+    }
+
+    // ── 内部方法 ────────────────────────────────────────────────────────────
+
+    /// 加载或初始化执行策略
     fn load_or_init_exec_policy(root: &Path) -> ExecPolicy {
         let conf_path = root.join(EXEC_POLICY_CONF);
         if conf_path.exists() {
@@ -68,7 +158,7 @@ impl SandboxState {
         default
     }
 
-    /// 持久化当前 ExecPolicy 到 exec_policy.conf。
+    /// 持久化执行策略
     fn persist_exec_policy(&self, policy: &ExecPolicy) {
         let conf_path = self.root.join(EXEC_POLICY_CONF);
         let text = execpolicy::serialize(policy);
@@ -79,184 +169,5 @@ impl SandboxState {
                 "Failed to persist exec_policy.conf"
             );
         }
-    }
-
-    pub fn get_status(&self) -> SandboxStatus {
-        SandboxStatus {
-            enabled: true,
-            root_path: self.root.display().to_string(),
-            mode: "strict".to_string(),
-        }
-    }
-
-    pub fn validate_path(&self, path: &PathBuf, is_write: bool) -> Result<bool, crate::shared::error::AppError> {
-        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
-
-        // Protected Metadata 检查:即使路径在 root 下,也不允许写入受保护元数据
-        if is_write && policy.is_protected_metadata_path(path) {
-            tracing::warn!(
-                path = %path.display(),
-                "Blocked write to protected metadata path"
-            );
-            return Ok(false);
-        }
-
-        // 路径规范化：对已存在的路径直接 canonicalize；对不存在的路径（写入场景）
-        // canonicalize 父目录再拼接文件名。原实现对不存在路径直接 canonicalize
-        // 会返回 NotFound 错误，导致所有"写新文件"的校验失败。
-        let canonical = if path.exists() {
-            std::fs::canonicalize(path).map_err(|e| {
-                crate::shared::error::AppError::internal(format!("Failed to canonicalize: {}", e))
-            })?
-        } else {
-            let parent = path.parent().ok_or_else(|| {
-                crate::shared::error::AppError::invalid_input("path has no parent directory")
-            })?;
-            let canonical_parent = std::fs::canonicalize(parent).map_err(|e| {
-                crate::shared::error::AppError::internal(format!(
-                    "Failed to canonicalize parent: {}",
-                    e
-                ))
-            })?;
-            let file_name = path.file_name().ok_or_else(|| {
-                crate::shared::error::AppError::invalid_input("path has no file name")
-            })?;
-            canonical_parent.join(file_name)
-        };
-
-        if !canonical.starts_with(&self.root) {
-            return Ok(false);
-        }
-
-        if is_write && !policy.allow_write {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
-    pub fn validate_command(&self, command: &str) -> Result<bool, crate::shared::error::AppError> {
-        // 拒绝含控制字符（换行/回车/NUL）的命令 —— 防止 "ls\nevil" 这类
-        // 命令注入绕过单行分析。`;` `|` `&` 等元字符由 heuristics 层处理。
-        if command.chars().any(|c| c == '\n' || c == '\r' || c == '\0') {
-            return Ok(false);
-        }
-
-        // 0. ExecPolicy 精细化评估（优先于粗粒度策略）
-        {
-            let exec_policy = self.exec_policy.lock().unwrap_or_else(|e| e.into_inner());
-            let eval = exec_policy.evaluate_command(command);
-            // 有规则匹配时，以 ExecPolicy 决策为准
-            if eval.matched_index.is_some() {
-                return Ok(eval.decision.is_allowed_sync());
-            }
-            // 无匹配时 fall through 到原有逻辑
-        }
-
-        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
-
-        // 1. 黑名单 token 前缀检查(立即拒绝)。
-        // 原 starts_with 字符串前缀有误匹配风险：`blocked="rm"` 会匹配 `rmdir foo`。
-        // 改用 token 前缀：blocked 的所有 token 须作为 command 的前缀 token 出现。
-        let cmd_tokens: Vec<&str> = command.split_whitespace().collect();
-        for blocked in &policy.blocked_commands {
-            let blocked_tokens: Vec<&str> = blocked.split_whitespace().collect();
-            if blocked_tokens.is_empty() {
-                continue;
-            }
-            if cmd_tokens.len() >= blocked_tokens.len()
-                && blocked_tokens
-                    .iter()
-                    .zip(cmd_tokens.iter())
-                    .all(|(b, c)| b.eq_ignore_ascii_case(c))
-            {
-                return Ok(false);
-            }
-        }
-
-        // 2. 启发式危险模式检查(拒绝)
-        if let Some(reason) = heuristics::command_might_be_dangerous(command) {
-            tracing::warn!(
-                command = %command,
-                reason = %reason,
-                "Blocked command by heuristic"
-            );
-            return Ok(false);
-        }
-
-        // 3. 已知安全命令(允许,即使 allow_exec=false)
-        if heuristics::is_known_safe_command(command) {
-            return Ok(true);
-        }
-
-        // 4. 默认行为:按 allow_exec
-        Ok(policy.allow_exec)
-    }
-
-    pub fn validate_url(&self, url: &str) -> Result<bool, crate::shared::error::AppError> {
-        // 0. ExecPolicy 网络规则评估
-        {
-            let exec_policy = self.exec_policy.lock().unwrap_or_else(|e| e.into_inner());
-            let (host, protocol) = execpolicy::extract_host_and_protocol(url);
-            if !host.is_empty() {
-                let eval = exec_policy.evaluate_network(&host, protocol);
-                if eval.matched_index.is_some() {
-                    return Ok(eval.decision.is_allowed_sync());
-                }
-            }
-            // 无匹配时 fall through
-        }
-
-        let policy = self.policy.lock().unwrap_or_else(|e| e.into_inner());
-
-        for blocked in &policy.blocked_domains {
-            if url.contains(blocked) {
-                return Ok(false);
-            }
-        }
-
-        Ok(policy.allow_network)
-    }
-
-    pub fn get_policy(&self) -> SandboxPolicy {
-        self.policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-
-    // ── ExecPolicy 访问方法 ──
-
-    /// 获取当前 ExecPolicy 的克隆。
-    pub fn get_exec_policy(&self) -> ExecPolicy {
-        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-
-    /// 更新 ExecPolicy 并持久化。
-    pub fn update_exec_policy(&self, policy: ExecPolicy) {
-        self.persist_exec_policy(&policy);
-        *self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()) = policy;
-    }
-
-    /// 重置 ExecPolicy 为内置默认值并持久化。
-    pub fn reset_exec_policy(&self) {
-        let default = execpolicy::default_policy();
-        self.persist_exec_policy(&default);
-        *self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()) = default;
-    }
-
-    /// 评估命令（返回完整 PolicyDecision，含 AskUser）。
-    pub fn evaluate_command(&self, command: &str) -> Evaluation {
-        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).evaluate_command(command)
-    }
-
-    /// 评估路径（返回完整 PolicyDecision）。
-    pub fn evaluate_path(&self, path: &str) -> Evaluation {
-        self.exec_policy.lock().unwrap_or_else(|e| e.into_inner()).evaluate_path(path)
-    }
-
-    /// 评估网络请求（返回完整 PolicyDecision）。
-    pub fn evaluate_network(&self, host: &str, protocol: NetworkProtocol) -> Evaluation {
-        self.exec_policy
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .evaluate_network(host, protocol)
     }
 }

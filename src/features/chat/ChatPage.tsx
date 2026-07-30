@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useAgentStore } from "@/features/chat/store";
 import { useI18n } from "@/locales/i18n";
@@ -21,8 +22,7 @@ import { LoopPanel } from "@/features/agent/components/LoopPanel";
 import { FailureReport, type FailurePattern } from "@/features/agent/components/FailureReport";
 import { SLASH_COMMANDS, type SlashCommand } from "@/features/chat/components/slash-commands";
 import { ConversationTimeline } from "@/features/chat/components/conversation-timeline";
-import { optimizePromptDirect } from "@/features/chat/services/prompt-optimizer";
-import { loadSettings, type AiModelConfig } from "@/services/settings";
+import type { IpcResponse } from "@/services/ipc";
 import type { AttachmentSpec } from "@/features/chat/types";
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -219,37 +219,22 @@ export default function ChatPage() {
   // ── 提示词优化 ────────────────────────────────────────────────────────────
 
   /**
-   * 优化当前输入的提示词
+   * 优化当前输入的提示词（通过 IPC 调用 Rust 后端）
    */
   const handleOptimizePrompt = useCallback(async (): Promise<string | null> => {
     try {
-      // 加载设置获取当前模型配置
-      const settings = await loadSettings();
-      const models = settings.ai.models;
-      const activeModelId = settings.ai.active_model_id;
-
-      if (!activeModelId) {
-        toast.error(t.chat.errors.noModelConfigured);
-        return null;
+      interface PromptOptimizeResponse {
+        optimized_prompt: string;
       }
 
-      const modelConfig = models.find((m: AiModelConfig) => m.id === activeModelId);
-      if (!modelConfig) {
-        toast.error(t.chat.errors.noModelConfigured);
-        return null;
-      }
+      const response = await invoke<IpcResponse<PromptOptimizeResponse>>(
+        "prompt_optimize",
+        { prompt: input }
+      );
 
-      // 调用优化服务
-      const optimized = await optimizePromptDirect(input, {
-        provider: modelConfig.provider,
-        model: modelConfig.model,
-        api_key: modelConfig.api_key,
-        base_url: modelConfig.base_url,
-      });
-
-      if (optimized) {
+      if (response.status === 0 && response.data) {
         toast.success(t.agentChat.promptOptimized);
-        return optimized;
+        return response.data.optimized_prompt;
       } else {
         toast.error(t.agentChat.optimizeFailed);
         return null;

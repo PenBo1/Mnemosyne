@@ -16,6 +16,8 @@ use super::token::{ApprovalId, ApprovalToken};
 pub struct ApprovalStore {
     pending: HashMap<ApprovalId, ApprovalToken>,
     approved: HashSet<ApprovalId>,
+    /// 已使用的 token（一次性保证）
+    used: HashSet<ApprovalId>,
     rejected: HashSet<ApprovalId>,
     expired: HashSet<ApprovalId>,
     /// 会话级审批缓存：action_hash → 缓存条目。
@@ -30,6 +32,7 @@ impl ApprovalStore {
         Self {
             pending: HashMap::new(),
             approved: HashSet::new(),
+            used: HashSet::new(),
             rejected: HashSet::new(),
             expired: HashSet::new(),
             session_cache: HashMap::new(),
@@ -72,6 +75,22 @@ impl ApprovalStore {
         None
     }
 
+    /// 标记 token 为已使用（一次性保证）
+    ///
+    /// 返回 true 表示首次标记，false 表示已被使用
+    pub fn mark_used(&mut self, id: &ApprovalId) -> bool {
+        if self.used.contains(id) {
+            return false;
+        }
+        self.used.insert(*id);
+        true
+    }
+
+    /// 检查 token 是否已被使用
+    pub fn is_used(&self, id: &ApprovalId) -> bool {
+        self.used.contains(id)
+    }
+
     pub fn is_approved(&self, id: &ApprovalId) -> bool {
         self.approved.contains(id)
     }
@@ -100,7 +119,7 @@ impl ApprovalStore {
             .filter_map(|id| self.mark_expired(id))
             .collect();
 
-        // 防止 approved/rejected/expired 集合无限增长
+        // 防止 approved/rejected/expired/used 集合无限增长
         // 当超过上限时清空（这些集合仅用于近期 ID 查询，丢失旧记录不影响功能）
         const MAX_RECORDS: usize = 10000;
         if self.approved.len() > MAX_RECORDS {
@@ -111,6 +130,9 @@ impl ApprovalStore {
         }
         if self.expired.len() > MAX_RECORDS {
             self.expired.clear();
+        }
+        if self.used.len() > MAX_RECORDS {
+            self.used.clear();
         }
 
         removed
@@ -136,6 +158,10 @@ impl ApprovalStore {
         self.pending_count() + self.approved_count() + self.rejected_count() + self.expired_count()
     }
 
+    pub fn used_count(&self) -> usize {
+        self.used.len()
+    }
+
     pub fn get_pending_tokens(&self) -> Vec<&ApprovalToken> {
         self.pending.values().collect()
     }
@@ -150,6 +176,7 @@ impl ApprovalStore {
     pub fn clear_all(&mut self) {
         self.pending.clear();
         self.approved.clear();
+        self.used.clear();
         self.rejected.clear();
         self.expired.clear();
         self.session_cache.clear();

@@ -152,18 +152,25 @@ impl Database {
     }
 
     /// 审计事件聚合统计
+    ///
+    /// 使用单次查询聚合，避免多次全表扫描。
     pub fn audit_event_stats(&self) -> Result<AuditEventStats, AppError> {
         let conn = self.conn()?;
-        let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM audit_events", [], |row| row.get(0))
-            .map_err(db_err)?;
-        let denied: i64 = conn
-            .query_row("SELECT COUNT(*) FROM audit_events WHERE is_denied = 1", [], |row| row.get(0))
-            .map_err(db_err)?;
-        let security_related: i64 = conn
-            .query_row("SELECT COUNT(*) FROM audit_events WHERE is_security_related = 1", [], |row| row.get(0))
+
+        // 单次查询聚合 total/denied/security_related
+        let (total, denied, security_related): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN is_denied = 1 THEN 1 ELSE 0 END) as denied,
+                    SUM(CASE WHEN is_security_related = 1 THEN 1 ELSE 0 END) as security_related
+                 FROM audit_events",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
             .map_err(db_err)?;
 
+        // 按类型分组统计
         let mut stmt = conn.prepare_cached(
             "SELECT event_type, COUNT(*) FROM audit_events GROUP BY event_type ORDER BY COUNT(*) DESC",
         ).map_err(db_err)?;

@@ -16,8 +16,7 @@ import { AgentAuditSettings } from "./AgentAuditSettings";
 
 export function SecuritySettings() {
   const { t } = useI18n();
-  // 使用 any 绕过类型检查，因为新键可能未被 TypeScript 识别
-  const ts = (t.settings as any).securitySettings;
+  const ts = t.settings.securitySettings;
 
   return (
     <PageContainer>

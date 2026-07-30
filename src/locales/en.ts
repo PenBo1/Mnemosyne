@@ -256,6 +256,7 @@ export default {
       aiModel: "Model identifier for the AI provider",
       aiApiKey: "Your API key for authentication",
       aiBaseUrl: "Custom API endpoint URL (leave empty for default)",
+      zoom: "Zoom the entire interface. Applies immediately and persists on next launch.",
       restoreWindow: "Reopen the main window where you left it. Applies on next launch.",
       enableProxy: "Use a proxy server for network requests",
       proxyHost: "Proxy server hostname or IP address",

@@ -16,11 +16,43 @@ static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn http_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(30))
-            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(60))
             .build()
             .unwrap_or_default()
     })
+}
+
+/// 检查 embedding 服务是否可用（快速失败）
+pub async fn check_service_available(config: &EmbeddingConfig) -> Result<(), AppError> {
+    if !config.enabled {
+        return Err(AppError::invalid_input("Embedding is disabled"));
+    }
+    if config.base_url.trim().is_empty() {
+        return Err(AppError::invalid_input("Embedding base_url is empty"));
+    }
+
+    let base_url = config.base_url.trim_end_matches('/');
+    let health_url = format!("{}/models", base_url);
+
+    let client = http_client();
+    let resp = client
+        .get(&health_url)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) if r.status().is_success() => Ok(()),
+        Ok(r) => Err(AppError::connection_refused(format!(
+            "Embedding service returned status {}",
+            r.status()
+        ))),
+        Err(e) => Err(AppError::connection_refused(format!(
+            "Embedding service unavailable: {}. Make sure the service is running at {}",
+            e, base_url
+        ))),
+    }
 }
 
 /// 调用 /v1/embeddings 对单段文本生成向量。

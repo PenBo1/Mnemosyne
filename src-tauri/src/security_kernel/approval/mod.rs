@@ -114,9 +114,14 @@ impl ApprovalManager {
     }
 
     pub fn validate(&self, id: &ApprovalId, op: &Operation, workspace: &WorkspaceId) -> Result<(), AppError> {
-        let store = self.store.lock().map_err(|e|
+        let mut store = self.store.lock().map_err(|e|
             AppError::internal(format!("ApprovalStore lock poisoned: {}", e))
         )?;
+
+        // 检查是否已被使用（一次性保证）
+        if store.is_used(id) {
+            return Err(ValidationError::TokenAlreadyUsed(*id).into());
+        }
 
         if !store.is_approved(id) {
             if store.is_rejected(id) {
@@ -138,6 +143,9 @@ impl ApprovalManager {
         };
 
         ApprovalValidator::validate_token(&pending_token, op, workspace)?;
+
+        // 标记为已使用（一次性保证）
+        store.mark_used(id);
 
         Ok(())
     }

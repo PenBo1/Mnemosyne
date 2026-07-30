@@ -8,8 +8,6 @@
 //! - Message CRUD：创建消息（含 FTS5 全文索引）
 //! - 消息全文搜索：基于 FTS5 trigram 支持中文子串匹配
 
-use std::collections::HashSet;
-
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
@@ -362,63 +360,85 @@ impl Database {
         })
     }
 
-    /// 删除会话（级联）
+/// 删除会话（级联）
     ///
     /// 递归删除所有后代 session 及其消息。
-    /// 使用 BFS 收集所有后代 ID，在同一事务内执行，保证原子性。
+    /// 使用递归 CTE 一次性获取所有后代，然后批量删除，避免 N+1 问题。
     pub fn delete_session(&self, id: &str) -> Result<bool, AppError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(db_err)?;
 
-        // BFS 收集所有后代 session ID（含自身）
-        let mut all_ids: Vec<String> = Vec::new();
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut frontier: Vec<String> = vec![id.to_string()];
-
-        {
+        // 使用递归 CTE 一次性获取所有后代 session ID（含自身）
+        let all_ids: Vec<String> = {
             let mut stmt = tx
-                .prepare("SELECT id FROM sessions WHERE parent_session_id = ?")
+                .prepare_cached(
+                    "WITH RECURSIVE descendants AS (
+                        SELECT id FROM sessions WHERE id = ?1
+                        UNION ALL
+                        SELECT s.id FROM sessions s
+                        INNER JOIN descendants d ON s.parent_session_id = d.id
+                    ) SELECT id FROM descendants"
+                )
                 .map_err(db_err)?;
-            while !frontier.is_empty() {
-                let mut next_frontier: Vec<String> = Vec::new();
-                for sid in &frontier {
-                    if !visited.insert(sid.clone()) {
-                        return Err(AppError::internal(
-                            "Cycle detected in session parent_session_id chain",
-                        ));
-                    }
-                    all_ids.push(sid.clone());
+            let rows = stmt
+                .query_map(params![id], |row| row.get::<_, String>(0))
+                .map_err(db_err)?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?
+        };
 
-                    let rows = stmt
-                        .query_map(params![sid], |row| row.get::<_, String>(0))
-                        .map_err(db_err)?;
-                    for r in rows {
-                        next_frontier.push(r.map_err(db_err)?);
-                    }
-                }
-                frontier = next_frontier;
+        if all_ids.is_empty() {
+            tx.commit().map_err(db_err)?;
+            return Ok(false);
+        }
+
+        // 创建临时表存储要删除的 ID
+        tx.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _delete_session_ids (id TEXT PRIMARY KEY)",
+            [],
+        )
+        .map_err(db_err)?;
+        tx.execute("DELETE FROM _delete_session_ids", []).map_err(db_err)?;
+
+        // 插入所有要删除的 ID
+        {
+            let mut insert_stmt = tx
+                .prepare_cached("INSERT INTO _delete_session_ids (id) VALUES (?)")
+                .map_err(db_err)?;
+            for sid in &all_ids {
+                insert_stmt.execute(params![sid]).map_err(db_err)?;
             }
         }
 
-        // 删除所有相关 messages
-        for sid in &all_ids {
-            tx.execute("DELETE FROM messages WHERE session_id = ?", params![sid])
-                .map_err(db_err)?;
-        }
+        // 批量删除 messages
+        let messages_deleted = tx
+            .execute(
+                "DELETE FROM messages WHERE session_id IN (SELECT id FROM _delete_session_ids)",
+                [],
+            )
+            .map_err(db_err)?;
 
-        // 删除所有相关 sessions
-        let mut deleted = false;
-        for sid in &all_ids {
-            let affected = tx
-                .execute("DELETE FROM sessions WHERE id = ?", params![sid])
-                .map_err(db_err)?;
-            if sid == id && affected > 0 {
-                deleted = true;
-            }
-        }
+        // 批量删除 sessions
+        let sessions_deleted = tx
+            .execute(
+                "DELETE FROM sessions WHERE id IN (SELECT id FROM _delete_session_ids)",
+                [],
+            )
+            .map_err(db_err)?;
+
+        // 清理临时表
+        tx.execute("DROP TABLE _delete_session_ids", [])
+            .map_err(db_err)?;
 
         tx.commit().map_err(db_err)?;
-        Ok(deleted)
+
+        tracing::debug!(
+            session_id = id,
+            sessions_deleted,
+            messages_deleted,
+            "delete_session completed"
+        );
+
+        Ok(sessions_deleted > 0)
     }
 
     // ── Message 操作 ────────────────────────────────────────────────────────

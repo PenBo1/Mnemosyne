@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 use crate::infrastructure::db::connection::Database;
-use crate::infrastructure::memory::types::{
-    MemoryEntry, MemoryType, MemorySystem,
+use crate::infrastructure::memory::types::{MemoryEntry, MemoryType, MemorySystem};
+use crate::infrastructure::memory::dto::{
     MemoryRetrievalRequest, MemoryRetrievalResult, RetrievedFact, RetrievedSummary,
 };
 

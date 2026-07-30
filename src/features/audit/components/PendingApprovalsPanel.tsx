@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { useCallback, useEffect, useState, memo } from "react";
+import { useCallback, useEffect, useState, useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -162,7 +162,7 @@ export function PendingApprovalsPanel() {
   /**
    * 批准审批
    */
-  const handleGrant = async (token: ApprovalTokenDto) => {
+  const handleGrant = useCallback(async (token: ApprovalTokenDto) => {
     try {
       await grantApproval(token.id, "user");
       toast.success(t.audit.approvalGranted);
@@ -170,12 +170,12 @@ export function PendingApprovalsPanel() {
     } catch (e) {
       toast.error(`${t.audit.approvalGrantFailed}: ${String(e)}`);
     }
-  };
+  }, [t.audit.approvalGranted, t.audit.approvalGrantFailed, loadData]);
 
   /**
    * 拒绝审批
    */
-  const handleReject = async (token: ApprovalTokenDto) => {
+  const handleReject = useCallback(async (token: ApprovalTokenDto) => {
     try {
       await rejectApproval(token.id, "user", t.audit.rejectedByUser);
       toast.success(t.audit.approvalRejected);
@@ -183,12 +183,12 @@ export function PendingApprovalsPanel() {
     } catch (e) {
       toast.error(`${t.audit.approvalRejectFailed}: ${String(e)}`);
     }
-  };
+  }, [t.audit.rejectedByUser, t.audit.approvalRejected, t.audit.approvalRejectFailed, loadData]);
 
   /**
    * 清理过期审批
    */
-  const handleCleanup = async () => {
+  const handleCleanup = useCallback(async () => {
     try {
       const n = await cleanupExpiredApprovals();
       toast.success(t.audit.cleanupDone.replace("{n}", String(n)));
@@ -196,7 +196,17 @@ export function PendingApprovalsPanel() {
     } catch (e) {
       toast.error(`${t.audit.cleanupFailed}: ${String(e)}`);
     }
-  };
+  }, [t.audit.cleanupDone, t.audit.cleanupFailed, loadData]);
+
+  // ── 缓存 labels 对象 ────────────────────────────────────────────────────────
+
+  const cardLabels = useMemo(() => ({
+    riskLevel: t.audit.riskLevel,
+    workspace: t.audit.workspace,
+    remaining: t.audit.remaining,
+    approve: t.audit.approve,
+    reject: t.audit.reject,
+  }), [t.audit.riskLevel, t.audit.workspace, t.audit.remaining, t.audit.approve, t.audit.reject]);
 
   // ── 渲染 ──────────────────────────────────────────────────────────────────
 
@@ -265,13 +275,7 @@ export function PendingApprovalsPanel() {
                   token={token}
                   onGrant={() => void handleGrant(token)}
                   onReject={() => void handleReject(token)}
-                  labels={{
-                    riskLevel: t.audit.riskLevel,
-                    workspace: t.audit.workspace,
-                    remaining: t.audit.remaining,
-                    approve: t.audit.approve,
-                    reject: t.audit.reject,
-                  }}
+                  labels={cardLabels}
                 />
               ))}
             </div>

@@ -47,7 +47,7 @@ function isEffortValue(s: string): boolean {
  */
 export const EffortPicker = memo(function EffortPicker() {
   const { t } = useI18n();
-  const [effort, setEffort] = useState<EffortLevel>(getCurrentEffort());
+  const [effort, setEffort] = useState<EffortLevel>(() => getCurrentEffort());
 
   // 同步外部变更(如其他组件修改了 effort)
   useEffect(() => {

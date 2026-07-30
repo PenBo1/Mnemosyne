@@ -2,11 +2,22 @@
 //! 记忆模块 - 记忆系统模块入口
 //! ═══════════════════════════════════════════════════════════════════════════
 
-pub mod short_term_commands;
-pub mod store;
+// ── 核心模块 ────────────────────────────────────────────────────────────────
+
 pub mod types;
 pub mod state;
+pub mod store;
+
+// ── 功能模块 ────────────────────────────────────────────────────────────────
+
 pub mod core_memory;
 pub mod recall_memory;
 pub mod archival_memory;
 pub mod commands_v2;
+
+// ── 短期记忆（分层架构） ────────────────────────────────────────────────────
+
+pub mod dto;
+pub mod validation;
+pub mod service;
+pub mod short_term_commands;

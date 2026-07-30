@@ -1,11 +1,15 @@
-// Chat Runtime — Rust-backed agent engine via IPC.
-//
-// The AI agent loop now runs in Rust (rig-core). This module is a thin IPC wrapper:
-// 1. Sends user message to Rust via `chat_send_message` with a Tauri Channel
-// 2. Receives streaming events (TextDelta, ToolCallStart, etc.) and updates the zustand store
-// 3. Handles tool approval requests via `chat_tool_respond`
-// 4. Reloads messages from DB after completion (persistence handled by Rust backend)
-// 5. Monitors token usage and fires ContextCompressionCallback when threshold exceeded (P2.6)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Chat Runtime - Rust-backed agent engine via IPC
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The AI agent loop now runs in Rust (rig-core). This module is a thin IPC wrapper:
+ * 1. Sends user message to Rust via `chat_send_message` with a Tauri Channel
+ * 2. Receives streaming events (TextDelta, ToolCallStart, etc.) and updates the zustand store
+ * 3. Handles tool approval requests via `chat_tool_respond`
+ * 4. Reloads messages from DB after completion (persistence handled by Rust backend)
+ * 5. Monitors token usage and fires ContextCompressionCallback when threshold exceeded (P2.6)
+ */
 
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { toast } from "sonner";
