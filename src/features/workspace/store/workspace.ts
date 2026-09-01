@@ -37,6 +37,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       last_opened_at: null,
+      is_archived: false,
+      archived_at: null,
+      sort_order: 0,
     };
 
     // 乐观更新：立即在 UI 中显示
@@ -99,5 +102,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
     void workspaceService.touchWorkspace(id).catch((e) => {
       console.error("[workspace] touchWorkspace failed", e);
     });
+  },
+
+  // 更新工作区排序顺序（乐观更新）
+  updateWorkspaceSortOrder: async (ids: string[]) => {
+    const previousWorkspaces = _get().workspaces;
+    // 乐观更新：按新顺序重排
+    const reordered = ids
+      .map((id) => previousWorkspaces.find((ws) => ws.id === id))
+      .filter((ws): ws is Workspace => ws !== undefined);
+    set({ workspaces: reordered });
+
+    try {
+      await workspaceService.updateWorkspaceSortOrder(ids);
+    } catch (err) {
+      // 回滚
+      set({ workspaces: previousWorkspaces });
+      toast.error("Failed to update workspace order");
+    }
   },
 }));

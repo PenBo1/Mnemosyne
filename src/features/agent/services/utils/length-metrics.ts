@@ -8,7 +8,7 @@
 //
 // 纯函数无 I/O，迁移零改动（仅改 import 路径）。
 
-import type { LengthCountingMode, LengthNormalizeMode, LengthSpec } from "@/types/length-governance";
+import type { LengthCountingMode, LengthNormalizeMode, LengthSpec } from "@/features/agent/types/length-governance";
 
 export type LengthLanguage = "zh" | "en";
 

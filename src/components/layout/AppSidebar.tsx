@@ -45,6 +45,16 @@ import {
   PaletteIcon,
   BrainIcon,
   BarChart3Icon,
+  InfoIcon,
+  FolderIcon,
+  GraduationCapIcon,
+  CalendarIcon,
+  ActivityIcon,
+  GitBranchIcon,
+  LockIcon,
+  MessageSquareIcon,
+  BoxesIcon,
+  ArchiveIcon,
 } from "lucide-react";
 import { useAppState, useAppDispatch } from "@/lib/app-context";
 import { useI18n } from "@/locales/i18n";
@@ -61,16 +71,36 @@ const TOOLS_SUB_ITEMS: { id: "novels" | "trends"; labelKey: string; icon: typeof
 ];
 
 const SETTINGS_NAV_ITEMS: { id: SettingsPage; labelKey: string; icon: typeof GlobeIcon }[] = [
+  // ── 基础设置组 ────────────────────────────────────────────────────────
   { id: "settings.general", labelKey: "general", icon: GlobeIcon },
+  { id: "settings.system", labelKey: "system", icon: SettingsIcon },
+  { id: "settings.shortcuts", labelKey: "shortcuts", icon: WrenchIcon },
+  { id: "settings.about", labelKey: "about", icon: InfoIcon },
+  // ── 用户与内容组 ────────────────────────────────────────────────────────
   { id: "settings.userProfile", labelKey: "userProfileLabel", icon: UserIcon },
   { id: "settings.genres", labelKey: "genresLabel", icon: BookMarkedIcon },
   { id: "settings.styles", labelKey: "stylesLabel", icon: PaletteIcon },
-  { id: "settings.ai", labelKey: "aiProvider", icon: CpuIcon },
+  // ── AI 模型组 ────────────────────────────────────────────────────────
+  { id: "settings.model", labelKey: "model", icon: CpuIcon },
+  { id: "settings.embedding", labelKey: "embedding", icon: BoxesIcon },
+  { id: "settings.prompts", labelKey: "prompts", icon: MessageSquareIcon },
+  { id: "settings.agents", labelKey: "agents", icon: BotIcon },
+  // ── 内容与记忆组 ────────────────────────────────────────────────────────
   { id: "settings.bookSources", labelKey: "bookSources", icon: BookOpenIcon },
-  { id: "settings.memory", labelKey: "memoryLabel", icon: BrainIcon },
-  { id: "settings.security", labelKey: "audit", icon: ShieldIcon },
-  { id: "settings.networkTools", labelKey: "network", icon: NetworkIcon },
+  { id: "settings.shortTerm", labelKey: "shortTermMemoryLabel", icon: BrainIcon },
+  { id: "settings.project", labelKey: "projectLabel", icon: FolderIcon },
+  { id: "settings.learned", labelKey: "learnedLabel", icon: GraduationCapIcon },
+  { id: "settings.daily", labelKey: "dailyLabel", icon: CalendarIcon },
+  { id: "settings.skillMemory", labelKey: "skillLabel", icon: PuzzleIcon },
+  // ── 安全与网络组 ────────────────────────────────────────────────────────
+  { id: "settings.rules", labelKey: "rulesLabel", icon: ShieldIcon },
+  { id: "settings.events", labelKey: "eventsLabel", icon: ActivityIcon },
+  { id: "settings.network", labelKey: "networkLabel", icon: NetworkIcon },
+  { id: "settings.git", labelKey: "gitLabel", icon: GitBranchIcon },
+  { id: "settings.limits", labelKey: "limitsLabel", icon: LockIcon },
+  // ── 统计 ────────────────────────────────────────────────────────
   { id: "settings.usageStats", labelKey: "usageStatsLabel", icon: BarChart3Icon },
+  { id: "settings.archive", labelKey: "archiveLabel", icon: ArchiveIcon },
 ];
 
 // ── 侧边栏组件 ──────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@
 //     profile.resolveBias * resolveBiasMultiplier 计算
 //   - 移除 halfLifeChapters 粗略估算参数（由 timing profile 取代）
 
-import type { HookPayoffTiming } from "@/types/runtime-state";
+import type { HookPayoffTiming } from "@/features/agent/types/runtime-state";
 import type { StoredHook } from "@/types/hook";
 import {
   HOOK_ACTIVITY_THRESHOLDS,

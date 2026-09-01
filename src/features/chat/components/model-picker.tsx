@@ -60,7 +60,7 @@ export const ModelPicker = memo(function ModelPicker() {
    * 打开模型设置页
    */
   const openModelSettings = () => {
-    dispatch({ type: "SET_PAGE", payload: "settings.ai" });
+    dispatch({ type: "SET_PAGE", payload: "settings.model" });
   };
 
   const activeModel = models.find((m) => m.id === activeModelId);

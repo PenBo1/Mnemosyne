@@ -30,6 +30,20 @@ pub enum ReviseMode {
     SpotFix,
 }
 
+impl ReviseMode {
+    /// 从字符串解析修订模式
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "polish" => Ok(Self::Polish),
+            "rewrite" => Ok(Self::Rewrite),
+            "rework" => Ok(Self::Rework),
+            "antidetect" => Ok(Self::AntiDetect),
+            "spotfix" => Ok(Self::SpotFix),
+            other => Err(format!("未知 revise mode: {}", other)),
+        }
+    }
+}
 
 /// Auto 模式下的输出模式（由 issue 类型决定）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

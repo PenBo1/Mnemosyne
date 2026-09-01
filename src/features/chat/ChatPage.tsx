@@ -7,9 +7,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { useChat } from "@/features/chat/hooks/useChat";
-import { useAgentStore } from "@/features/chat/store";
+import { optimizePrompt } from "@/features/llm/services/prompt-optimizer";
 import { useI18n } from "@/locales/i18n";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { MessageList } from "@/features/chat/components/message-list";
@@ -22,7 +21,6 @@ import { LoopPanel } from "@/features/agent/components/LoopPanel";
 import { FailureReport, type FailurePattern } from "@/features/agent/components/FailureReport";
 import { SLASH_COMMANDS, type SlashCommand } from "@/features/chat/components/slash-commands";
 import { ConversationTimeline } from "@/features/chat/components/conversation-timeline";
-import type { IpcResponse } from "@/services/ipc";
 import type { AttachmentSpec } from "@/features/chat/types";
 
 // ── 主组件 ──────────────────────────────────────────────────────────────────
@@ -42,6 +40,7 @@ export default function ChatPage() {
     regenerate,
     handleNewSession,
     handleDeleteSession,
+    clearMessages,
     workspacePath,
     pendingConfirmation,
     submittingConfirmation,
@@ -107,7 +106,7 @@ export default function ChatPage() {
         void handleNewSession();
         return true;
       case "/clear":
-        useAgentStore.getState().replaceMessages([]);
+        clearMessages();
         return true;
       case "/help":
         toast.info(t.agentChat.slashHelpText);
@@ -219,26 +218,13 @@ export default function ChatPage() {
   // ── 提示词优化 ────────────────────────────────────────────────────────────
 
   /**
-   * 优化当前输入的提示词（通过 IPC 调用 Rust 后端）
+   * 优化当前输入的提示词（通过封装的 service 调用）
    */
   const handleOptimizePrompt = useCallback(async (): Promise<string | null> => {
     try {
-      interface PromptOptimizeResponse {
-        optimized_prompt: string;
-      }
-
-      const response = await invoke<IpcResponse<PromptOptimizeResponse>>(
-        "prompt_optimize",
-        { prompt: input }
-      );
-
-      if (response.status === 0 && response.data) {
-        toast.success(t.agentChat.promptOptimized);
-        return response.data.optimized_prompt;
-      } else {
-        toast.error(t.agentChat.optimizeFailed);
-        return null;
-      }
+      const optimized = await optimizePrompt(input);
+      toast.success(t.agentChat.promptOptimized);
+      return optimized;
     } catch (error) {
       console.error("Prompt optimization error:", error);
       toast.error(t.agentChat.optimizeFailed);

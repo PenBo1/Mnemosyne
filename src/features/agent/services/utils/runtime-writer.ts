@@ -24,7 +24,7 @@ import type {
   ChapterTrace,
   ContextPackage,
   RuleStack,
-} from "@/types/input-governance";
+} from "@/features/agent/types/input-governance";
 
 export interface RuntimeArtifactWriteResult {
   readonly contextPath: string;

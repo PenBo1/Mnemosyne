@@ -56,6 +56,9 @@ export default defineConfig(() => ({
         "log-viewer": fileURLToPath(
           new URL("./src/log-viewer/index.html", import.meta.url)
         ),
+        about: fileURLToPath(
+          new URL("./src/about/index.html", import.meta.url)
+        ),
       },
       output: {
         manualChunks(id) {

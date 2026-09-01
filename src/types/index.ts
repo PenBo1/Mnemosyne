@@ -1,10 +1,46 @@
-// 跨模块共享类型 barrel。业务领域类型已内聚到各 modules/<area>/types/，
-// 此处仅保留真正跨模块的路由/全局状态类型。
-//
-// Zod schema 定义已隔离到 ./schemas，避免 zod 依赖污染主 barrel。
-export * from "./app";
-export * from "./llm";
-export * from "./runtime-state";
-export * from "./book";
-export * from "./hook";
-export * from "./session";
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 全局类型导出 - 仅包含跨模块共享类型
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 领域特定类型已移动到对应的 feature 模块：
+ * - book, book-rules, genre-profile → features/story/types/
+ * - runtime-state, input-governance, length-governance → features/agent/types/
+ */
+
+// ── 应用全局类型 ────────────────────────────────────────────────────────
+
+export type { AppPage, SettingsPage, AppState, FileEntry } from "./app";
+export { DEFAULT_SETTINGS_PAGE, isSettingsPage } from "./app";
+
+// ── LLM 通信类型 ────────────────────────────────────────────────────────
+
+export type { LLMMessage, LLMResponse, StreamProgress } from "./llm";
+
+// ── Hook 类型 ────────────────────────────────────────────────────────
+
+export type { StoredHook, StoredSummary, Fact } from "./hook";
+
+// ── Session 类型 ────────────────────────────────────────────────────────
+
+export type {
+  Session,
+  Message,
+  AgentEvent,
+  PendingConfirmation,
+} from "./session";
+
+// ── 上下文压缩类型 ────────────────────────────────────────────────────────
+
+export type {
+  ContextCompressionEvent,
+  ContextCompressionCallback,
+} from "./context-compression";
+
+// ── Agent 协作风格 ────────────────────────────────────────────────────────
+
+export type { CollaborationStyle } from "./collaboration-style";
+
+// ── Agent Effort 级别 ────────────────────────────────────────────────────────
+
+export type { EffortLevel } from "./effort";

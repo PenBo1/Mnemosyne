@@ -23,7 +23,7 @@ import {
   type HooksState,
   type RuntimeStateDelta,
   type StateManifest,
-} from "@/types/runtime-state";
+} from "@/features/agent/types/runtime-state";
 import { evaluateHookAdmission } from "../utils/hook-governance";
 import { resolveHookPayoffTiming } from "../utils/hook-lifecycle";
 import { validateRuntimeState } from "./state-validator";

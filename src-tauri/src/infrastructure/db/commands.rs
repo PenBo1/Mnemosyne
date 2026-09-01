@@ -3,8 +3,12 @@
 //! ═══════════════════════════════════════════════════════════════════════════
 
 use tauri::State;
+use std::time::Instant;
 use crate::shared::error::{IpcResponse, AppError};
 use crate::infrastructure::db::state::DbState;
+use crate::infrastructure::db::stores::audit::{
+    AuditEventFilter, AuditHistogramBucket, AuditEventRow,
+};
 use crate::infrastructure::fs::fs_utils::validate_id_component;
 
 // ── 趋势命令 ────────────────────────────────────────────────────────────────
@@ -73,4 +77,58 @@ pub async fn delete_trend(
         .map_err(|e| AppError::internal(format!("Database task join failed: {}", e)))??;
     tracing::info!(trend_id = %id_for_log, deleted, "Trend deleted");
     Ok(IpcResponse::ok(deleted))
+}
+
+// ── 审计事件查询命令（Security Kernel 读模型）──────────────────────────────
+
+/// 查询最近的审计事件(按 recorded_at 倒序)。limit 默认 50,上限 1000。
+#[tauri::command]
+pub async fn audit_events_query(
+    state: State<'_, DbState>,
+    limit: Option<i64>,
+) -> Result<IpcResponse<Vec<AuditEventRow>>, AppError> {
+    let limit = limit.unwrap_or(50);
+    let rows = state.db.query_audit_events(limit)?;
+    Ok(IpcResponse::ok(rows))
+}
+
+/// 审计事件聚合统计:总数 / 拒绝数 / 安全相关数 / 按类型分组。
+#[tauri::command]
+pub async fn audit_event_stats(
+    state: State<'_, DbState>,
+) -> Result<IpcResponse<serde_json::Value>, AppError> {
+    let start = Instant::now();
+    tracing::info!("audit_event_stats: enter");
+    let stats = state.db.audit_event_stats()?;
+    tracing::info!(
+        duration_ms = start.elapsed().as_millis(),
+        "audit_event_stats: exit"
+    );
+    Ok(IpcResponse::ok(serde_json::to_value(stats)?))
+}
+
+/// 按过滤条件查询审计事件。
+///
+/// 支持 workspace_id / operation(LIKE) / event_type / since / until / only_denied / only_security / offset / limit。
+#[tauri::command]
+pub async fn audit_events_query_filtered(
+    filter: AuditEventFilter,
+    state: State<'_, DbState>,
+) -> Result<IpcResponse<Vec<AuditEventRow>>, AppError> {
+    let rows = state.db.query_audit_events_filtered(&filter)?;
+    Ok(IpcResponse::ok(rows))
+}
+
+/// 审计事件直方图(按时间桶聚合)。
+///
+/// granularity ∈ {"hour","day","month"}。since/until 为可选 RFC3339 字符串。
+#[tauri::command]
+pub async fn audit_event_histogram(
+    granularity: String,
+    since: Option<String>,
+    until: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<IpcResponse<Vec<AuditHistogramBucket>>, AppError> {
+    let buckets = state.db.audit_event_histogram(&granularity, since.as_deref(), until.as_deref())?;
+    Ok(IpcResponse::ok(buckets))
 }

@@ -20,7 +20,7 @@
 //
 // 业务逻辑零改动（函数逻辑、正则、表格解析/合并规则全部保留）。
 
-import type { ContextPackage } from "@/types/input-governance";
+import type { ContextPackage } from "@/features/agent/types/input-governance";
 import {
   parsePendingHooksMarkdown,
   renderHookSnapshot,

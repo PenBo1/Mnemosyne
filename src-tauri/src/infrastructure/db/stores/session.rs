@@ -105,6 +105,8 @@ pub struct Session {
     pub split_type: Option<SessionSplitType>,
     /// 分裂原因
     pub split_reason: Option<String>,
+    /// 排序顺序
+    pub sort_order: i32,
 }
 
 /// 消息
@@ -199,6 +201,7 @@ fn map_session_row(row: &rusqlite::Row) -> rusqlite::Result<Session> {
         })?),
         None => None,
     };
+    let sort_order: i64 = row.get(16)?;
     Ok(Session {
         id: row.get(0)?,
         novel_id: row.get(1)?,
@@ -216,6 +219,7 @@ fn map_session_row(row: &rusqlite::Row) -> rusqlite::Result<Session> {
         parent_session_id: row.get(13)?,
         split_type,
         split_reason: row.get(15)?,
+        sort_order: sort_order as i32,
     })
 }
 
@@ -232,10 +236,18 @@ impl Database {
         let novel_id = req.novel_id.clone();
         let workspace_id = req.workspace_id.clone();
 
+        // 获取当前最大 sort_order 并自动递增
         let conn = self.conn()?;
+        let max_sort_order: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sort_order), -1) FROM sessions WHERE workspace_id = ?",
+            params![&workspace_id],
+            |row| row.get(0),
+        ).unwrap_or(-1);
+        let sort_order = (max_sort_order + 1) as i32;
+
         conn.execute(
-            "INSERT INTO sessions (id, novel_id, workspace_id, session_type, title, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at) VALUES (?, ?, ?, 'chat', ?, 0, 0, 0, 0.0, 'active', ?, ?)",
-            params![&id, &novel_id, &workspace_id, &title, &now, &now],
+            "INSERT INTO sessions (id, novel_id, workspace_id, session_type, title, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, sort_order) VALUES (?, ?, ?, 'chat', ?, 0, 0, 0, 0.0, 'active', ?, ?, ?)",
+            params![&id, &novel_id, &workspace_id, &title, &now, &now, sort_order],
         ).map_err(db_err)?;
 
         Ok(Session {
@@ -255,6 +267,7 @@ impl Database {
             parent_session_id: None,
             split_type: None,
             split_reason: None,
+            sort_order,
         })
     }
 
@@ -262,7 +275,7 @@ impl Database {
     pub fn get_session(&self, id: &str) -> Result<Option<Session>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
-            "SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason FROM sessions WHERE id = ?",
+            "SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason, sort_order FROM sessions WHERE id = ?",
             params![id],
             map_session_row,
         );
@@ -276,7 +289,7 @@ impl Database {
     /// 列出会话
     pub fn list_sessions(&self, novel_id: Option<&str>, workspace_id: Option<&str>) -> Result<Vec<Session>, AppError> {
         let conn = self.conn()?;
-        let mut sql = String::from("SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason FROM sessions");
+        let mut sql = String::from("SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason, sort_order FROM sessions");
         let mut conditions: Vec<&str> = Vec::new();
         let mut params_vec: Vec<String> = Vec::new();
         if let Some(nid) = novel_id {
@@ -287,11 +300,27 @@ impl Database {
             conditions.push("workspace_id = ?");
             params_vec.push(wid.to_string());
         }
+        conditions.push("status != 'archived'");
         if !conditions.is_empty() {
             sql.push_str(" WHERE ");
             sql.push_str(&conditions.join(" AND "));
         }
-        sql.push_str(" ORDER BY updated_at DESC");
+        sql.push_str(" ORDER BY sort_order ASC, updated_at DESC");
+        let mut stmt = conn.prepare_cached(&sql).map_err(db_err)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), map_session_row).map_err(db_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
+    }
+
+    /// 列出已归档会话
+    pub fn list_archived_sessions(&self, workspace_id: Option<&str>) -> Result<Vec<Session>, AppError> {
+        let conn = self.conn()?;
+        let mut sql = String::from("SELECT id, novel_id, workspace_id, session_type, title, summary, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason, sort_order FROM sessions WHERE status = 'archived'");
+        let mut params_vec: Vec<String> = Vec::new();
+        if let Some(wid) = workspace_id {
+            sql.push_str(" AND workspace_id = ?");
+            params_vec.push(wid.to_string());
+        }
+        sql.push_str(" ORDER BY sort_order ASC, updated_at DESC");
         let mut stmt = conn.prepare_cached(&sql).map_err(db_err)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), map_session_row).map_err(db_err)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
@@ -317,6 +346,49 @@ impl Database {
         Ok(())
     }
 
+    /// 归档会话
+    pub fn archive_session(&self, id: &str) -> Result<Session, AppError> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn()?;
+        let affected = conn.execute(
+            "UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ? AND status != 'archived'",
+            params![&now, id],
+        ).map_err(db_err)?;
+        if affected == 0 {
+            return Err(AppError::not_found("Session not found or already archived"));
+        }
+        self.get_session(id)?.ok_or_else(|| AppError::internal("Session not found after archive"))
+    }
+
+    /// 恢复会话
+    pub fn restore_session(&self, id: &str) -> Result<Session, AppError> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn()?;
+        let affected = conn.execute(
+            "UPDATE sessions SET status = 'active', updated_at = ? WHERE id = ? AND status = 'archived'",
+            params![&now, id],
+        ).map_err(db_err)?;
+        if affected == 0 {
+            return Err(AppError::not_found("Session not found or not archived"));
+        }
+        self.get_session(id)?.ok_or_else(|| AppError::internal("Session not found after restore"))
+    }
+
+    /// 更新会话排序顺序
+    pub fn update_session_sort_order(&self, ids: &[String]) -> Result<(), AppError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(db_err)?;
+        for (index, id) in ids.iter().enumerate() {
+            let sort_order = index as i64;
+            tx.execute(
+                "UPDATE sessions SET sort_order = ? WHERE id = ?",
+                params![sort_order, id],
+            ).map_err(db_err)?;
+        }
+        tx.commit().map_err(db_err)?;
+        Ok(())
+    }
+
     /// 创建会话分裂
     ///
     /// 从父 session 派生子 session，继承 parent 的 workspace_id。
@@ -334,10 +406,18 @@ impl Database {
         let workspace_id = parent.workspace_id.clone();
         let split_type_str = split_type.as_db_str();
 
+        // 获取当前最大 sort_order 并自动递增
         let conn = self.conn()?;
+        let max_sort_order: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sort_order), -1) FROM sessions WHERE workspace_id = ?",
+            params![&workspace_id],
+            |row| row.get(0),
+        ).unwrap_or(-1);
+        let sort_order = (max_sort_order + 1) as i32;
+
         conn.execute(
-            "INSERT INTO sessions (id, novel_id, workspace_id, session_type, title, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason) VALUES (?, NULL, ?, 'chat', '', 0, 0, 0, 0.0, 'active', ?, ?, ?, ?, ?)",
-            params![&id, &workspace_id, &now, &now, parent_id, split_type_str, reason],
+            "INSERT INTO sessions (id, novel_id, workspace_id, session_type, title, message_count, input_tokens, output_tokens, cost, status, created_at, updated_at, parent_session_id, split_type, split_reason, sort_order) VALUES (?, NULL, ?, 'chat', '', 0, 0, 0, 0.0, 'active', ?, ?, ?, ?, ?, ?)",
+            params![&id, &workspace_id, &now, &now, parent_id, split_type_str, reason, sort_order],
         ).map_err(db_err)?;
 
         Ok(Session {
@@ -357,6 +437,7 @@ impl Database {
             parent_session_id: Some(parent_id.to_string()),
             split_type: Some(split_type),
             split_reason: reason.map(|s| s.to_string()),
+            sort_order,
         })
     }
 

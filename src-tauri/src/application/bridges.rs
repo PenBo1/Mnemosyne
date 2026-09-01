@@ -185,7 +185,7 @@ impl PipelineDelegateOps for PipelineDelegateOpsImpl {
         chapter_number: Option<u32>,
         mode: &str,
     ) -> Result<serde_json::Value, String> {
-        let mode = parse_revise_mode(mode)?;
+        let mode = ReviseMode::from_str(mode)?;
         let runner = self.runner();
         let r = runner
             .revise_draft(engine, book_id, chapter_number, mode)
@@ -221,19 +221,6 @@ impl PipelineDelegateOps for PipelineDelegateOpsImpl {
             .await
             .map_err(|e| e.to_string())?;
         serde_json::to_value(&r).map_err(|e| format!("序列化失败: {}", e))
-    }
-}
-
-/// 将 mode 字符串映射到 ReviseMode 枚举。
-fn parse_revise_mode(s: &str) -> Result<ReviseMode, String> {
-    match s.to_lowercase().as_str() {
-        "auto" => Ok(ReviseMode::Auto),
-        "polish" => Ok(ReviseMode::Polish),
-        "rewrite" => Ok(ReviseMode::Rewrite),
-        "rework" => Ok(ReviseMode::Rework),
-        "antidetect" => Ok(ReviseMode::AntiDetect),
-        "spotfix" => Ok(ReviseMode::SpotFix),
-        other => Err(format!("未知 revise mode: {}", other)),
     }
 }
 

@@ -17,7 +17,7 @@ import {
   type HookRecord,
   type NewHookCandidate,
   type RuntimeStateDelta,
-} from "@/types/runtime-state";
+} from "@/features/agent/types/runtime-state";
 import { normalizeHookId } from "./story-markdown";
 import { evaluateHookAdmission } from "./hook-governance";
 import { resolveHookPayoffTiming } from "./hook-lifecycle";

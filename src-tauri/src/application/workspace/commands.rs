@@ -6,9 +6,12 @@
 //! 提供工作区管理的 IPC 命令实现：
 //! - create_workspace：创建工作区
 //! - list_workspaces：列出工作区
+//! - list_archived_workspaces：列出已归档工作区
 //! - get_workspace：获取工作区
 //! - delete_workspace：删除工作区
 //! - touch_workspace：更新工作区访问时间
+//! - archive_workspace：归档工作区
+//! - restore_workspace：恢复工作区
 
 use tauri::State;
 use crate::shared::error::{IpcResponse, AppError};
@@ -201,6 +204,98 @@ pub async fn touch_workspace(
         workspace_id = %id,
         duration_ms = start.elapsed().as_millis(),
         "touch_workspace: exit"
+    );
+    Ok(IpcResponse::ok(()))
+}
+
+#[tauri::command]
+pub async fn list_archived_workspaces(
+    state: State<'_, DbState>,
+) -> Result<IpcResponse<Vec<crate::infrastructure::db::types::Workspace>>, AppError> {
+    let start = Instant::now();
+    tracing::info!("list_archived_workspaces: enter");
+    
+    let workspaces = state.db.list_archived_workspaces().map_err(|e| {
+        tracing::error!(error = %e, "list_archived_workspaces: Failed to list archived workspaces");
+        e
+    })?;
+    
+    tracing::info!(
+        count = workspaces.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "list_archived_workspaces: exit"
+    );
+    Ok(IpcResponse::ok(workspaces))
+}
+
+#[tauri::command]
+pub async fn archive_workspace(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<IpcResponse<crate::infrastructure::db::types::Workspace>, AppError> {
+    let start = Instant::now();
+    tracing::info!(workspace_id = %id, "archive_workspace: enter");
+    
+    validate_id_component(&id, "workspace_id")?;
+    
+    let workspace = state.db.archive_workspace(&id).map_err(|e| {
+        tracing::error!(workspace_id = %id, error = %e, "archive_workspace: Failed to archive workspace");
+        e
+    })?;
+    
+    tracing::info!(
+        workspace_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "archive_workspace: exit"
+    );
+    Ok(IpcResponse::ok(workspace))
+}
+
+#[tauri::command]
+pub async fn restore_workspace(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<IpcResponse<crate::infrastructure::db::types::Workspace>, AppError> {
+    let start = Instant::now();
+    tracing::info!(workspace_id = %id, "restore_workspace: enter");
+    
+    validate_id_component(&id, "workspace_id")?;
+    
+    let workspace = state.db.restore_workspace(&id).map_err(|e| {
+        tracing::error!(workspace_id = %id, error = %e, "restore_workspace: Failed to restore workspace");
+        e
+    })?;
+    
+    tracing::info!(
+        workspace_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "restore_workspace: exit"
+    );
+    Ok(IpcResponse::ok(workspace))
+}
+
+/// 更新工作区排序
+#[tauri::command]
+pub async fn update_workspace_sort_order(
+    state: State<'_, DbState>,
+    ids: Vec<String>,
+) -> Result<IpcResponse<()>, AppError> {
+    let start = Instant::now();
+    tracing::info!(count = ids.len(), "update_workspace_sort_order: enter");
+    
+    for id in &ids {
+        validate_id_component(id, "workspace_id")?;
+    }
+    
+    state.db.update_workspace_sort_order(&ids).map_err(|e| {
+        tracing::error!(error = %e, "update_workspace_sort_order: Failed to update sort order");
+        e
+    })?;
+    
+    tracing::info!(
+        count = ids.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "update_workspace_sort_order: exit"
     );
     Ok(IpcResponse::ok(()))
 }

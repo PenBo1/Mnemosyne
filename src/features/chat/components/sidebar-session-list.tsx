@@ -4,8 +4,25 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { MessageSquareIcon, Trash2Icon } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useI18n } from "@/locales/i18n";
 import { useAgentStore } from "@/features/chat/store";
 import { useWorkspaceStore } from "@/features/workspace/store/workspace";
@@ -46,6 +63,64 @@ function formatRelativeTime(iso: string, locale: string, agentChat: { justNow: s
   return new Date(then).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US");
 }
 
+// ── 可排序会话条目组件 ──────────────────────────────────────────────────────
+
+interface SortableSessionItemProps {
+  id: string;
+  title: string;
+  updatedAt: string;
+  isActive: boolean;
+  locale: string;
+  agentChat: { justNow: string; minutesAgo: string; hoursAgo: string; daysAgo: string; yesterday: string };
+  untitledSession: string;
+  onSwitch: () => void;
+  onDelete: () => void;
+}
+
+function SortableSessionItem({
+  id,
+  title,
+  updatedAt,
+  isActive,
+  locale,
+  agentChat,
+  untitledSession,
+  onSwitch,
+  onDelete,
+}: SortableSessionItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <SidebarMenuSubItem ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <SidebarMenuSubButton isActive={isActive} onClick={onSwitch}>
+        <MessageSquareIcon />
+        <span className="flex-1 truncate">
+          {title || untitledSession}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTime(updatedAt, locale, agentChat)}
+        </span>
+      </SidebarMenuSubButton>
+      <SidebarMenuAction showOnHover onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+        <Trash2Icon className="size-4" />
+      </SidebarMenuAction>
+    </SidebarMenuSubItem>
+  );
+}
+
 // ── 主组件 ──────────────────────────────────────────────────────────────────
 
 /**
@@ -58,6 +133,7 @@ export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
   const loadSessions = useAgentStore((s) => s.loadSessions);
   const switchSession = useAgentStore((s) => s.switchSession);
   const deleteSession = useAgentStore((s) => s.deleteSession);
+  const updateSessionSortOrder = useAgentStore((s) => s.updateSessionSortOrder);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
   useEffect(() => {
@@ -66,42 +142,67 @@ export function SidebarSessionList({ workspaceId }: { workspaceId: string }) {
     }
   }, [workspaceId, activeWorkspaceId, loadSessions]);
 
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = sessions.findIndex((s) => s.id === active.id);
+      const newIndex = sessions.findIndex((s) => s.id === over.id);
+
+      const newOrder = arrayMove(sessions, oldIndex, newIndex);
+      const ids = newOrder.map((s) => s.id);
+      void updateSessionSortOrder(ids);
+    }
+  }, [sessions, updateSessionSortOrder]);
+
   return (
-    <SidebarMenuSub>
-      {sessions.length === 0 ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton>
-            <MessageSquareIcon />
-            <span className="text-muted-foreground">{t.sidebar.noSessions}</span>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      ) : (
-        sessions.map((s) => (
-          <SidebarMenuSubItem key={s.id}>
-            <SidebarMenuSubButton
-              isActive={s.id === currentSessionId}
-              onClick={() => void switchSession(s.id)}
-            >
-              <MessageSquareIcon />
-              <span className="flex-1 truncate">
-                {s.title || t.sidebar.untitledSession}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {formatRelativeTime(s.updated_at, locale, t.agentChat)}
-              </span>
-            </SidebarMenuSubButton>
-            <SidebarMenuAction
-              showOnHover
-              onClick={(e) => {
-                e.stopPropagation();
-                void deleteSession(s.id);
-              }}
-            >
-              <Trash2Icon className="size-4" />
-            </SidebarMenuAction>
-          </SidebarMenuSubItem>
-        ))
-      )}
-    </SidebarMenuSub>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext
+        items={sessions.map((s) => s.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <SidebarMenuSub>
+          {sessions.length === 0 ? (
+            <SidebarMenuSubItem>
+              <SidebarMenuSubButton>
+                <MessageSquareIcon />
+                <span className="text-muted-foreground">{t.sidebar.noSessions}</span>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
+          ) : (
+            sessions.map((s) => (
+              <SortableSessionItem
+                key={s.id}
+                id={s.id}
+                title={s.title || ""}
+                updatedAt={s.updated_at}
+                isActive={s.id === currentSessionId}
+                locale={locale}
+                agentChat={t.agentChat}
+                untitledSession={t.sidebar.untitledSession}
+                onSwitch={() => void switchSession(s.id)}
+                onDelete={() => void deleteSession(s.id)}
+              />
+            ))
+          )}
+        </SidebarMenuSub>
+      </SortableContext>
+    </DndContext>
   );
 }

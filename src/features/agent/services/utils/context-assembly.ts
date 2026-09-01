@@ -22,11 +22,11 @@ import type {
   ChapterTrace,
   ContextPackage,
   RuleStack,
-} from "@/types/input-governance";
+} from "@/features/agent/types/input-governance";
 import {
   ChapterTraceSchema,
   RuleStackSchema,
-} from "@/types/input-governance";
+} from "@/features/agent/types/input-governance";
 
 /**
  * 局部最小 PlanChapterOutput 形状 —— 替代未迁移的 planner.ts 中的同名类型。

@@ -25,24 +25,70 @@ impl Database {
         let now = Utc::now().to_rfc3339();
         let path = req.path.unwrap_or_default();
         let conn = self.conn()?;
+        // 获取当前最大 sort_order
+        let max_order: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) FROM workspaces WHERE is_archived = 0",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0);
         conn.execute(
-            "INSERT INTO workspaces (id, name, path, created_at, updated_at, last_opened_at) VALUES (?, ?, ?, ?, ?, NULL)",
-            params![&id, &req.name, &path, &now, &now],
+            "INSERT INTO workspaces (id, name, path, created_at, updated_at, last_opened_at, is_archived, archived_at, sort_order) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL, ?)",
+            params![&id, &req.name, &path, &now, &now, max_order + 1],
         ).map_err(db_err)?;
-        Ok(Workspace { id, name: req.name, path, created_at: now.clone(), updated_at: now, last_opened_at: None })
+        Ok(Workspace {
+            id,
+            name: req.name,
+            path,
+            created_at: now.clone(),
+            updated_at: now,
+            last_opened_at: None,
+            is_archived: false,
+            archived_at: None,
+            sort_order: (max_order + 1) as i32,
+        })
     }
 
-    /// 列出工作区
+    /// 列出工作区（不含已归档）
     pub fn list_workspaces(&self) -> Result<Vec<Workspace>, AppError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare_cached(
-            "SELECT id, name, path, created_at, updated_at, last_opened_at FROM workspaces ORDER BY last_opened_at DESC NULLS LAST, created_at DESC",
+            "SELECT id, name, path, created_at, updated_at, last_opened_at, is_archived, archived_at, sort_order FROM workspaces WHERE is_archived = 0 ORDER BY sort_order ASC, created_at DESC",
         ).map_err(db_err)?;
         let rows = stmt.query_map([], |row| {
+            let is_archived: i64 = row.get(6)?;
             Ok(Workspace {
-                id: row.get(0)?, name: row.get(1)?, path: row.get(2)?,
-                created_at: row.get(3)?, updated_at: row.get(4)?,
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
                 last_opened_at: row.get(5)?,
+                is_archived: is_archived != 0,
+                archived_at: row.get(7)?,
+                sort_order: row.get(8)?,
+            })
+        }).map_err(db_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
+    }
+
+    /// 列出已归档工作区
+    pub fn list_archived_workspaces(&self) -> Result<Vec<Workspace>, AppError> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, name, path, created_at, updated_at, last_opened_at, is_archived, archived_at, sort_order FROM workspaces WHERE is_archived = 1 ORDER BY archived_at DESC NULLS LAST, created_at DESC",
+        ).map_err(db_err)?;
+        let rows = stmt.query_map([], |row| {
+            let is_archived: i64 = row.get(6)?;
+            Ok(Workspace {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+                last_opened_at: row.get(5)?,
+                is_archived: is_archived != 0,
+                archived_at: row.get(7)?,
+                sort_order: row.get(8)?,
             })
         }).map_err(db_err)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
@@ -52,13 +98,22 @@ impl Database {
     pub fn get_workspace(&self, id: &str) -> Result<Option<Workspace>, AppError> {
         let conn = self.conn()?;
         let result = conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened_at FROM workspaces WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened_at, is_archived, archived_at, sort_order FROM workspaces WHERE id = ?",
             params![id],
-            |row| Ok(Workspace {
-                id: row.get(0)?, name: row.get(1)?, path: row.get(2)?,
-                created_at: row.get(3)?, updated_at: row.get(4)?,
-                last_opened_at: row.get(5)?,
-            }),
+            |row| {
+                let is_archived: i64 = row.get(6)?;
+                Ok(Workspace {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    path: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    last_opened_at: row.get(5)?,
+                    is_archived: is_archived != 0,
+                    archived_at: row.get(7)?,
+                    sort_order: row.get(8)?,
+                })
+            },
         );
         match result {
             Ok(ws) => Ok(Some(ws)),
@@ -97,6 +152,34 @@ impl Database {
             params![&now, id],
         ).map_err(db_err)?;
         Ok(())
+    }
+
+    /// 归档工作区
+    pub fn archive_workspace(&self, id: &str) -> Result<Workspace, AppError> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn()?;
+        let affected = conn.execute(
+            "UPDATE workspaces SET is_archived = 1, archived_at = ?, updated_at = ? WHERE id = ? AND is_archived = 0",
+            params![&now, &now, id],
+        ).map_err(db_err)?;
+        if affected == 0 {
+            return Err(AppError::not_found("Workspace not found or already archived"));
+        }
+        self.get_workspace(id)?.ok_or_else(|| AppError::internal("Workspace not found after archive"))
+    }
+
+    /// 恢复工作区
+    pub fn restore_workspace(&self, id: &str) -> Result<Workspace, AppError> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn()?;
+        let affected = conn.execute(
+            "UPDATE workspaces SET is_archived = 0, archived_at = NULL, updated_at = ? WHERE id = ? AND is_archived = 1",
+            params![&now, id],
+        ).map_err(db_err)?;
+        if affected == 0 {
+            return Err(AppError::not_found("Workspace not found or not archived"));
+        }
+        self.get_workspace(id)?.ok_or_else(|| AppError::internal("Workspace not found after restore"))
     }
 
     /// 删除工作区
@@ -155,5 +238,22 @@ impl Database {
         );
 
         Ok(affected > 0)
+    }
+
+    /// 批量更新工作区排序
+    ///
+    /// 接收排序后的 ID 列表，按顺序设置 sort_order
+    pub fn update_workspace_sort_order(&self, ids: &[String]) -> Result<(), AppError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(db_err)?;
+        for (index, id) in ids.iter().enumerate() {
+            let sort_order = index as i64;
+            tx.execute(
+                "UPDATE workspaces SET sort_order = ? WHERE id = ?",
+                params![sort_order, id],
+            ).map_err(db_err)?;
+        }
+        tx.commit().map_err(db_err)?;
+        Ok(())
     }
 }

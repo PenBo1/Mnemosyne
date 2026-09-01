@@ -12,7 +12,7 @@
 //   - resolveHookVisibilityWindow 包装函数保留。
 //   - 本文件无 localize 映射表（LABELS 在 hook-lifecycle.ts，已在迁移中跳过），故无跳过项。
 
-import type { HookPayoffTiming } from "@/types/runtime-state";
+import type { HookPayoffTiming } from "@/features/agent/types/runtime-state";
 
 export type HookPhase = "opening" | "middle" | "late";
 

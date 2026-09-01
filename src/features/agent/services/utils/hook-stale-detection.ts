@@ -9,7 +9,7 @@
 // 业务逻辑零改动。
 
 import type { StoredHook } from "@/types/hook";
-import type { HookRecord } from "@/types/runtime-state";
+import type { HookRecord } from "@/features/agent/types/runtime-state";
 import { resolveHalfLifeChapters } from "./hook-promotion";
 
 export interface HookDiagnostics {

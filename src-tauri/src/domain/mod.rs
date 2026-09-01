@@ -18,4 +18,4 @@ pub mod materials;
 pub mod detection;
 pub mod researcher;
 pub mod style;
-pub mod play;
+pub mod play;pub mod skill;

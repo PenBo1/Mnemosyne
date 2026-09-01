@@ -10,7 +10,7 @@
 // 仅类型 import（ChapterIntent / ChapterMemo / ContextPackage）。
 // 迁移要点：仅改 import 路径，去掉 .js 后缀。
 
-import type { ChapterIntent, ChapterMemo, ContextPackage } from "@/types/input-governance";
+import type { ChapterIntent, ChapterMemo, ContextPackage } from "@/features/agent/types/input-governance";
 
 const HOOK_ID_PATTERN = /\bH\d+\b/gi;
 const HOOK_SLUG_PATTERN = /\b[a-z]+(?:-[a-z]+){1,3}\b/g;

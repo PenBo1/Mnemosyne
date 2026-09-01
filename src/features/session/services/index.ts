@@ -1,4 +1,4 @@
-import { ipc } from "@/services/ipc";
+import { ipc, ipcVoid } from "@/services/ipc";
 import type { Session, Message } from "@/types/session";
 
 export async function createSession(
@@ -16,12 +16,31 @@ export async function listSessions(
   return ipc<Session[]>("session_list", { novelId, workspaceId });
 }
 
+export async function listArchivedSessions(
+  workspaceId?: string,
+): Promise<Session[]> {
+  return ipc<Session[]>("session_list_archived", { workspaceId });
+}
+
 export async function getSession(id: string): Promise<Session> {
   return ipc<Session>("session_get", { id });
 }
 
 export async function deleteSession(id: string): Promise<boolean> {
   return ipc<boolean>("session_delete", { id });
+}
+
+export async function archiveSession(id: string): Promise<Session> {
+  return ipc<Session>("session_archive", { id });
+}
+
+export async function restoreSession(id: string): Promise<Session> {
+  return ipc<Session>("session_restore", { id });
+}
+
+/** 更新会话排序顺序 */
+export async function updateSessionSortOrder(ids: string[]): Promise<void> {
+  return ipcVoid("update_session_sort_order", { ids });
 }
 
 export async function listMessages(sessionId: string): Promise<Message[]> {

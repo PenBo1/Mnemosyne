@@ -15,7 +15,7 @@
 // 注意：collectStaleHookDebt 调用时未传 staleAfterChapters 时退回
 // HOOK_HEALTH_DEFAULTS.staleAfterChapters 保守阈值，行为一致。
 
-import type { HookRecord, RuntimeStateDelta } from "@/types/runtime-state";
+import type { HookRecord, RuntimeStateDelta } from "@/features/agent/types/runtime-state";
 import { describeHookLifecycle } from "./hook-lifecycle";
 
 export type HookDisposition = "none" | "mention" | "advance" | "resolve" | "defer";

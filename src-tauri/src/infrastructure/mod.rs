@@ -2,6 +2,7 @@
 //! 基础设施模块
 //! ═══════════════════════════════════════════════════════════════════════════
 
+pub mod cache;
 pub mod circuit_breaker;
 pub mod db;
 pub mod fs;

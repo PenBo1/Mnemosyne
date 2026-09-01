@@ -1,5 +1,5 @@
 //! ═══════════════════════════════════════════════════════════════════════════
-//! Cache - 技能两层缓存
+//! Cache - 通用两级缓存（in-process LRU + disk snapshot）
 //! ═══════════════════════════════════════════════════════════════════════════
 //!
 //! 实现 in-process LRU + disk snapshot 两层缓存：
@@ -32,20 +32,20 @@ pub struct CacheEntry<T> {
     pub size: u64,
 }
 
-// ── SkillLruCache: in-process LRU 缓存 ────────────────────────────────────────────────────────
+// ── LruCache: in-process LRU 缓存 ────────────────────────────────────────────────────────
 
 /// in-process LRU 缓存
 ///
 /// 简单 LRU 实现：HashMap 存数据，Vec 维护访问/插入顺序，容量满时淘汰最旧条目。
 /// 不引入外部 lru crate，遵循最小依赖原则。
-pub struct SkillLruCache<T: Clone> {
+pub struct LruCache<T: Clone> {
     entries: HashMap<String, CacheEntry<T>>,
     /// 访问顺序：头部为最旧（待淘汰），尾部为最新
     order: Vec<String>,
     max_entries: usize,
 }
 
-impl<T: Clone> SkillLruCache<T> {
+impl<T: Clone> LruCache<T> {
     pub fn new(max_entries: usize) -> Self {
         Self {
             entries: HashMap::new(),
@@ -143,14 +143,14 @@ struct SnapshotFile<T> {
 /// 用于在读取 disk snapshot 时重新 stat 源文件、对比 mtime/size 验证有效性，
 /// 避免源文件被修改后仍命中过期缓存。
 pub struct TwoTierCache<T: Clone + Serialize + DeserializeOwned> {
-    lru: Arc<RwLock<SkillLruCache<T>>>,
+    lru: Arc<RwLock<LruCache<T>>>,
     snapshot_dir: PathBuf,
 }
 
 impl<T: Clone + Serialize + DeserializeOwned> TwoTierCache<T> {
     pub fn new(snapshot_dir: PathBuf, lru_capacity: usize) -> Self {
         Self {
-            lru: Arc::new(RwLock::new(SkillLruCache::new(lru_capacity))),
+            lru: Arc::new(RwLock::new(LruCache::new(lru_capacity))),
             snapshot_dir,
         }
     }
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_lru_get_insert() {
-        let mut cache: SkillLruCache<String> = SkillLruCache::new(3);
+        let mut cache: LruCache<String> = LruCache::new(3);
         assert!(cache.get("a").is_none());
 
         cache.insert("a".into(), "value-a".into(), SystemTime::now(), 10);
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_lru_invalidate() {
-        let mut cache: SkillLruCache<String> = SkillLruCache::new(3);
+        let mut cache: LruCache<String> = LruCache::new(3);
         cache.insert("a".into(), "v".into(), SystemTime::now(), 1);
         assert!(cache.get("a").is_some());
 
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn test_lru_eviction_drops_oldest() {
         // 容量为 2：插入 3 个 key 后，最旧的 a 被淘汰
-        let mut cache: SkillLruCache<String> = SkillLruCache::new(2);
+        let mut cache: LruCache<String> = LruCache::new(2);
         cache.insert("a".into(), "1".into(), SystemTime::now(), 1);
         cache.insert("b".into(), "2".into(), SystemTime::now(), 2);
         cache.insert("c".into(), "3".into(), SystemTime::now(), 3);

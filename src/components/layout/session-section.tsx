@@ -6,6 +6,21 @@
 
 import { useState, useCallback } from "react";
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -16,9 +31,10 @@ import {
 import { FolderIcon } from "lucide-react";
 import { useI18n } from "@/locales/i18n";
 import { useSidebarWorkspaces } from "@/features/workspace/hooks/useSidebarWorkspaces";
+import { useWorkspaceStore } from "@/features/workspace/store/workspace";
 import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialog";
 import type { AppPage } from "@/types";
-import { WorkspaceItem } from "./workspace-item";
+import { SortableWorkspaceItem } from "./sortable-workspace-item";
 
 // ── 类型定义 ────────────────────────────────────────────────────────────────
 
@@ -51,12 +67,25 @@ export function SessionSection({ currentPage, onNavigate }: SessionSectionProps)
     handlePickDirectory,
     handleAddWorkspace,
   } = useSidebarWorkspaces();
+  const updateWorkspaceSortOrder = useWorkspaceStore((s) => s.updateWorkspaceSortOrder);
   const [expandedWs, setExpandedWs] = useState<string | null>(null);
   /**
    * 每个工作区的视图模式：sessions（会话列表）/ files（文件功能菜单）。
    * 默认 sessions。切换按钮在 hover 时显示在工作区行右侧。
    */
   const [wsViewMode, setWsViewMode] = useState<Record<string, "sessions" | "files">>({});
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const getWsView = useCallback((wsId: string): "sessions" | "files" => {
     return wsViewMode[wsId] ?? "sessions";
@@ -77,6 +106,19 @@ export function SessionSection({ currentPage, onNavigate }: SessionSectionProps)
     }
   }, [setActiveWorkspace, onNavigate]);
 
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = workspaces.findIndex((ws) => ws.id === active.id);
+      const newIndex = workspaces.findIndex((ws) => ws.id === over.id);
+
+      const newOrder = arrayMove(workspaces, oldIndex, newIndex);
+      const ids = newOrder.map((ws) => ws.id);
+      void updateWorkspaceSortOrder(ids);
+    }
+  }, [workspaces, updateWorkspaceSortOrder]);
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel className="flex items-center justify-between">
@@ -94,31 +136,42 @@ export function SessionSection({ currentPage, onNavigate }: SessionSectionProps)
         />
       </SidebarGroupLabel>
       <SidebarGroupContent>
-        <SidebarMenu className="gap-1">
-          {workspaces.length === 0 ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton disabled>
-                <FolderIcon />
-                <span className="text-muted-foreground">{t.sidebar.noWorkspaces}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : (
-            workspaces.map((ws) => (
-              <WorkspaceItem
-                key={ws.id}
-                ws={ws}
-                isActive={activeWorkspaceId === ws.id}
-                isExpanded={expandedWs === ws.id}
-                viewMode={getWsView(ws.id)}
-                currentPage={currentPage}
-                onToggle={handleWsToggle}
-                onSwitchView={toggleWsView}
-                onRemove={removeWorkspace}
-                onNavigate={onNavigate}
-              />
-            ))
-          )}
-        </SidebarMenu>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={workspaces.map((ws) => ws.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <SidebarMenu className="gap-1">
+              {workspaces.length === 0 ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton disabled>
+                    <FolderIcon />
+                    <span className="text-muted-foreground">{t.sidebar.noWorkspaces}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : (
+                workspaces.map((ws) => (
+                  <SortableWorkspaceItem
+                    key={ws.id}
+                    ws={ws}
+                    isActive={activeWorkspaceId === ws.id}
+                    isExpanded={expandedWs === ws.id}
+                    viewMode={getWsView(ws.id)}
+                    currentPage={currentPage}
+                    onToggle={handleWsToggle}
+                    onSwitchView={toggleWsView}
+                    onRemove={removeWorkspace}
+                    onNavigate={onNavigate}
+                  />
+                ))
+              )}
+            </SidebarMenu>
+          </SortableContext>
+        </DndContext>
       </SidebarGroupContent>
     </SidebarGroup>
   );

@@ -8,6 +8,12 @@ export interface Workspace {
   updated_at: string;
   /** 最近打开时间（用于恢复上次活动工作区） */
   last_opened_at: string | null;
+  /** 是否已归档 */
+  is_archived: boolean;
+  /** 归档时间 */
+  archived_at: string | null;
+  /** 排序顺序 */
+  sort_order: number;
 }
 
 export interface CreateWorkspaceRequest {
@@ -25,4 +31,5 @@ export interface WorkspaceState {
   addWorkspace: (name: string, path?: string) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   setActiveWorkspace: (id: string) => void;
+  updateWorkspaceSortOrder: (ids: string[]) => Promise<void>;
 }

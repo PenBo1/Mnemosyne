@@ -15,7 +15,7 @@ import {
   CurrentStateStateSchema,
   HooksStateSchema,
   StateManifestSchema,
-} from "@/types/runtime-state";
+} from "@/features/agent/types/runtime-state";
 
 export interface RuntimeStateValidationIssue {
   readonly code: string;

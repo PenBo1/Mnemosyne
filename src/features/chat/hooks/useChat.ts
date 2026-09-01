@@ -331,6 +331,11 @@ export function useChat() {
     [],
   );
 
+  // 清空当前会话消息列表
+  const clearMessages = useCallback(() => {
+    useAgentStore.getState().replaceMessages([]);
+  }, []);
+
   return {
     sessions,
     currentSessionId,
@@ -346,6 +351,7 @@ export function useChat() {
     switchSession,
     handleNewSession,
     handleDeleteSession,
+    clearMessages,
     // P1 阶段 3: approval + plan mode
     pendingConfirmation,
     submittingConfirmation,

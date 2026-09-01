@@ -467,9 +467,9 @@ src/
 
 ## Commands
 
-- `bun run dev` — start Vite dev server (port 1420, strict)
-- `bun run build` — type-check (`tsc`) then Vite build
-- `cargo tauri dev` — full Tauri dev (runs `bun run dev` as beforeDevCommand, then launches Rust app)
+- `pnpm run dev` — start Vite dev server (port 1420, strict)
+- `pnpm run build` — type-check (`tsc`) then Vite build
+- `cargo tauri dev` — full Tauri dev (runs `pnpm run dev` as beforeDevCommand, then launches Rust app)
 - `cargo tauri build` — production build + bundle
 - No lint, test, or formatter scripts are currently defined
 
@@ -480,7 +480,7 @@ src/
 - Rust lib name is `mnemosyne_lib` (not `mnemosyne`) to avoid Windows bin/lib name conflict (`src-tauri/src/main.rs:5`).
 - Tauri CSP is disabled (`"csp": null` in `tauri.conf.json`) — fine for dev, review before shipping.
 - Capabilities system in `src-tauri/capabilities/default.json` grants permissions per-window. Add new Tauri plugin permissions there.
-- Uses `bun` as the JS runtime (per `beforeDevCommand`/`beforeBuildCommand`), not npm/yarn.
+- Uses `pnpm` as the JS runtime (per `beforeDevCommand`/`beforeBuildCommand`), not npm/yarn.
 - Package is `"type": "module"` (ESM).
 
 ## Conventions
@@ -490,7 +490,7 @@ src/
 - TypeScript strict mode enabled (`noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`)
 - React 19, JSX transform is `react-jsx` (no React import needed for JSX, but `main.tsx` imports it for `StrictMode`)
 - Front-end floating layers (modal/popover/dropdown/tooltip) must portal to `document.body`, not inside `overflow-hidden` or stacking context containers
-- **shadcn/ui**: Use `cn()` from `@/lib/utils` for conditional classes. Use semantic colors (`bg-primary`, `text-muted-foreground`), never raw values (`bg-blue-500`). Use `gap-*` not `space-x-*`/`space-y-*`. Use `size-*` when width=height. Add components via `bunx --bun shadcn@latest add <component>`. Icon library: `lucide-react`.
+- **shadcn/ui**: Use `cn()` from `@/lib/utils` for conditional classes. Use semantic colors (`bg-primary`, `text-muted-foreground`), never raw values (`bg-blue-500`). Use `gap-*` not `space-x-*`/`space-y-*`. Use `size-*` when width=height. Add components via `pnpm dlx shadcn@latest add <component>`. Icon library: `lucide-react`.
 
 ## App data directory structure
 

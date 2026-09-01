@@ -1,9 +1,9 @@
 //! ═══════════════════════════════════════════════════════════════════════════
-//! persistence - 审计持久化模块
+//! audit_handler - 审计事件数据库持久化处理器
 //! ═══════════════════════════════════════════════════════════════════════════
 
-use super::bus::EventHandler;
-use super::event::{AuditEntry, SecurityEvent};
+use crate::security_kernel::audit::bus::EventHandler;
+use crate::security_kernel::audit::event::{AuditEntry, SecurityEvent};
 use crate::infrastructure::db::connection::Database;
 use crate::infrastructure::db::stores::audit::insert_audit_event;
 

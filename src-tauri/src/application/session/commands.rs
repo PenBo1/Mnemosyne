@@ -7,8 +7,11 @@
 //! - session_create：创建会话
 //! - session_split：分裂会话
 //! - session_list：列出会话
+//! - session_list_archived：列出已归档会话
 //! - session_get：获取会话
 //! - session_delete：删除会话
+//! - session_archive：归档会话
+//! - session_restore：恢复会话
 //! - session_messages：获取消息列表
 //! - message_create：创建消息
 //! - session_search：搜索消息
@@ -211,6 +214,105 @@ pub async fn session_delete(
         "session_delete: exit"
     );
     Ok(IpcResponse::ok(deleted))
+}
+
+#[tauri::command]
+pub async fn session_list_archived(
+    state: State<'_, DbState>,
+    workspace_id: Option<String>,
+) -> Result<IpcResponse<Vec<Session>>, AppError> {
+    let start = Instant::now();
+    tracing::info!(
+        workspace_id = ?workspace_id,
+        "session_list_archived: enter"
+    );
+    
+    if let Some(ref wid) = workspace_id {
+        validate_id_component(wid, "workspace_id")?;
+    }
+    
+    let sessions = state.db.list_archived_sessions(workspace_id.as_deref()).map_err(|e| {
+        tracing::error!(error = %e, "session_list_archived: Failed to list archived sessions");
+        e
+    })?;
+    
+    tracing::info!(
+        count = sessions.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "session_list_archived: exit"
+    );
+    Ok(IpcResponse::ok(sessions))
+}
+
+#[tauri::command]
+pub async fn session_archive(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<IpcResponse<Session>, AppError> {
+    let start = Instant::now();
+    tracing::info!(session_id = %id, "session_archive: enter");
+    
+    validate_id_component(&id, "session_id")?;
+    
+    let session = state.db.archive_session(&id).map_err(|e| {
+        tracing::error!(session_id = %id, error = %e, "session_archive: Failed to archive session");
+        e
+    })?;
+    
+    tracing::info!(
+        session_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "session_archive: exit"
+    );
+    Ok(IpcResponse::ok(session))
+}
+
+#[tauri::command]
+pub async fn session_restore(
+    state: State<'_, DbState>,
+    id: String,
+) -> Result<IpcResponse<Session>, AppError> {
+    let start = Instant::now();
+    tracing::info!(session_id = %id, "session_restore: enter");
+    
+    validate_id_component(&id, "session_id")?;
+    
+    let session = state.db.restore_session(&id).map_err(|e| {
+        tracing::error!(session_id = %id, error = %e, "session_restore: Failed to restore session");
+        e
+    })?;
+    
+    tracing::info!(
+        session_id = %id,
+        duration_ms = start.elapsed().as_millis(),
+        "session_restore: exit"
+    );
+    Ok(IpcResponse::ok(session))
+}
+
+#[tauri::command]
+pub async fn update_session_sort_order(
+    state: State<'_, DbState>,
+    ids: Vec<String>,
+) -> Result<IpcResponse<()>, AppError> {
+    let start = Instant::now();
+    tracing::info!(count = ids.len(), "update_session_sort_order: enter");
+    
+    for id in &ids {
+        validate_id_component(id, "session_id")?;
+    }
+    
+    state.db.update_session_sort_order(&ids).map_err(|e| {
+        tracing::error!(error = %e, "update_session_sort_order: Failed to update sort order");
+        e
+    })?;
+    
+    tracing::info!(
+        count = ids.len(),
+        duration_ms = start.elapsed().as_millis(),
+        "update_session_sort_order: exit"
+    );
+    Ok(IpcResponse::ok(()))
 }
 
 #[tauri::command]

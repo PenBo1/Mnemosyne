@@ -5,10 +5,12 @@
 //! 提供前端 loop_* IPC 命令的后端实现，包括：
 //! - types：与前端对齐的 DTO（camelCase serde）
 //! - builtin_patterns：内置模式定义 + DB 种子
+//! - conversions：Row 与 DTO 转换逻辑
 //! - commands：IPC 命令实现
 
 pub mod types;
 pub mod builtin_patterns;
+pub mod conversions;
 pub mod commands;
 pub mod runner;
 

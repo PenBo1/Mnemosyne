@@ -34,18 +34,18 @@ import {
   PageActions,
 } from "@/components/shared/page-layout";
 import { LoadingState } from "@/components/shared/state";
-import { useAuditStream } from "../hooks/useAuditStream";
-import { useAuditData } from "../hooks/use-audit-data";
+import { useAuditStream } from "./hooks/useAuditStream";
+import { useAuditData } from "./hooks/use-audit-data";
 import type {
   AuditEventFilter,
   AuditEventRow,
   HistogramGranularity,
   SecurityEventPayload,
-} from "../types";
-import { StatCard } from "../components/stat-card";
-import { EventRow, EVENT_TYPE_COLOR } from "../components/event-row";
-import { EventDetailDrawer } from "../components/EventDetailDrawer";
-import { PendingApprovalsPanel } from "../components/PendingApprovalsPanel";
+} from "./types";
+import { StatCard } from "./components/stat-card";
+import { EventRow, EVENT_TYPE_COLOR } from "./components/event-row";
+import { EventDetailDrawer } from "./components/EventDetailDrawer";
+import { PendingApprovalsPanel } from "./components/PendingApprovalsPanel";
 
 // ── 常量配置 ────────────────────────────────────────────────────────────────
 

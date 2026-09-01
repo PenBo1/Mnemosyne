@@ -12,6 +12,7 @@ import {
   listSessions as sessionList,
   listMessages as sessionListMessages,
   deleteSession as sessionDelete,
+  updateSessionSortOrder as sessionUpdateSortOrder,
 } from "@/features/session/services";
 import { getTranslations } from "@/locales/i18n-store";
 import type { PipelineState } from "@/features/agent/components/PipelineProgress";
@@ -105,6 +106,8 @@ interface AgentState {
   setPipelineState: (state: PipelineState | null) => void;
   /** 清空 Pipeline 进度状态 */
   clearPipelineState: () => void;
+  /** 更新会话排序顺序 */
+  updateSessionSortOrder: (ids: string[]) => Promise<void>;
   reset: () => void;
 }
 
@@ -152,6 +155,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       status: "active",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      sort_order: 0,
     };
 
     // 乐观更新：立即在 UI 中显示
@@ -365,6 +369,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   clearPipelineState: () => {
     set({ pipelineState: null });
+  },
+
+  // 更新会话排序顺序（乐观更新）
+  updateSessionSortOrder: async (ids: string[]) => {
+    const previousSessions = get().sessions;
+    // 乐观更新：按新顺序重排
+    const reordered = ids
+      .map((id) => previousSessions.find((s) => s.id === id))
+      .filter((s): s is Session => s !== undefined);
+    set({ sessions: reordered });
+
+    try {
+      await sessionUpdateSortOrder(ids);
+    } catch (err) {
+      // 回滚
+      set({ sessions: previousSessions });
+      toast.error("Failed to update session order");
+    }
   },
 
   reset: () => {

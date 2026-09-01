@@ -10,3 +10,4 @@ pub mod skill;
 pub mod init;
 pub mod loop_engine;
 pub mod bridges;
+pub mod llm;

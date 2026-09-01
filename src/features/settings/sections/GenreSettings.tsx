@@ -21,7 +21,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Button } from "@/components/ui/button";
 import { ChevronDown, BookMarked, Zap, TrendingUp, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { GenreProfile } from "@/types/genre-profile";
+import type { GenreProfile } from "@/features/story/types/genre-profile";
 
 // ── 类型定义 ────────────────────────────────────────────────────────────────
 

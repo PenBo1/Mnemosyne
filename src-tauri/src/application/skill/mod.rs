@@ -12,7 +12,6 @@ pub mod commands;
 pub mod discovery;
 pub mod types;
 pub mod state;
-pub mod cache;
 pub mod evolution;
 pub mod evolution_commands;
 pub mod capability_types;

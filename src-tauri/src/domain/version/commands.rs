@@ -89,7 +89,7 @@ pub async fn version_save(
 
     let version_number = state.db.get_next_version_number(&novel_id, chapter_number)?;
     let content_hash = format!("{:x}", sha2::Sha256::digest(content.as_bytes()));
-    let word_count = crate::domain::story::types::count_words_default(&content);
+    let word_count = crate::shared::story::types::count_words_default(&content);
 
     let req = crate::domain::version::types::CreateVersionRequest {
         novel_id,

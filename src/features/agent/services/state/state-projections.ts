@@ -16,7 +16,7 @@ import type {
   ChapterSummariesState,
   CurrentStateState,
   HooksState,
-} from "@/types/runtime-state";
+} from "@/features/agent/types/runtime-state";
 import {
   computeHookDiagnostics,
   renderHookDiagnosticMarker,

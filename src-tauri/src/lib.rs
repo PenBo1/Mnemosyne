@@ -1,10 +1,14 @@
-// 全局 clippy 抑制配置
-// - IPC 命令和数据库操作常有 8-12 个参数（Tauri 命令模式）
-// - rusqlite 映射函数返回复杂元组类型
-// - 预留的 from_str 方法命名
+//! ═══════════════════════════════════════════════════════════════════════════
+//! lib - Tauri 应用入口点
+//! ═══════════════════════════════════════════════════════════════════════════
+
+// ── 全局 Clippy 抑制配置 ──────────────────────────────────────────────────
+
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::should_implement_trait)]
+
+// ── 模块声明 ────────────────────────────────────────────────────────────────
 
 pub mod application;
 pub mod core;
@@ -12,6 +16,8 @@ pub mod domain;
 pub mod infrastructure;
 pub mod security_kernel;
 pub mod shared;
+
+// ── 导入 ────────────────────────────────────────────────────────────────────
 
 use crate::infrastructure::fs::data_dir::DataDir;
 use crate::infrastructure::db::state::DbState;
@@ -27,11 +33,12 @@ use crate::infrastructure::workspace::registry::WorkspaceRegistry;
 use crate::infrastructure::mcp::state::McpState;
 use crate::security_kernel::SecurityKernelState;
 use crate::security_kernel::hooks::HookEngineState;
-use tauri::{Manager, Emitter, Listener};
+use tauri::{Manager, Listener};
 use tokio_util::sync::CancellationToken;
 
+// ── 关闭令牌 ────────────────────────────────────────────────────────────────
+
 /// 应用关闭信号，用于优雅停止后台任务
-/// 当应用退出时，取消令牌被触发，所有监听此令牌的后台任务应停止
 pub struct ShutdownToken(pub CancellationToken);
 
 impl Default for ShutdownToken {
@@ -39,6 +46,8 @@ impl Default for ShutdownToken {
         Self(CancellationToken::new())
     }
 }
+
+// ── 应用入口 ────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -48,17 +57,18 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            // 单实例回调：当用户尝试启动第二个实例时，聚焦主窗口
             if let Some(window) = app.get_webview_window("main") {
                 window.show().ok();
                 window.set_focus().ok();
             }
         }))
-        // 窗口关闭事件拦截：根据设置决定是隐藏窗口（最小化到托盘）还是退出程序
-        // 同时检查 Agent 是否正在运行，如果是则显示确认对话框
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // 读取关闭行为设置
+                let label = window.label();
+                if label != "main" {
+                    return;
+                }
+
                 let close_behavior = window
                     .state::<DataDir>()
                     .root()
@@ -66,7 +76,6 @@ pub fn run() {
 
                 let minimize_to_tray = match std::fs::read_to_string(&close_behavior) {
                     Ok(content) => {
-                        // 解析 JSON 并检查 closeBehavior 设置
                         serde_json::from_str::<serde_json::Value>(&content)
                             .ok()
                             .and_then(|v| v.get("ui").and_then(|ui| ui.get("closeBehavior")).cloned())
@@ -77,15 +86,8 @@ pub fn run() {
                 };
 
                 if minimize_to_tray {
-                    // 隐藏窗口而不是关闭
                     window.hide().ok();
                     api.prevent_close();
-                } else {
-                    // 阻止本次关闭，向前端发送事件检查 Agent 状态
-                    api.prevent_close();
-                    // 发送事件让前端检查 Agent 是否正在运行
-                    // 前端会显示确认对话框，然后通过 "allow-close" 事件通知是否允许关闭
-                    let _ = window.emit("close-requested", ());
                 }
             }
         })
@@ -102,22 +104,23 @@ pub fn run() {
             tracing::info!("[agent] chat pipeline v2 initialized");
             tracing::info!(root = %data_dir.root().display(), "App data directory");
 
-            // 先创建 DbState,以便克隆 Database 给 AgentEngine 与 SecurityKernel 持有
+            // ── 数据库初始化 ────────────────────────────────────────────────────
+
             let db_state = DbState::new(data_dir.clone())?;
-            // DataDir 作为 State 共享给 pipeline 命令
             app.manage(data_dir.clone());
             let db_for_agent = db_state.db.clone();
             let db_for_kernel = db_state.db.clone();
             let db_for_memory = db_state.db.clone();
             let db_for_summary = db_state.db.clone();
             let db_for_registry = db_state.db.clone();
-            // 初始化 builtin loop patterns(仅当不存在时写入)
-            // 注：seed 失败属非致命——builtin patterns 缺失只影响 loop-engineering 默认模板，
-            // 应用仍可正常启动。用 error 级别记录，确保问题不被静默吞掉。
+
             if let Err(e) = crate::application::init::seed_builtin_loop_patterns(&db_state.db) {
                 tracing::error!(error = %e, "Failed to seed builtin loop patterns (non-fatal, continuing startup)");
             }
             app.manage(db_state);
+
+            // ── 基础设施层 State 注册 ──────────────────────────────────────────
+
             app.manage(LlmState::new(data_dir.clone()));
             app.manage(SkillState::new(&data_dir));
             app.manage(crate::application::skill::capability_commands::CapabilityState::default());
@@ -129,9 +132,9 @@ pub fn run() {
             app.manage(crate::infrastructure::secrets::SecretsState::default());
             app.manage(McpState::new(data_dir.clone()));
             app.manage(WorkspaceState::new());
-            // 创建 WorkspaceRegistry 并预授权：
-            // 1. 应用数据目录（agent 身份文件、config 等始终可读）
-            // 2. 所有已存在的 workspace 路径（重启后恢复授权）
+
+            // ── WorkspaceRegistry 初始化与预授权 ──────────────────────────────
+
             let workspace_registry = WorkspaceRegistry::new();
             if let Err(e) = workspace_registry.authorize(data_dir.root()) {
                 tracing::warn!(error = %e, "Failed to authorize app data dir on startup");
@@ -156,24 +159,24 @@ pub fn run() {
                 }
             }
             app.manage(workspace_registry);
-            app.manage(SecurityKernelState::with_db(db_for_kernel));
-            // 注册 Tauri 事件桥 —— 把 SecurityEvent 实时推送到前端 listen("security://event")
+
+            // ── SecurityKernel 初始化 ──────────────────────────────────────────
+
+            app.manage(SecurityKernelState::with_audit_handler(Box::new(
+                crate::infrastructure::db::audit_handler::DbAuditHandler::new(db_for_kernel),
+            )));
             crate::security_kernel::audit::register_tauri_emit_handler(app.handle());
 
-            // 从 SecurityKernel 提取共享 HookEngine：
-            // 1. 注入为独立 Tauri State（供 hook_* IPC 命令操作）
-            // 2. 注入 AgentEngine（供 SessionStart/UserPromptSubmit/Stop 等生命周期 hook 派发）
             let hook_engine_arc = {
                 let kernel_state = app.state::<SecurityKernelState>();
                 kernel_state.kernel().hook_engine().clone()
             };
             app.manage(HookEngineState::from_arc(hook_engine_arc.clone()));
 
-            // Initialize agent engine from LLM provider registry
+            // ── AgentEngine 初始化 ─────────────────────────────────────────────
+
             let agent_engine = {
                 let registry = crate::infrastructure::llm::registry::ProviderRegistry::new(&data_dir);
-                // current_dir 失败时回退到 data_dir.root()，并显式 log warning
-                // 避免静默回退掩盖环境异常（如 cwd 被删除）
                 let workspace_root = std::env::current_dir().unwrap_or_else(|e| {
                     tracing::warn!(error = %e, "current_dir() failed, falling back to app data dir");
                     data_dir.root().to_path_buf()
@@ -185,8 +188,6 @@ pub fn run() {
                     workspace_root,
                     Some(hook_engine_arc),
                 );
-                // I1.5/I1.6：注入真实的 tool ops 实现（application/bridges 桥接 domain），
-                // 使 core/agent 工具不直接依赖 domain（架构约束）。
                 use crate::application::bridges::{
                     BookEditOpsImpl, PipelineDelegateOpsImpl, ResearchOpsImpl,
                 };
@@ -202,13 +203,13 @@ pub fn run() {
                 engine.with_tool_ops(book_edit_ops, pipeline_delegate_ops, research_ops)
             };
 
-            // Pipeline SchedulerState（需要 AgentEngine + DataDir.books_dir + RadarScanOps）
+            // ── Pipeline Scheduler 初始化 ────────────────────────────────────
+
             let scheduler_config = crate::domain::pipeline::scheduler::SchedulerConfig::default();
             let pipeline_config = crate::domain::pipeline::runner::PipelineConfig {
                 books_dir: data_dir.books_dir(),
                 ..Default::default()
             };
-            // I2.2：注入 RadarScanOps 真实实现，消除 pipeline → radar 横向依赖
             let radar_ops: std::sync::Arc<dyn crate::domain::pipeline::radar_ops::RadarScanOps> =
                 std::sync::Arc::new(crate::application::bridges::RadarScanOpsImpl::new());
             let scheduler_state = crate::domain::pipeline::scheduler::SchedulerState::new(
@@ -219,23 +220,24 @@ pub fn run() {
             );
             app.manage(scheduler_state);
 
-            // I2.1：注入 InteractionPipelineOps 真实实现（application/bridges 桥接 domain::pipeline），
-            // 使 domain/interaction/runtime 不直接依赖 domain::pipeline（架构约束）。
+            // ── InteractionPipelineOps 注入 ──────────────────────────────────
+
             app.manage(crate::domain::interaction::pipeline_ops::InteractionPipelineOpsState {
                 ops: std::sync::Arc::new(
                     crate::application::bridges::InteractionPipelineOpsImpl::new(data_dir.clone()),
                 ),
             });
 
-            // 每日摘要任务 State(默认不启动,需用户在设置页开启)
+            // ── 每日摘要任务 State ─────────────────────────────────────────────
+
             app.manage(crate::core::agent::daily_summary::DailySummaryState::new(
                 agent_engine.clone(),
                 db_for_summary,
                 data_dir.clone(),
             ));
 
-            // 用户画像提供者：application/ 层读取 domain::user 并转换为 core/agent 快照，
-            // 注入 AgentState，使 core/agent 不直接依赖 domain::user（架构约束）。
+            // ── AgentState 与 UserProfile 注入 ────────────────────────────────
+
             let user_profile_provider =
                 crate::application::init::build_user_profile_provider(data_dir.clone());
             app.manage(crate::core::agent::commands::AgentState::new(
@@ -243,27 +245,23 @@ pub fn run() {
                 Some(user_profile_provider),
             ));
 
-            // Agent Registry —— 统一 Agent 元数据注册表（main + 15 pipeline + 3 subagent + 3 loopskill）
+            // ── Agent Registry ────────────────────────────────────────────────
+
             app.manage(crate::core::agent::registry::AgentRegistryState::new());
 
-            // 创建关闭令牌，用于优雅停止后台任务
-            // 当窗口关闭时，令牌被取消，所有监听此令牌的后台任务应停止
+            // ── 关闭令牌注册 ────────────────────────────────────────────────
+
             let shutdown_token = ShutdownToken::default();
             app.manage(shutdown_token);
 
-            // SecurityKernel 定期清理（每 5 分钟清理过期的 policy/rate_limiter/audit/approval 条目）
-            // 防止 RateStore / ApprovalStore 等无限增长导致内存泄漏
-            //
-            // 使用 CancellationToken 实现优雅关闭：
-            // - 当窗口关闭时，shutdown_token 被取消
-            // - cleanup 任务收到取消信号后退出循环
-            // - 避免在事件循环销毁后尝试发送事件（PostMessage 0x80070578 错误）
+            // ── SecurityKernel 定期清理任务 ──────────────────────────────────
+
             {
                 let kernel_state = app.state::<SecurityKernelState>().inner().clone();
                 let shutdown = app.state::<ShutdownToken>().inner().0.clone();
                 tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
-                    interval.tick().await; // 跳过首次立即触发
+                    interval.tick().await;
                     loop {
                         tokio::select! {
                             _ = shutdown.cancelled() => {
@@ -278,31 +276,32 @@ pub fn run() {
                 });
             }
 
-            // 监听前端发送的允许关闭事件（Agent 确认后）
-            // 当前端确认可以关闭时，触发关闭令牌并关闭窗口
+            // ── 前端关闭事件监听 ─────────────────────────────────────────────
+
             {
                 let app_handle = app.handle().clone();
                 let _ = app.listen("allow-close", move |_event| {
-                    // 触发关闭令牌，优雅停止后台任务
                     if let Some(shutdown_token) = app_handle.try_state::<ShutdownToken>() {
                         shutdown_token.0.cancel();
                     }
-                    // 关闭主窗口
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.close();
                     }
                 });
             }
 
-            // 初始化系统托盘
-            // 托盘提供：打开主窗口、关于、进程监视器、日志查看器、退出
+            // ── 系统托盘初始化 ───────────────────────────────────────────────
+
             if let Err(e) = crate::infrastructure::tray::build_tray(app.handle()) {
                 tracing::error!(error = %e, "Failed to initialize system tray");
             }
 
             Ok(())
         })
+        // ── IPC 命令注册 ────────────────────────────────────────────────────
+
         .invoke_handler(tauri::generate_handler![
+            // Settings
             crate::infrastructure::settings::set_window_theme,
             crate::infrastructure::settings::get_data_dir_path,
             crate::infrastructure::settings::get_log_level,
@@ -312,14 +311,17 @@ pub fn run() {
             crate::infrastructure::settings::list_log_files,
             crate::infrastructure::settings::read_log_file,
             crate::infrastructure::settings::clear_log_file,
+            // Prompts
             crate::infrastructure::prompts::create_prompt,
             crate::infrastructure::prompts::list_prompts,
             crate::infrastructure::prompts::get_prompt,
             crate::infrastructure::prompts::update_prompt,
             crate::infrastructure::prompts::delete_prompt,
+            // Trends
             crate::infrastructure::db::commands::create_trend,
             crate::infrastructure::db::commands::list_trends,
             crate::infrastructure::db::commands::delete_trend,
+            // Novel
             crate::domain::novel::commands::novel_create,
             crate::domain::novel::commands::novel_update,
             crate::domain::novel::commands::novel_list,
@@ -330,44 +332,58 @@ pub fn run() {
             crate::domain::novel::commands::novel_search,
             crate::domain::novel::commands::novel_download,
             crate::domain::novel::commands::novel_list_local,
+            // Stats
             crate::infrastructure::stats::get_stats,
             crate::infrastructure::stats::get_daily_activity,
             crate::infrastructure::stats::get_ai_stats,
             crate::infrastructure::stats::get_usage_stats,
-            crate::security_kernel::commands::audit_events_query,
-            crate::security_kernel::commands::audit_event_stats,
-            crate::security_kernel::commands::audit_events_query_filtered,
-            crate::security_kernel::commands::audit_event_histogram,
+            // Security Kernel - Audit（读模型查询位于基础设施层）
+            crate::infrastructure::db::commands::audit_events_query,
+            crate::infrastructure::db::commands::audit_event_stats,
+            crate::infrastructure::db::commands::audit_events_query_filtered,
+            crate::infrastructure::db::commands::audit_event_histogram,
             crate::security_kernel::commands::kernel_stats,
+            // Security Kernel - Approval
             crate::security_kernel::commands::approval_list_pending,
             crate::security_kernel::commands::approval_stats,
             crate::security_kernel::commands::approval_grant,
             crate::security_kernel::commands::approval_reject,
             crate::security_kernel::commands::approval_cleanup_expired,
-            // PVE 命令（Prompt Validator Executor）
+            // Security Kernel - PVE
             crate::security_kernel::commands::pve_validate_tool_call,
             crate::security_kernel::commands::pve_get_injection_patterns,
             crate::security_kernel::commands::pve_get_sensitive_surfaces,
             crate::security_kernel::commands::pve_check_sensitive_path,
             crate::security_kernel::commands::pve_scan_content,
-            // Hook 系统命令（配置型 hook 管理 + 测试派发）
+            // Security Kernel - Hooks
             crate::security_kernel::hooks::commands::hook_list,
             crate::security_kernel::hooks::commands::hook_register,
             crate::security_kernel::hooks::commands::hook_unregister,
             crate::security_kernel::hooks::commands::hook_test_dispatch,
+            // Workspace
             crate::application::workspace::commands::create_workspace,
             crate::application::workspace::commands::list_workspaces,
+            crate::application::workspace::commands::list_archived_workspaces,
             crate::application::workspace::commands::get_workspace,
             crate::application::workspace::commands::delete_workspace,
             crate::application::workspace::commands::touch_workspace,
+            crate::application::workspace::commands::archive_workspace,
+            crate::application::workspace::commands::restore_workspace,
+            crate::application::workspace::commands::update_workspace_sort_order,
+            // Session
             crate::application::session::commands::session_create,
             crate::application::session::commands::session_split,
             crate::application::session::commands::session_list,
+            crate::application::session::commands::session_list_archived,
             crate::application::session::commands::session_get,
             crate::application::session::commands::session_delete,
+            crate::application::session::commands::session_archive,
+            crate::application::session::commands::session_restore,
+            crate::application::session::commands::update_session_sort_order,
             crate::application::session::commands::session_messages,
             crate::application::session::commands::message_create,
             crate::application::session::commands::session_search,
+            // User Profile
             crate::domain::user::commands::user_get_profile,
             crate::domain::user::commands::user_update_profile,
             crate::domain::user::learned_commands::learned_preferences_list,
@@ -376,6 +392,7 @@ pub fn run() {
             crate::domain::user::learned_commands::learned_preferences_delete,
             crate::domain::user::learned_commands::learned_preferences_analyze,
             crate::domain::user::learned_commands::learned_preferences_decay_stale,
+            // Skill
             crate::application::skill::commands::skill_list,
             crate::application::skill::commands::skill_get,
             crate::application::skill::commands::skill_create,
@@ -397,18 +414,22 @@ pub fn run() {
             crate::application::skill::evolution_commands::skill_candidate_approve,
             crate::application::skill::evolution_commands::skill_candidate_reject,
             crate::application::skill::evolution_commands::skill_candidate_delete,
+            // Story
             crate::domain::story::commands::story_state_get,
             crate::domain::story::commands::story_state_save,
             crate::domain::story::commands::hook_update_status,
             crate::domain::story::commands::query_facts_at_chapter,
             crate::domain::story::commands::list_recent_chapter_summaries,
             crate::domain::story::commands::list_chapter_summaries_range,
+            // Notifications
             crate::infrastructure::notifications::send_notification,
+            // Radar
             crate::domain::radar::commands::radar_scan_list,
             crate::domain::radar::commands::radar_scan_delete,
             crate::domain::radar::commands::radar_scan_create,
             crate::domain::radar::commands::radar_scan,
             crate::domain::radar::commands::radar_list_sources,
+            // Sandbox
             crate::infrastructure::sandbox::commands::sandbox_status,
             crate::infrastructure::sandbox::commands::sandbox_validate_path,
             crate::infrastructure::sandbox::commands::sandbox_validate_command,
@@ -420,13 +441,15 @@ pub fn run() {
             crate::infrastructure::sandbox::commands::sandbox_evaluate_command,
             crate::infrastructure::sandbox::commands::sandbox_evaluate_path,
             crate::infrastructure::sandbox::commands::sandbox_evaluate_network,
+            // LLM
             crate::infrastructure::llm::commands::llm_model_list,
             crate::infrastructure::llm::commands::llm_list_provider_presets,
-            crate::infrastructure::llm::commands::prompt_optimize,
+            crate::application::llm::commands::prompt_optimize,
             crate::infrastructure::providers::provider_list,
             crate::infrastructure::providers::provider_models,
             crate::infrastructure::providers::provider_test_connection,
             crate::infrastructure::providers::provider_refresh,
+            // Embedding
             crate::infrastructure::llm::embedding::commands::embedding_get_config,
             crate::infrastructure::llm::embedding::commands::embedding_set_config,
             crate::infrastructure::llm::embedding::commands::embedding_test,
@@ -435,18 +458,23 @@ pub fn run() {
             crate::infrastructure::llm::embedding::commands::embedding_delete_doc,
             crate::infrastructure::llm::embedding::commands::embedding_stats,
             crate::infrastructure::llm::embedding::commands::embedding_ingest_file,
+            // Notify
             crate::infrastructure::notify::notify_dispatch,
             crate::infrastructure::notify::notify_test,
-            // 辅助系统模块命令
+            // Materials
             crate::domain::materials::commands::material_ingest,
             crate::domain::materials::commands::material_retrieve,
             crate::domain::materials::commands::material_list,
             crate::domain::materials::commands::material_delete,
+            // Detection
             crate::domain::detection::commands::detection_scan,
             crate::domain::detection::commands::detection_stats,
             crate::domain::detection::commands::detection_history,
+            // Researcher
             crate::domain::researcher::commands::researcher_run,
+            // Style
             crate::domain::style::commands::style_analyze,
+            // Wiki
             crate::domain::wiki::commands::wiki_list_entries,
             crate::domain::wiki::commands::wiki_get_entry,
             crate::domain::wiki::commands::wiki_create_entry,
@@ -456,6 +484,7 @@ pub fn run() {
             crate::domain::wiki::commands::wiki_create_link,
             crate::domain::wiki::commands::wiki_delete_link,
             crate::domain::wiki::commands::wiki_search,
+            // Version
             crate::domain::version::commands::version_list,
             crate::domain::version::commands::version_get,
             crate::domain::version::commands::version_get_latest,
@@ -463,6 +492,7 @@ pub fn run() {
             crate::domain::version::commands::version_diff,
             crate::domain::version::commands::version_diff_latest,
             crate::domain::version::commands::version_restore,
+            // Memory
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_date,
             crate::infrastructure::memory::short_term_commands::short_term_memory_for_session,
             crate::infrastructure::memory::short_term_commands::short_term_memory_list_by_book,
@@ -478,15 +508,18 @@ pub fn run() {
             crate::infrastructure::memory::commands_v2::archival_memory_search,
             crate::infrastructure::memory::commands_v2::archival_memory_get,
             crate::infrastructure::memory::commands_v2::archival_memory_delete,
+            // Project Memory
             crate::infrastructure::project_memory::commands::project_memory_get,
             crate::infrastructure::project_memory::commands::project_memory_update,
             crate::infrastructure::project_memory::commands::project_memory_append,
             crate::infrastructure::project_memory::commands::project_memory_clear,
             crate::infrastructure::project_memory::commands::project_memory_delete,
             crate::infrastructure::project_memory::commands::project_memory_stats,
+            // Tool Limits
             crate::infrastructure::tool_limits::commands::tool_limits_get,
             crate::infrastructure::tool_limits::commands::tool_limits_update,
             crate::infrastructure::tool_limits::commands::tool_limits_reset,
+            // Filesystem
             crate::infrastructure::fs::commands::fs_read_file,
             crate::infrastructure::fs::commands::fs_write_file,
             crate::infrastructure::fs::commands::fs_list_directory,
@@ -496,6 +529,7 @@ pub fn run() {
             crate::infrastructure::fs::commands::fs_copy_file,
             crate::infrastructure::fs::commands::editor_read_file,
             crate::infrastructure::fs::commands::editor_write_file,
+            // Git
             crate::domain::git::commands::git_init,
             crate::domain::git::commands::git_status,
             crate::domain::git::commands::git_log,
@@ -507,16 +541,20 @@ pub fn run() {
             crate::domain::git::commands::git_get_config,
             crate::domain::git::commands::git_set_config,
             crate::domain::git::commands::git_branches,
+            // Network
             crate::infrastructure::net::lm_ping,
+            // Agent Chat
             crate::core::agent::commands::chat_send_message,
             crate::core::agent::commands::chat_stop,
             crate::core::agent::commands::chat_tool_respond,
+            // Daily Summary
             crate::core::agent::daily_summary_commands::daily_summary_trigger,
             crate::core::agent::daily_summary_commands::daily_summary_get_config,
             crate::core::agent::daily_summary_commands::daily_summary_update_config,
             crate::core::agent::daily_summary_commands::daily_summary_start,
             crate::core::agent::daily_summary_commands::daily_summary_stop,
             crate::core::agent::daily_summary_commands::daily_summary_is_running,
+            // Pipeline
             crate::domain::pipeline::commands::pipeline_init_book,
             crate::domain::pipeline::commands::pipeline_revise_foundation,
             crate::domain::pipeline::commands::pipeline_plan_chapter,
@@ -539,7 +577,7 @@ pub fn run() {
             crate::domain::pipeline::commands::pipeline_scheduler_resume_book,
             crate::domain::pipeline::commands::pipeline_scheduler_is_book_paused,
             crate::domain::pipeline::commands::pipeline_scheduler_subscribe,
-            // Phase 6 扩展命令
+            // Pipeline - Phase 6
             crate::domain::pipeline::commands::pipeline_short_fiction_run,
             crate::domain::pipeline::commands::pipeline_fanfic_import,
             crate::domain::pipeline::commands::pipeline_script_run,
@@ -548,16 +586,18 @@ pub fn run() {
             crate::domain::pipeline::commands::pipeline_story_graph_validate,
             crate::domain::pipeline::commands::pipeline_story_graph_paths,
             crate::domain::pipeline::commands::pipeline_story_graph_apply_delta,
-            // Interaction Runtime 命令（domain/interaction）
+            // Interaction Runtime
             crate::domain::interaction::commands::interaction_run_request,
             crate::domain::interaction::commands::interaction_list_sessions,
             crate::domain::interaction::commands::interaction_get_session,
             crate::domain::interaction::commands::interaction_delete_session,
             crate::domain::interaction::commands::interaction_update_automation_mode,
             crate::domain::interaction::commands::interaction_edit_chapter,
+            // Secrets
             crate::infrastructure::secrets::secrets_set,
             crate::infrastructure::secrets::secrets_delete,
             crate::infrastructure::secrets::secrets_exists,
+            // MCP
             crate::infrastructure::mcp::commands::mcp_list_servers,
             crate::infrastructure::mcp::commands::mcp_add_server,
             crate::infrastructure::mcp::commands::mcp_update_server,
@@ -565,7 +605,7 @@ pub fn run() {
             crate::infrastructure::mcp::commands::mcp_test_server,
             crate::infrastructure::mcp::commands::mcp_list_tools,
             crate::infrastructure::mcp::commands::mcp_call_tool,
-            // Loop-Engineering 命令(application/loop_engine)
+            // Loop Engineering
             crate::application::loop_engine::commands::loop_create_state,
             crate::application::loop_engine::commands::loop_get_states,
             crate::application::loop_engine::commands::loop_get_state,
@@ -577,19 +617,19 @@ pub fn run() {
             crate::application::loop_engine::commands::loop_get_patterns,
             crate::application::loop_engine::commands::loop_upsert_pattern,
             crate::application::loop_engine::commands::loop_delete_pattern,
-            // Telemetry 命令（traces + metrics）
+            // Telemetry
             crate::infrastructure::telemetry::commands::telemetry_list_traces,
             crate::infrastructure::telemetry::commands::telemetry_get_trace,
             crate::infrastructure::telemetry::commands::telemetry_list_spans,
             crate::infrastructure::telemetry::commands::telemetry_query_metrics,
             crate::infrastructure::telemetry::commands::telemetry_aggregate_metrics,
             crate::infrastructure::telemetry::commands::telemetry_stats,
-            // Agent Registry 命令（统一 agent 元数据查询）
+            // Agent Registry
             crate::core::agent::registry::commands::agent_list_all,
             crate::core::agent::registry::commands::agent_list_by_category,
             crate::core::agent::registry::commands::agent_get,
             crate::core::agent::registry::commands::agent_list_categories,
-            // Play 模式命令（互动小说引擎）
+            // Play Mode
             crate::domain::play::commands::play_create_world,
             crate::domain::play::commands::play_list_worlds,
             crate::domain::play::commands::play_seed_opening,
@@ -597,26 +637,18 @@ pub fn run() {
             crate::domain::play::commands::play_regenerate_last_turn,
             crate::domain::play::commands::play_get_state,
             crate::domain::play::commands::play_get_history,
-            // 互动电影 film_* 命令
+            // Interactive Film
             crate::domain::pipeline::interactive_film::commands::film_generate_graph,
             crate::domain::pipeline::interactive_film::commands::film_export_html,
             crate::domain::pipeline::interactive_film::commands::film_export_ink,
             crate::domain::pipeline::interactive_film::commands::film_apply_delta,
-            // Process Monitor 命令
+            // Process Monitor
             crate::infrastructure::process_monitor::commands::process_monitor_list,
             crate::infrastructure::process_monitor::commands::process_monitor_summary,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
-            // 不用 `.expect(...)`：避免 panic 输出被 Tauri 内部 panic hook 吞掉。
-            // 改为 stderr + 退出码 1，确保错误对用户/CI 可见。
-            // 注：tracing 日志 guard 由 `init_logging` 注册的 `tracing_subscriber`
-            // 在 Drop 时 flush；此处 process::exit 前需要显式 flush。
             eprintln!("error while running tauri application: {e:?}");
-            // 强制 flush tracing 日志（tracing-appender 的 NonBlocking guard 在
-            // process::exit 时不会执行 Drop，需手动 flush）
-            // 注：若未启用 NonBlocking writer，此调用是 no-op
-            // 这里不直接访问 guard，依赖 tracing-subscriber 的全局 flush
             std::process::exit(1);
         });
 }

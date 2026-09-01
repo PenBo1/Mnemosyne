@@ -19,6 +19,7 @@ export interface Session {
   status: "active" | "paused" | "completed" | "archived";
   created_at: string;
   updated_at: string;
+  sort_order: number;
 }
 
 export interface Message {

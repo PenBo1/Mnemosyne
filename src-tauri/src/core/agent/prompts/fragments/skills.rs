@@ -6,7 +6,7 @@ use std::any::Any;
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::application::skill::cache::TwoTierCache;
+use crate::infrastructure::cache::TwoTierCache;
 use crate::shared::error::AppError;
 
 use super::super::fragment::{ContextualUserFragment, FragmentRole};

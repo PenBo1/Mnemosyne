@@ -47,6 +47,12 @@ pub struct Workspace {
     pub updated_at: String,
     /// 最近打开时间（用于恢复上次活动工作区）
     pub last_opened_at: Option<String>,
+    /// 是否已归档
+    pub is_archived: bool,
+    /// 归档时间
+    pub archived_at: Option<String>,
+    /// 排序顺序
+    pub sort_order: i32,
 }
 
 /// 创建工作空间请求

@@ -7,7 +7,7 @@
 // 仅类型 import（ContextPackage）。
 // 迁移要点：仅改 import 路径，去掉 .js 后缀。
 
-import type { ContextPackage } from "@/types/input-governance";
+import type { ContextPackage } from "@/features/agent/types/input-governance";
 
 export function buildGovernedMemoryEvidenceBlocks(
   contextPackage: ContextPackage,

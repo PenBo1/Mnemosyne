@@ -7,5 +7,6 @@ pub mod migrate;
 pub mod types;
 pub mod commands;
 pub mod state;
+pub mod audit_handler;
 
 pub mod stores;

@@ -10,7 +10,7 @@
 --   sandbox_violations / memory_operations）不再包含。
 
 -- ═══════════════════════════════════════════════════════════
--- Workspaces（含 last_opened_at 扩展列）
+-- Workspaces（含 last_opened_at / is_archived / archived_at 扩展列）
 -- ═══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
@@ -18,10 +18,14 @@ CREATE TABLE IF NOT EXISTS workspaces (
     path TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    last_opened_at TEXT
+    last_opened_at TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0 CHECK(is_archived IN (0, 1)),
+    archived_at TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_workspaces_last_opened ON workspaces(last_opened_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workspaces_archived ON workspaces(is_archived, archived_at DESC);
 
 -- ═══════════════════════════════════════════════════════════
 -- Novels
@@ -86,6 +90,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     parent_session_id TEXT,
     split_type TEXT CHECK(split_type IS NULL OR split_type IN ('branch', 'compression', 'delegate')),
     split_reason TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE SET NULL
 );
 

@@ -60,8 +60,8 @@ import {
   type HooksState,
   type HookStatus,
   type StateManifest,
-} from "@/types/runtime-state";
-import type { StoredHook, StoredSummary } from "@/types/hook";
+} from "@/features/agent/types/runtime-state";
+import type { StoredHook, StoredSummary, Fact } from "@/types/hook";
 import {
   parseMarkdownTableRows,
   parsePendingHooksMarkdown,
@@ -72,23 +72,6 @@ import { joinPath } from "../utils/path-utils";
 // parseChapterSummariesMarkdown / parseCurrentStateFacts 因 story-markdown 未迁移，
 // 改为本文件 export（见下方定义）。
 export { normalizeHookId, parsePendingHooksMarkdown } from "../utils/story-markdown";
-
-/**
- * 局部 Fact 类型 —— 原实现的 Fact 未迁移到 @/shared/types/hook
- * （原实现的 Fact 含可选 id 主键，服务于 node:sqlite MemoryDB；Mnemosyne 用 Rust
- * rusqlite 替代，运行时 DB 类型在 Rust 端定义）。此处保留与原实现一致的形状，
- * 供 parseCurrentStateFacts 返回类型使用。
- * TODO: 后续若 @/shared/types/hook 补 Fact 类型，可移除本局部定义并改回 import。
- */
-interface Fact {
-  readonly id?: number;
-  readonly subject: string;
-  readonly predicate: string;
-  readonly object: string;
-  readonly validFromChapter: number;
-  readonly validUntilChapter: number | null;
-  readonly sourceChapter: number;
-}
 
 export interface BootstrapStructuredStateResult {
   readonly createdFiles: ReadonlyArray<string>;

@@ -22,7 +22,7 @@ import {
   ChapterSummariesStateSchema,
   CurrentStateStateSchema,
   HooksStateSchema,
-} from "@/types/runtime-state";
+} from "@/features/agent/types/runtime-state";
 import {
   bootstrapStructuredStateFromMarkdown,
   parseChapterSummariesMarkdown,
